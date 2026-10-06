@@ -19,15 +19,16 @@ ctxpress 是 Agent 上下文管理工具箱：所有方法复用同一个改写�
 | 全方法冒烟测试 | `ctxpress smoke`：每个方法经真实代理、假模型和真实 `ctxpress mcp` 跑通并输出统一统计 | 合成用量；不代表质量或费用 |
 | 代码结构（v1.0.0） | 框架分层 core → methods → live → hosts；评测按职责（jobs / runtime / results / checks）和 benchmark 家族分组 | `tests/test_layering.py` 检查依赖方向 |
 | ACM | 工具机制适配及作者运行桥接 | 作者 9B 权重未部署，未开始真实评测 |
+| 正式比较 v7 | SWE-bench Verified 130 个、SWE-Milestone 39 个作业跑完，经统一验收：169 个作业的资源清理全部核验，缺陷排除与缺用量分别记录 | 每家族 1–3 次重复，结果是描述性的；长任务受 100 次调用预算截断 |
+| 持续集成 | GitHub Actions：Linux / macOS / Windows × Python 3.10 / 3.12，跑全部测试和全方法冒烟测试 | 评测用例只在 Linux 上运行 |
 
 ## 进行中
 
-1. SWE-bench Verified（原 10 题 × 13 方法 × 1 次）与 SWE-Milestone（完整 Navidrome × 13 方法 × 3 次）的正式比较，共 169 个作业，结果随论文发布。运行中发现并修复的宿主缺陷，受影响作业保留原始成绩，但排除出方法效果比较。
-2. 用统一验收入口生成最终报告，分别写明缺陷排除、缺费用和配对覆盖，不混入试跑或修复验收。
+1. 正式比较 v8：在 v1.0.0 上补跑 v7 缺失的 AutoCostModel 和受缺陷影响的两个摘要方法，并把 SWE-Milestone 的预算提高到上下文能超过宿主压缩阈值的程度，再比较方法。方案确认后才启动。
 
 ## 之后
 
-- 其余六类家族的正式比较。
+- 其余六类家族的正式比较（需先下载各自的任务镜像和数据）。
 - ACM 作者模型的实际运行：需要作者依赖、检索索引和已服务的模型权重。
 - Chat Completions 宿主。
 - Terminal-Bench / Science 的真实 GPU 任务、MIG，以及评分侧多服务 Compose。

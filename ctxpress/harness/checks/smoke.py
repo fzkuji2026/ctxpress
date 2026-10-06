@@ -275,10 +275,10 @@ def run_method(name, directory, inputs, turns, chars, args=None):
             tools = MethodToolServer(entry, store, log, folder / "home")
         statuses = drive(f"http://127.0.0.1:{srv.server_address[1]}", turns, chars, tools)
         settle(log)
-        analysis, _ = analyze(log, prices=PRICES)
+        analysis, _ = locked_retry(lambda: analyze(log, prices=PRICES))
         (folder / "analysis.json").write_text(json.dumps(analysis, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         job = analysis["families"][0]["jobs"][0]
-        rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines() if line.strip()]
+        rows = [json.loads(line) for line in locked_retry(lambda: log.read_text(encoding="utf-8")).splitlines() if line.strip()]
         row.update(live=True, ok=all(s == 200 for s in statuses) and len(statuses) == turns, requests=len(statuses),
                    rewritten=sum(1 for r in rows if r.get("changed") or r.get("operations")),
                    model_side_calls=sum(1 for c in api.calls if not c["main"]), pruner_calls=inputs["pruned"](),
@@ -300,13 +300,29 @@ def settle(log, quiet=0.3, limit=15.0):
     """The proxy logs a request after its response has streamed; wait until the log stops growing and ends a line."""
     deadline, last, still = time.time() + limit, None, time.time()
     while time.time() < deadline:
-        raw = log.read_bytes() if log.exists() else b""
+        try:
+            raw = log.read_bytes() if log.exists() else b""
+        except PermissionError:                        # Windows: the proxy holds the log lock while appending
+            last, still = None, time.time()
+            time.sleep(0.05)
+            continue
         if raw != last:
             last, still = raw, time.time()
         elif raw.endswith(b"\n") and time.time() - still >= quiet:
             return
         time.sleep(0.05)
     raise TimeoutError("the request log did not settle")
+
+
+def locked_retry(read, attempts=50):
+    """Windows locks the log while the proxy appends a row; reading then fails briefly."""
+    for attempt in range(attempts):
+        try:
+            return read()
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.1)
 
 
 def _operations(rows):
