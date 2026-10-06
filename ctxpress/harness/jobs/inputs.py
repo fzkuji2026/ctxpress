@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy, hashlib, shutil, tempfile
 from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 
 SCHEMA = 'ctxpress.eval.inputs'
 
@@ -20,8 +21,8 @@ def _relative(plan, source, digest):
         if relative:
             return relative
     if plan.get('grading_snapshot'):
-        from ctxpress.harness.jobs import grading_inputs as eval_grading
-        relative = eval_grading.relative(plan['grading_snapshot'],source)
+        from ctxpress.harness.jobs import grading_inputs
+        relative = grading_inputs.relative(plan['grading_snapshot'],source)
         if relative:
             return relative
     if plan.get('environment_snapshot'):
@@ -51,9 +52,9 @@ def prepare(plan, directory):
             from ctxpress.harness.jobs import trees as eval_trees
             eval_trees.prepare_directories(plan, staged)
         if plan.get('grading_snapshot'):
-            from ctxpress.harness.jobs import grading_inputs as eval_grading
+            from ctxpress.harness.jobs import grading_inputs
             for key,descriptor in plan['grading_snapshot']['trees'].items():
-                root = staged/'grading'/eval_grading.folder(plan['grading_snapshot'],key)
+                root = staged/'grading'/grading_inputs.folder(plan['grading_snapshot'],key)
                 root.mkdir(parents=True,exist_ok=True)
                 for relative in descriptor['directories']:
                     (root/relative).mkdir(parents=True,exist_ok=True)
@@ -73,7 +74,7 @@ def prepare(plan, directory):
                 raise ValueError('evaluation input changed during snapshot creation')
             files[source] = dict(path=relative, sha256=digest)
         manifest = _sealed(dict(schema=SCHEMA, version=1, plan_sha256=plan['sha256'], files=files))
-        eval_plan.atomic_json(staged / 'manifest.json', manifest)
+        artifact_io.atomic_json(staged / 'manifest.json', manifest)
         verify(plan, staged)
         try:
             staged.rename(directory)
@@ -112,11 +113,11 @@ def verify(plan, directory):
         from ctxpress.harness.jobs import trees as eval_trees
         eval_trees.verify_copies(plan, directory)
     if plan.get('grading_snapshot'):
-        from ctxpress.harness.jobs import grading_inputs as eval_grading
+        from ctxpress.harness.jobs import grading_inputs
         source = plan['config']['environment']['grading']
-        if eval_grading.load(resolved[source]) != plan['grading_snapshot']:
+        if grading_inputs.load(resolved[source]) != plan['grading_snapshot']:
             raise ValueError('grading manifest differs from the reviewed plan')
-        eval_grading.verify_copies(plan['grading_snapshot'],directory/'grading')
+        grading_inputs.verify_copies(plan['grading_snapshot'],directory/'grading')
     if plan.get('environment_snapshot'):
         from ctxpress.harness.jobs import environment as eval_environment
         source = plan['config']['environment']['snapshot']

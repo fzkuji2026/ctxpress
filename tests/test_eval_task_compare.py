@@ -8,6 +8,7 @@ import pytest
 from ctxpress import benchmarks
 from ctxpress.benchmarks.swe import adapter as swe_bench
 from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, trees as eval_trees, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.harness.results import task_compare as eval_task_compare
 from test_eval_families import fixture_data
 
@@ -524,7 +525,7 @@ def test_bigcode_stored_cohorts_are_exposed_per_label_without_scoring_or_writes(
     def forbidden(*args, **kwargs):
         raise AssertionError('analysis must not regenerate a report, score, write, or launch a process')
     monkeypatch.setattr(code_report, 'summarize', forbidden)
-    monkeypatch.setattr(eval_plan, 'atomic_json', forbidden)
+    monkeypatch.setattr(artifact_io, 'atomic_json', forbidden)
     monkeypatch.setattr(subprocess, 'run', forbidden)
     monkeypatch.setattr(subprocess, 'Popen', forbidden)
     out = eval_task_compare.compare(plan, iter(jobs), reference='reference', directory=directory)

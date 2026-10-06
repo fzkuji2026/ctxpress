@@ -56,6 +56,7 @@ def submission(root, target):
         if not patch.is_file():
             raise ValueError('DeepSWE submission must be a regular patch file')
         from ctxpress.harness.jobs import plan as eval_plan
+        from ctxpress.core import artifacts as artifact_io
         digest = eval_plan.file_sha256(patch)
         shutil.copyfile(patch, target / patch.name)
         if eval_plan.file_sha256(target / patch.name) != digest:
@@ -69,6 +70,7 @@ async def run_trial(request, official, channel, journal):
     from ctxpress.benchmarks.harbor import environment as harbor_environment
     from ctxpress.benchmarks.deepswe import pier_codex
     from ctxpress.harness.jobs import plan as eval_plan
+    from ctxpress.core import artifacts as artifact_io
     from ctxpress.core import processes
     from ctxpress.benchmarks.harbor.worker import resource_record
     Codex, Install, LimitError, Docker, ExecResult, Config, Trial, mode = official
@@ -85,7 +87,7 @@ async def run_trial(request, official, channel, journal):
         pid=os.getpid(), identity=processes.identity(os.getpid()))
     def persist(role):
         record = records[role]
-        eval_plan.atomic_json(Path(request['folder']) / ('resources-harbor-' + record['project'] + '.json'), record)
+        artifact_io.atomic_json(Path(request['folder']) / ('resources-harbor-' + record['project'] + '.json'), record)
     for role in records:
         persist(role)
     trial = None
@@ -212,7 +214,7 @@ async def run_trial(request, official, channel, journal):
     artifacts = {path.relative_to(trial_root).as_posix():dict(path=str(path.resolve()), sha256=eval_plan.file_sha256(path))
         for folder in ('artifacts', 'verifier') for path in sorted((trial_root/folder).rglob('*'))
         if path.is_file() and not path.is_symlink()}
-    eval_plan.atomic_json(Path(request['folder'])/'harbor-worker-result.json', dict(stop=stop, calls=calls,
+    artifact_io.atomic_json(Path(request['folder'])/'harbor-worker-result.json', dict(stop=stop, calls=calls,
         separate_verifier=dict(agent_project=project, verifier_project=grader_project,
             agent_image=request['images']['main'], verifier_image=request['grading_image'],
             author_collect=True, patch_only_transfer=True, checked_cleanup=True), official_artifacts=artifacts))

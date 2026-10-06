@@ -4,6 +4,7 @@ import io,json,os,re,subprocess,tarfile,threading,uuid
 from pathlib import Path,PurePosixPath
 from ctxpress.harness.runtime.docker import docker, identity, image_id, labels
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 
 SCHEMA='ctxpress.eval.milestone_resources'
@@ -61,7 +62,7 @@ class Registry:
             self.inspect_network()
             return self.network['name']
 
-    def persist_network(self):eval_plan.atomic_json(self.folder/'resources-milestone-network.json',self.network)
+    def persist_network(self):artifact_io.atomic_json(self.folder/'resources-milestone-network.json',self.network)
 
     def inspect_network(self):
         self.verify_daemon();rows=json.loads(docker('network','inspect',self.network['name']))
@@ -128,7 +129,7 @@ class Owner:
             credentials_may_exist=False,private_initialized=False,cleaned=False,phase='prepared')
         self.persist()
 
-    def persist(self):eval_plan.atomic_json(self.path,self.record)
+    def persist(self):artifact_io.atomic_json(self.path,self.record)
 
     def existing(self):
         self.registry.verify_daemon()

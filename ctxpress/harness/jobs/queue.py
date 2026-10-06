@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse, contextlib, json, os, shutil, signal, sqlite3, subprocess, sys, tempfile, time
 from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan, inputs as eval_inputs
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 from ctxpress import benchmarks
 from ctxpress.harness.jobs import task as tasks
@@ -102,7 +103,7 @@ def prepare(plan, directory):
         connection.execute("INSERT OR IGNORE INTO metadata VALUES ('plan', ?)", (eval_plan.canonical(plan),))
         for job in plan["jobs"]:
             connection.execute("INSERT OR IGNORE INTO jobs (id,spec,status) VALUES (?,?,'pending')", (job["id"], eval_plan.canonical(job)))
-    eval_plan.atomic_json(directory / "plan.json", plan)
+    artifact_io.atomic_json(directory / "plan.json", plan)
     return directory
 
 
@@ -317,7 +318,7 @@ def execute_job(directory, job_id, attempt):
         if paths is not None:
             task = tasks.remap(task, paths)
         result = benchmark.execute(task, entry, config, job, paths=paths, folder=folder, label=label)
-        eval_plan.atomic_json(folder / "result.json", result)
+        artifact_io.atomic_json(folder / "result.json", result)
         validate_execution(result)
         set_result(directory, job_id, attempt, result=result)
     except BaseException as error:

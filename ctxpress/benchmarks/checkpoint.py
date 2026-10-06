@@ -104,8 +104,8 @@ def compile_plan(config, base_dir=None):
             artifacts[str(Path(tree['root']) / relative)] = digest
     grading_snapshot = None
     if env.get('grading'):
-        from ctxpress.benchmarks.milestone import checkpoint_grading as eval_grading
-        grading_snapshot, manifest_digest = eval_grading.read(env['grading'], coordinates)
+        from ctxpress.harness.jobs import grading_inputs
+        grading_snapshot, manifest_digest = grading_inputs.read(env['grading'], coordinates)
         artifacts[env['grading']] = manifest_digest
         for descriptor in grading_snapshot['trees'].values():
             for relative,digest in descriptor['files'].items():

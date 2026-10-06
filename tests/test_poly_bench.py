@@ -7,6 +7,7 @@ from ctxpress import benchmarks
 from ctxpress.benchmarks.polybench import protocol as poly_protocol
 from ctxpress.benchmarks.swe import driver as swe_driver
 from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.benchmarks.polybench import grading as poly_grading
 from ctxpress.benchmarks.swe import containers as swe_containers
 from test_swe_runner import Client, AGENT, GRADER, COMMIT, request as swe_request
@@ -110,7 +111,7 @@ def test_isolated_preflight_checks_frozen_imports_without_models_or_docker(tmp_p
     original_run=subprocess.run
     monkeypatch.setattr(swe_driver.subprocess,'run',lambda *a,**k:SimpleNamespace(stdout='codex-cli fixture-version\n'))
     req,_=swe_driver.prepare(found,job['method'],config,job,directory/'attempt','plan-job')
-    request_file=directory/'preflight-request.json';eval_plan.atomic_json(request_file,req)
+    request_file=directory/'preflight-request.json';artifact_io.atomic_json(request_file,req)
     result=original_run([sys.executable,'-I','-S','-B',str(swe_driver.WORKER),str(request_file),'--check'],
         capture_output=True,text=True,timeout=15,env={'PATH':'/usr/bin:/bin'})
     if change is None:

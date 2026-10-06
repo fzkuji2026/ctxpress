@@ -6,6 +6,7 @@ import pytest
 from ctxpress import benchmarks
 from ctxpress.benchmarks.harbor import driver as harbor_driver
 from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.benchmarks.harbor.worker import run_trial, trial_config
 from test_original_benchmarks import terminal_data
 
@@ -79,7 +80,7 @@ def test_plan_lists_concrete_unprepared_protocol_requirements(tmp_path,change):
 def journal(tmp_path):
     record=dict(schema=harbor_driver.SCHEMA,version=1,label='plan-job',project=PROJECT,images={'main':IMAGE},
         daemon_id='fixture-daemon',cleaned=False,channel=str(tmp_path/'absent-channel'))
-    path=tmp_path/'resources-harbor-fixture.json';eval_plan.atomic_json(path,record)
+    path=tmp_path/'resources-harbor-fixture.json';artifact_io.atomic_json(path,record)
     return path,record
 
 
@@ -121,7 +122,7 @@ def test_recovery_removes_credentials_before_container_and_keeps_images(tmp_path
 
 
 def test_gpu_start_failure_without_uploaded_credentials_does_not_require_a_restart(tmp_path,monkeypatch):
-    path,record=journal(tmp_path);record['credentials_may_exist']=False;eval_plan.atomic_json(path,record)
+    path,record=journal(tmp_path);record['credentials_may_exist']=False;artifact_io.atomic_json(path,record)
     calls=[];base=docker_fixture(record,container(record),calls)
     def docker(*args):
         if args[0] in ('start','exec'):pytest.fail('required GPU startup to remove credentials that were never uploaded')

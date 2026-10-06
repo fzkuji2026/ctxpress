@@ -6,6 +6,7 @@ import pytest
 from ctxpress import benchmarks
 from ctxpress.benchmarks.swe import driver as swe_driver, protocol as swe_protocol
 from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.benchmarks.swe import containers as swe_containers, trial as swe_trial
 
 AGENT='sha256:'+'a'*64
@@ -204,13 +205,13 @@ def test_grading_cannot_begin_with_agent_credentials_or_live_agent(tmp_path):
 @pytest.mark.parametrize('change',['label','image','name','id','daemon','live-worker'])
 def test_recovery_checks_all_ownership_before_deleting_anything(tmp_path,monkeypatch,change):
     req=request(tmp_path);client=Client();owner=swe_containers.Owner(req,client,'verifier','daemon');container=owner.create()
-    record=dict(owner.record,pid=None);eval_plan.atomic_json(owner.path,record)
+    record=dict(owner.record,pid=None);artifact_io.atomic_json(owner.path,record)
     value=dict(container.attrs,Id=container.id);value['Config']=copy.deepcopy(value['Config']);calls=[]
     if change=='label':value['Config']['Labels']['ctxpress.run']='another'
     if change=='image':value['Image']=AGENT
     if change=='name':value['Name']='/another'
     if change=='id':value['Id']='another'
-    if change=='live-worker':record['pid']=123;eval_plan.atomic_json(owner.path,record)
+    if change=='live-worker':record['pid']=123;artifact_io.atomic_json(owner.path,record)
     monkeypatch.setattr(swe_driver.processes,'alive',lambda *args:True)
     def docker(*args):
         calls.append(args)
@@ -328,7 +329,7 @@ def test_cancelled_resource_mutation_finishes_before_cleanup_can_begin():
 def test_recovery_deletes_credentials_before_container_and_stops_if_deletion_fails(tmp_path,monkeypatch):
     req=request(tmp_path);client=Client();owner=swe_containers.Owner(req,client,'agent','daemon')
     container=owner.create();record=dict(owner.record,pid=None,credentials_may_exist=True)
-    eval_plan.atomic_json(owner.path,record);calls=[]
+    artifact_io.atomic_json(owner.path,record);calls=[]
     value=dict(container.attrs,Id=container.id)
     def docker(*args):
         calls.append(args)

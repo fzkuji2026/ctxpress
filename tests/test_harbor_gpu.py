@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from ctxpress import benchmarks
 from ctxpress.benchmarks.harbor import driver as harbor_driver
-from ctxpress.harness.runtime import gpu as harbor_gpu
+from ctxpress.harness.runtime import gpu as runtime_gpu
 from ctxpress.benchmarks.harbor.environment import framework, guarded_compose
 from ctxpress.harness.jobs import environment as eval_environment, resources as task_resources
 from test_harbor_environment import OfficialFixture, model, settings
@@ -53,21 +53,21 @@ def test_cpu_tasks_cannot_gain_gpu_devices_from_task_compose(tmp_path,field):
 
 
 def test_actual_device_query_preserves_hardware_and_accepts_exact_model_families():
-    evidence=harbor_gpu.observed(QUERY,[A],['A100','H100'])
+    evidence=runtime_gpu.observed(QUERY,[A],['A100','H100'])
     assert evidence['count']==1 and evidence['devices'][0]==dict(name='NVIDIA H100 80GB HBM3',uuid=A,memory_mb=81559,driver_version='550.54.15')
-    assert harbor_gpu.matches('NVIDIA A100-SXM4-80GB',['A100'])
-    assert not harbor_gpu.matches('NVIDIA H1000',['H100'])
-    assert not harbor_gpu.matches('NVIDIA L40S',['L40'])
-    assert harbor_gpu.matches('NVIDIA A100-SXM4-80GB',['A100-80GB'])
-    assert harbor_gpu.matches('NVIDIA A100-PCIE-80GB',['A100-80GB'])
-    assert not harbor_gpu.matches('NVIDIA A100-PCIE-40GB',['A100-80GB'])
-    assert harbor_gpu.requirements({'gpus':1,'gpu_types':[]})=={'count':1,'types':None}
+    assert runtime_gpu.matches('NVIDIA A100-SXM4-80GB',['A100'])
+    assert not runtime_gpu.matches('NVIDIA H1000',['H100'])
+    assert not runtime_gpu.matches('NVIDIA L40S',['L40'])
+    assert runtime_gpu.matches('NVIDIA A100-SXM4-80GB',['A100-80GB'])
+    assert runtime_gpu.matches('NVIDIA A100-PCIE-80GB',['A100-80GB'])
+    assert not runtime_gpu.matches('NVIDIA A100-PCIE-40GB',['A100-80GB'])
+    assert runtime_gpu.requirements({'gpus':1,'gpu_types':[]})=={'count':1,'types':None}
 
 
 @pytest.mark.parametrize('output',[QUERY.replace(A,B),QUERY+QUERY,QUERY.replace('H100','T4'),
     QUERY.replace('81559','N/A'),QUERY.replace('550.54.15',''),QUERY.replace('GPU-','MIG-'),''])
 def test_wrong_or_incomplete_hardware_never_satisfies_task_gpu_contract(output):
-    with pytest.raises(ValueError):harbor_gpu.observed(output,[A],['H100'])
+    with pytest.raises(ValueError):runtime_gpu.observed(output,[A],['H100'])
 
 
 class GPUEnvironment(OfficialFixture):
@@ -168,7 +168,7 @@ def test_reports_preserve_gpu_binding_and_observation_for_success_and_missing_ev
     Path(resources).write_text(json.dumps(task_resources.seal(content)), encoding='utf-8')
     config=plan['config'];config['repeats']=2
     revised=eval_plan.compile_plan(config);directory=evaluation.prepare(revised,tmp_path/'gpu-report')
-    observed=harbor_gpu.observed(QUERY,[A],['H100'])
+    observed=runtime_gpu.observed(QUERY,[A],['H100'])
     with evaluation.database(directory) as connection:
         result=dict(test_only=True,gpu=observed,requests=0,rewrites=[],grade={})
         connection.execute("UPDATE jobs SET status='failed',result=? WHERE id=?",(json.dumps(result),revised['jobs'][0]['id']))

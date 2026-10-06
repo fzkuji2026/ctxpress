@@ -98,8 +98,8 @@ class SWEMilestone:
             from ctxpress.harness.jobs import environment as eval_environment
             eval_environment.verify(plan['environment_snapshot'], coordinates)
         if plan.get('grading_snapshot'):
-            from ctxpress.benchmarks.milestone import checkpoint_grading as eval_grading
-            eval_grading.verify(plan['grading_snapshot'], coordinates)
+            from ctxpress.harness.jobs import grading_inputs
+            grading_inputs.verify(plan['grading_snapshot'], coordinates)
 
     def execute(self, task, entry, config, job, *, paths, folder, label):
         if task['start_mode'] == 'task_start':

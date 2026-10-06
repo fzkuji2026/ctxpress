@@ -109,7 +109,7 @@ class ProcessChecks(unittest.TestCase):
                     harbor_driver.recover(journal,'fixture-job')
                 self.assertFalse(channel.exists())
             finally:
-                if channel.exists():harbor_driver.cleanup_channel(dict(channel=str(channel),project=project,label='fixture-job'))
+                if channel.exists():socket_bridge.cleanup_channel(dict(channel=str(channel),project=project,label='fixture-job'))
 
 
 if __name__=='__main__':unittest.main()

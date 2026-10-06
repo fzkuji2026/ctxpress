@@ -4,6 +4,7 @@ import contextlib,math,os,signal,threading,time
 from pathlib import Path
 from ctxpress.harness.runtime.codex_agent import CallProgress
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 
 
 class Limit(KeyboardInterrupt):
@@ -36,7 +37,7 @@ class Budget:
 
     def write(self,path):
         self.poll()
-        eval_plan.atomic_json(Path(path),dict(schema='ctxpress.eval.milestone_budget',version=1,
+        artifact_io.atomic_json(Path(path),dict(schema='ctxpress.eval.milestone_budget',version=1,
             seconds=self.seconds,max_calls=self.max_calls,budget_started=self.started is not None,
             elapsed_seconds=0.0 if self.started is None else time.monotonic()-self.started,
             tool_calls=self.count,all_tool_outputs_observed=self.complete,stop_reason=self.reason))

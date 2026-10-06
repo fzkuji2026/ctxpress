@@ -9,6 +9,7 @@ import pytest
 
 from ctxpress.benchmarks.bigcode import grading as code_grading
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 
 
 pytestmark = pytest.mark.skipif(
@@ -21,7 +22,7 @@ def test_official_report_keeps_bytes_hash_and_private_mode(tmp_path):
     report = tmp_path / 'sample-result.json'
     private = tmp_path / 'private.json'
     result = {'status': 'pass', 'details': {}, 'task_id': 'BigCodeBench/294'}
-    eval_plan.atomic_json(private, result)
+    artifact_io.atomic_json(private, result)
     before = private.stat()
     expected = hashlib.sha256(private.read_bytes()).hexdigest()
 
@@ -57,7 +58,7 @@ def test_report_ownership_uses_bound_output_directory_and_exact_report_fd(tmp_pa
 @pytest.mark.parametrize('name', ['request.json', 'solution.py', 'private.json'])
 def test_publisher_rejects_other_output_files_without_changing_them(tmp_path, name):
     other = tmp_path / name
-    eval_plan.atomic_json(other, {'untouched': True})
+    artifact_io.atomic_json(other, {'untouched': True})
     before = other.stat()
     with pytest.raises(ValueError, match='official sample report path'):
         code_grading.write_report(other, {'status': 'pass'})
@@ -68,16 +69,16 @@ def test_publisher_rejects_other_output_files_without_changing_them(tmp_path, na
 def test_late_report_symlink_cannot_transfer_private_file_ownership(tmp_path, monkeypatch):
     report = tmp_path / 'sample-result.json'
     private = tmp_path / 'private.json'
-    eval_plan.atomic_json(private, {'untouched': True})
+    artifact_io.atomic_json(private, {'untouched': True})
     before = private.stat()
-    atomic_json = eval_plan.atomic_json
+    atomic_json = artifact_io.atomic_json
 
     def replace_with_symlink(path, result):
         atomic_json(path, result)
         path.unlink()
         path.symlink_to(private)
 
-    monkeypatch.setattr(eval_plan, 'atomic_json', replace_with_symlink)
+    monkeypatch.setattr(artifact_io, 'atomic_json', replace_with_symlink)
     with pytest.raises(OSError):
         code_grading.write_report(report, {'status': 'pass'})
     assert private.stat() == before

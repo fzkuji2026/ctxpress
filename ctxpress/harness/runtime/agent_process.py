@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse, json, os, signal, subprocess, sys, time
 from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 
 
@@ -44,7 +45,7 @@ def run(path, arguments):
             except ProcessLookupError:
                 pass
             return process.wait()
-        eval_plan.atomic_json(path, dict(pid=process.pid, identity=expected))
+        artifact_io.atomic_json(path, dict(pid=process.pid, identity=expected))
         return process.wait()
     finally:
         if path.exists():

@@ -16,6 +16,7 @@ from ctxpress.benchmarks.bigcode import protocol as code_protocol
 from ctxpress.benchmarks.bigcode.adapter import BigCodeBench
 from ctxpress.harness.results import code_compare as reader
 from ctxpress.harness.jobs import plan as eval_plan, task as task_api, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.harness.results import task_compare as common
 from ctxpress.harness.runtime import execution_health
 from ctxpress.live import usage as eval_usage
@@ -510,7 +511,7 @@ def test_readers_are_read_only_and_never_spawn(tmp_path, monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail('evidence reader must not launch or write')
     monkeypatch.setattr(subprocess, 'run', forbidden); monkeypatch.setattr(subprocess, 'Popen', forbidden)
-    monkeypatch.setattr(os, 'system', forbidden); monkeypatch.setattr(eval_plan, 'atomic_json', forbidden)
+    monkeypatch.setattr(os, 'system', forbidden); monkeypatch.setattr(artifact_io, 'atomic_json', forbidden)
     sample(case); cohort(case)
     assert before == {str(p): (digest(p), p.stat().st_mtime_ns, p.stat().st_mode) for p in tracked}
 

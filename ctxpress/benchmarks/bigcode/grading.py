@@ -66,10 +66,11 @@ def evaluate(request,official,problem,solution):
 def write_report(path,result):
     """Keep the official report private and readable by its host output owner."""
     from ctxpress.harness.jobs import plan as eval_plan
+    from ctxpress.core import artifacts as artifact_io
     path=Path(path)
     if path.name!='sample-result.json':raise ValueError('BigCodeBench requires its official sample report path')
     owner=path.parent.stat()
-    eval_plan.atomic_json(path,result)
+    artifact_io.atomic_json(path,result)
     descriptor=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
     try:os.fchown(descriptor,owner.st_uid,owner.st_gid)
     finally:os.close(descriptor)
@@ -81,6 +82,7 @@ def main(argv=None):
     if request.get('schema')!='ctxpress.eval.bigcode_grade_request' or request.get('version')!=1:raise ValueError('invalid code grading request')
     official=load(request)
     from ctxpress.harness.jobs import plan as eval_plan
+    from ctxpress.core import artifacts as artifact_io
     if args.check:
         print(json.dumps(dict(imports='verified',framework='bigcodebench',version=official[2],model_calls=0)));return
     for field in ('problem','solution'):

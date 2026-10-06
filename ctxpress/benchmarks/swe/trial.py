@@ -1,10 +1,11 @@
 """New Codex session and the frozen official SWE-bench run_instance grader."""
 from __future__ import annotations
-import asyncio, inspect, os
+import asyncio, inspect, json, os
 from pathlib import Path
 from types import SimpleNamespace
 from ctxpress.harness.runtime import codex_agent
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.benchmarks.swe.containers import AgentEnvironment, Owner, check_repo
 
 
@@ -127,7 +128,7 @@ async def run(request,module,client,spec,channel,daemon_id):
         pro=dict(pro_version='v1',submission=dict(path=str((root/'model.patch').resolve()),sha256=eval_plan.file_sha256(root/'model.patch')),
             fresh_regrade=json.loads((root/'official-logs/pro-v1-grade.json').read_text(encoding='utf-8')) if report else False,
             regrade_report=dict(path=str(report.resolve()),sha256=eval_plan.file_sha256(report)) if report else None)
-    eval_plan.atomic_json(root/'swe-worker-result.json',dict(stop=stop,calls=calls,agent_exception=exception,
+    artifact_io.atomic_json(root/'swe-worker-result.json',dict(stop=stop,calls=calls,agent_exception=exception,
         official_report=str(report) if report else None,
         official_artifacts={path.relative_to(root).as_posix():dict(path=str(path.resolve()),sha256=eval_plan.file_sha256(path)) for path in files},
         separate_verifier=dict(agent_image=request['agent_image'],verifier_image=request['grading_image'],

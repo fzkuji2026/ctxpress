@@ -9,7 +9,8 @@ from __future__ import annotations
 import asyncio, codecs, copy, json, os, re
 from pathlib import Path, PurePosixPath
 from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan
-from ctxpress.harness.runtime import gpu as harbor_gpu
+from ctxpress.core import artifacts as artifact_io
+from ctxpress.harness.runtime import gpu as runtime_gpu
 
 
 async def compose_output(process, stdin_data, on_output):
@@ -82,7 +83,7 @@ def guarded_compose(model, images, bind_roots, run_label, gpu_device_ids=None):
         if not isinstance(labels, dict):
             raise ValueError('Harbor resolved labels must be a mapping')
         service['labels'] = dict(labels, **{'ctxpress.managed':'true', 'ctxpress.run':run_label})
-        harbor_gpu.guard(service, gpu_device_ids if service_name == 'main' else None)
+        runtime_gpu.guard(service, gpu_device_ids if service_name == 'main' else None)
         for volume in service.get('volumes', []):
             if not isinstance(volume, dict):
                 raise ValueError('Harbor Compose must resolve volume declarations')
@@ -176,10 +177,10 @@ def framework(base, exec_result, settings, cleanup, journal=None):
             count = getattr(self.task_env_config, 'gpus', None)
             # Official EnvironmentConfig uses None for an omitted GPU request.
             # Keep explicit malformed raw task declarations subject to validation.
-            self._ctxpress_gpu_requirements = harbor_gpu.requirements(dict(gpus=0 if count is None else count,
+            self._ctxpress_gpu_requirements = runtime_gpu.requirements(dict(gpus=0 if count is None else count,
                 gpu_types=getattr(self.task_env_config, 'gpu_types', None)))
             if self._ctxpress_gpu_requirements['count'] or settings.get('gpu_device_ids') is not None:
-                harbor_gpu.device_ids(settings.get('gpu_device_ids'), self._ctxpress_gpu_requirements['count'])
+                runtime_gpu.device_ids(settings.get('gpu_device_ids'), self._ctxpress_gpu_requirements['count'])
 
         @property
         def supports_gpus(self):
@@ -236,7 +237,7 @@ def framework(base, exec_result, settings, cleanup, journal=None):
             config = await self._run_docker_compose_command(['config','--format','json'])
             model = guarded_compose(json.loads(config.stdout), **settings)
             self._ctxpress_guard_path = self.trial_paths.trial_dir / compose_name
-            eval_plan.atomic_json(self._ctxpress_guard_path, model)
+            artifact_io.atomic_json(self._ctxpress_guard_path, model)
             if journal:
                 journal('starting', self)
             # No stale project deletion: every attempt has a new project identity.
@@ -247,7 +248,7 @@ def framework(base, exec_result, settings, cleanup, journal=None):
                                          timeout_sec=30)
                 if result.return_code:
                     raise RuntimeError('task GPU runtime is unavailable; nvidia-smi failed before Agent setup')
-                self.ctxpress_gpu_evidence = harbor_gpu.observed(result.stdout or '', settings['gpu_device_ids'],
+                self.ctxpress_gpu_evidence = runtime_gpu.observed(result.stdout or '', settings['gpu_device_ids'],
                                                                self._ctxpress_gpu_requirements['types'])
             if journal:
                 journal('running', self)

@@ -10,7 +10,9 @@ from pathlib import Path
 # -I deliberately removes the script directory; load the owning frozen framework.
 sys.path.insert(0,str(Path(__file__).resolve().parents[3]))
 from ctxpress.benchmarks.milestone import checkpoint_grading as eval_grading
+from ctxpress.harness.jobs import grading_inputs
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 
 
 def package(roots,record,snapshot,tag,commit,destination):
@@ -45,7 +47,7 @@ def package(roots,record,snapshot,tag,commit,destination):
         committed_outside_count=0,committed_outside_sample=[],agent_tag_commit=commit,snapshot_sha256=eval_plan.file_sha256(output),
         manifest_overlay={**template['manifest_overlay'],'upserts':upserts,'deletes':[]},
         go_manifest_projection=dict(schema_version=1,present=upserts),build_manifests=upserts)
-    eval_plan.atomic_json(destination/'source_snapshot.integrity.json',metadata)
+    artifact_io.atomic_json(destination/'source_snapshot.integrity.json',metadata)
 
 
 def main(argv=None):
@@ -58,7 +60,7 @@ def main(argv=None):
     p = sub.add_parser('grade'); p.add_argument('--snapshot',required=True); p.add_argument('--output',required=True)
     sub.add_parser('check',help='import the official entrypoint without running tests or starting a container')
     args = ap.parse_args(argv)
-    lock = eval_grading.load(args.manifest,[(args.n,args.j)])
+    lock = grading_inputs.load(args.manifest,[(args.n,args.j)])
     if sys.version != lock['runtime']['version'] or sys.platform != lock['runtime']['platform']:
         raise ValueError('grading interpreter version/platform differs from the declared runtime')
     roots,record = eval_grading.runtime(lock,args.root,args.n,args.j)

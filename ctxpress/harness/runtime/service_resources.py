@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path,PurePosixPath
 from urllib.parse import parse_qs,quote,unquote,urlsplit,urlencode
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 from ctxpress.harness.runtime.docker import identity, image_id, labels
 
@@ -99,7 +100,7 @@ class Scope:
         return dict(labels(self.record['project'],self.record['label'],'service'),
             **{'ctxpress.milestone.service_scope':self.record['scope']})
 
-    def persist(self):eval_plan.atomic_json(self.path,self.record)
+    def persist(self):artifact_io.atomic_json(self.path,self.record)
 
     def verify_daemon(self):
         if self.backend.request('GET','/info').value().get('ID')!=self.record['daemon_id']:

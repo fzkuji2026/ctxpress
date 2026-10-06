@@ -4,6 +4,7 @@ import asyncio, io, os, tarfile
 from pathlib import Path
 from types import SimpleNamespace
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 from ctxpress.harness.runtime import codex_agent
 
@@ -38,7 +39,7 @@ class Owner:
         if role=='agent' and (catalog:=codex_agent.check_catalog(request)):
             self.record['model_catalog']=catalog
         self.container=None;self.persist()
-    def persist(self):eval_plan.atomic_json(self.path,self.record)
+    def persist(self):artifact_io.atomic_json(self.path,self.record)
     def credentials(self,value):
         self.record['credentials_may_exist']=value;self.persist()
     def inspect(self,container):

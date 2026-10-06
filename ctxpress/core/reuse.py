@@ -13,7 +13,7 @@ import collections
 from ctxpress.core import engine
 from ctxpress.core import textops
 from ctxpress.core.trace import content_type
-from ctxpress.core.calibration import BUCKETS, bucket, remaining_from_lengths
+from ctxpress.core.calibration import bucket, remaining_from_lengths
 
 def _items(tr, type_fn):
     """Items of a trace with their need times and death time (same 'needed' definition as the engine)."""

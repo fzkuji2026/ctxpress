@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from ctxpress.harness.runtime import codex_agent
+from ctxpress.harness.runtime import method_inputs
 from ctxpress.benchmarks.harbor import driver as harbor_driver
 from ctxpress.benchmarks.milestone import codex_hook as milestone_codex
 from ctxpress.harness.runtime.method_inputs import host_entry, validate_live
@@ -24,7 +25,7 @@ def staged(tmp_path):
          method_args=dict(allow_summary=False, use_reexplore=False, lookahead=4))
     entry = {'class': 'AutoCostModel', 'args': {'policy': str(original)}}
     directory = tmp_path / 'method-inputs'
-    mounted = harbor_driver.method_inputs(entry, directory)
+    mounted = method_inputs.freeze(entry, directory)
     original.unlink()  # Validation must depend only on the frozen copy.
     return mounted, directory
 
@@ -71,7 +72,7 @@ def test_cost_profile_is_resolved_by_the_same_mount_contract(staged):
     bundle = policy.load(next(directory.iterdir()))
     profile = directory.parent / 'profile.json'
     profile.write_text(json.dumps(bundle['statistics']))
-    mounted = harbor_driver.method_inputs({'class': 'CostModel', 'args': {'profile': str(profile)}},
+    mounted = method_inputs.freeze({'class': 'CostModel', 'args': {'profile': str(profile)}},
                                           directory.parent / 'cost-inputs')
     profile.unlink()
     validate_live(mounted, directory.parent / 'cost-inputs')

@@ -3,6 +3,7 @@ import builtins, copy, json, shutil, subprocess, sys
 from pathlib import Path
 import pytest
 from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, queue as evaluation
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.harness import cli as eval_cli
 from test_eval_inputs import inputs
 
@@ -24,7 +25,7 @@ def declared(tmp_path, monkeypatch):
     monkeypatch.setattr(eval_environment,'image',image)
     lock = eval_environment.capture(root,'fixture-base',[(3,14)])
     path = tmp_path/'environment.json'
-    eval_plan.atomic_json(path,lock)
+    artifact_io.atomic_json(path,lock)
     cfg['environment']['snapshot'] = str(path)
     return cfg,lock,seen
 

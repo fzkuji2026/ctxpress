@@ -2,7 +2,6 @@
 from __future__ import annotations
 import json, re
 from pathlib import Path
-from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.benchmarks.swe.adapter import rows
 
 

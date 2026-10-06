@@ -12,6 +12,7 @@ def main():
     from harness.e2e import evaluator
     from ctxpress.benchmarks.milestone import images as milestone_images, version as milestone_version
     from ctxpress.harness.jobs import plan as eval_plan, resources as task_resources
+    from ctxpress.core import artifacts as artifact_io
     assert Path(evaluator.__file__).resolve()==source/'harness/e2e/evaluator.py'
     calls=[];observed={};repo='fixture_repo';mid='M2';base='sha256:'+'1'*64;agent='sha256:'+'2'*64;effective='sha256:'+'3'*64
     def inspect(*command):
@@ -249,7 +250,7 @@ def main():
         author_trial_recovery_budget_gate_verified=True,
         author_trial_watcher_start_stop_verified=True,author_trial_cleanup_returned=True,
         synthetic_image_inspections=len(calls),containers_started=0,model_calls=0,real_run_verified=False)
-    eval_plan.atomic_json(args.output,result);print(json.dumps(result))
+    artifact_io.atomic_json(args.output,result);print(json.dumps(result))
 
 
 if __name__=='__main__':main()

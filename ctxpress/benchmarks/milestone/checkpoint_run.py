@@ -11,7 +11,7 @@ from ctxpress.live.telemetry import summary
 from ctxpress.live.proxy import serve
 from ctxpress.live.factory import frozen_factory
 from ctxpress.methods import build as build_method
-from ctxpress.harness.jobs.plan import atomic_json
+from ctxpress.core.artifacts import atomic_json
 from ctxpress.harness.jobs import environment as eval_environment
 from ctxpress.benchmarks.milestone import checkpoint_grading as eval_grading
 from ctxpress.benchmarks.milestone.adapter import POINTS, boundaries as read_boundaries

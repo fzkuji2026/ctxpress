@@ -6,7 +6,7 @@ from ctxpress.core import toml
 from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.harness.jobs.task import validate
 from ctxpress.benchmarks.fresh import FreshAdapter
-from ctxpress.benchmarks.fresh import dataset_file as _file
+from ctxpress.benchmarks.fresh import dataset_file
 
 
 class HarborTasks(FreshAdapter):
@@ -54,7 +54,7 @@ class HarborTasks(FreshAdapter):
         if self.REQUIRE_MANIFEST and not manifest.is_file():
             raise ValueError(self.TITLE + ' requires a dataset_manifest.json identifying the dataset and release')
         if manifest.is_file():
-            path=_file(root,manifest.name);digest=eval_plan.file_sha256(path)
+            path=dataset_file(root,manifest.name);digest=eval_plan.file_sha256(path)
             meta=json.loads(path.read_text(encoding='utf-8'))
             if (not isinstance(meta,dict) or meta.get('dataset')!=self.NAME or
                     not isinstance(meta.get('revision'),str) or not meta['revision'].strip()):
@@ -68,7 +68,7 @@ class HarborTasks(FreshAdapter):
                 raise ValueError('task directories cannot contain symbolic links')
             inputs=[dict(item) for item in declared]
             def add(name,role):
-                path=_file(directory,name)
+                path=dataset_file(directory,name)
                 inputs.append(dict(role=role,path=str(path),sha256=eval_plan.file_sha256(path)))
                 return path
             instruction=add('instruction.md','task').read_text(encoding='utf-8')

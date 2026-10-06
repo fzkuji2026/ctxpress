@@ -6,6 +6,7 @@ from ctxpress.harness.runtime import codex_agent
 from ctxpress.benchmarks.bigcode.adapter import BigCodeBench
 from ctxpress.benchmarks.bigcode.protocol import PROOF
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.benchmarks.swe.trial import agent_class, AgentExitError
 from ctxpress.benchmarks.swe.containers import AgentEnvironment, Owner, completed_thread
 
@@ -49,7 +50,7 @@ def grade(request,client,problem,solution,owner,agent_owner):
     if not agent_owner.record['cleaned'] or agent_owner.record['credentials_may_exist']:
         raise RuntimeError('BigCodeBench grading requires checked Agent cleanup')
     root=Path(request['folder'])/'official-logs';root.mkdir();payload=root/'inputs';payload.mkdir();output=root/'outputs';output.mkdir()
-    problem_path=payload/'problem.json';eval_plan.atomic_json(problem_path,problem)
+    problem_path=payload/'problem.json';artifact_io.atomic_json(problem_path,problem)
     solution_path=payload/'solution.py';solution_path.write_text(solution,encoding='utf-8')
     report=output/'sample-result.json'
     resource=Path(request['folder'])/'samples.jsonl'
@@ -59,7 +60,7 @@ def grade(request,client,problem,solution,owner,agent_owner):
         problem='/ctxpress-grade-input/problem.json',solution='/ctxpress-grade-input/solution.py',
         problem_sha256=eval_plan.file_sha256(problem_path),solution_sha256=eval_plan.file_sha256(solution_path),
         result='/ctxpress-grade-output/sample-result.json')
-    eval_plan.atomic_json(payload/'request.json',args)
+    artifact_io.atomic_json(payload/'request.json',args)
     command=['python3','-I','-S','-B','/ctxpress-runtime/ctxpress/benchmarks/bigcode/grading.py','/ctxpress-grade-input/request.json']
     timeout=request['run'].get('grading_timeout',1800)
     try:
@@ -83,7 +84,7 @@ def grade(request,client,problem,solution,owner,agent_owner):
     record=dict(schema=PROOF,version=1,task_id=request['task']['id'],project=request['project'],report=artifact(report),samples=artifact(resource),
         agent_image=agent_owner.record['image'],verifier_image=owner.record['image'],
         agent_resources_sha256=eval_plan.file_sha256(agent_owner.path),verifier_resources_sha256=eval_plan.file_sha256(owner.path))
-    eval_plan.atomic_json(output/'code-resources.json',record)
+    artifact_io.atomic_json(output/'code-resources.json',record)
     return report
 
 
@@ -112,7 +113,7 @@ async def run(request,module,client,problem,channel,daemon_id):
     root=Path(request['folder']);files=[root/'samples.jsonl']
     files.extend(path for path in (root/'official-logs').rglob('*') if path.is_file() and not path.is_symlink())
     progress=codex_agent.CallProgress(root/'agent/sessions');calls,_=progress.update()
-    eval_plan.atomic_json(root/'swe-worker-result.json',dict(stop=stop,calls=calls,agent_exception=exception,
+    artifact_io.atomic_json(root/'swe-worker-result.json',dict(stop=stop,calls=calls,agent_exception=exception,
         official_report=str(report) if report else None,code_samples=str(root/'samples.jsonl'),sample_id=request['sample_index'],artifact_kind='code_samples',
         official_artifacts={path.relative_to(root).as_posix():dict(path=str(path.resolve()),sha256=eval_plan.file_sha256(path)) for path in files},
         separate_verifier=dict(agent_image=request['agent_image'],verifier_image=request['grading_image'],checked_cleanup=True,author_grading=bool(report)),

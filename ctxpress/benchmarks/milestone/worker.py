@@ -10,6 +10,7 @@ def load(request):
         raise ValueError('invalid frozen native preparation request')
     sys.path.insert(0,str(package))
     from ctxpress.harness.jobs import plan as eval_plan, resources as task_resources, environment as eval_environment, task as task_api
+    from ctxpress.core import artifacts as artifact_io
     from ctxpress.benchmarks.milestone import protocol as milestone_protocol
     lock,_=task_resources.read(request['resources'],'swe-milestone',[request['original_task']])
     task_api.verify_remap(request['original_task'],request['task'])
@@ -52,9 +53,10 @@ def main(argv=None):
         result=run(request,source);print(json.dumps(result));return
     if args.read_grade:
         from ctxpress.harness.jobs import plan as eval_plan
+        from ctxpress.core import artifacts as artifact_io
         from ctxpress.benchmarks.milestone.grade import read
         result=read(request['task'],source,request['trial'])
-        eval_plan.atomic_json(Path(request['folder'])/'native-grade.json',result)
+        artifact_io.atomic_json(Path(request['folder'])/'native-grade.json',result)
         print(json.dumps(dict(task_id=request['task']['id'],collector='verified',model_calls=0,containers_started=0)))
         return
     from ctxpress.benchmarks.milestone.native import prepare

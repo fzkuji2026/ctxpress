@@ -6,6 +6,7 @@ finite queue in the background; results do not establish task quality.
 import argparse, copy, json
 from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation
+from ctxpress.core import artifacts as artifact_io
 
 ENTRIES = [
     ("CodexAutoCompact", {"t": 230000}),
@@ -116,7 +117,7 @@ def main(argv=None):
         boundaries=a.boundary, methods=methods, repeats=1, workers=a.workers,
         run=dict(max_calls=a.calls, timeout=a.timeout, compact_limit=a.compact_limit, installed=True, submit=False))
     plan = eval_plan.compile_plan(config)
-    eval_plan.atomic_json(a.out, plan)
+    artifact_io.atomic_json(a.out, plan)
     result = dict(plan=str(Path(a.out).resolve()), sha256=plan["sha256"], run_count=plan["run_count"],
         max_parallel=plan["max_parallel"], agent_timeout_seconds_upper_bound=plan["agent_timeout_seconds_upper_bound"],
         boundaries=a.boundary, omitted=omitted, missing_environment_files=plan["missing_environment_files"], cost_evidence=plan["cost_evidence"],

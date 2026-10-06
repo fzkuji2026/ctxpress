@@ -254,13 +254,13 @@ def check(binary, directory, method, timeout=45, *, model="offline-fixture", mod
                         for item in long_outputs)
                 expected_exit = process.returncode == 0
                 if scenario == 'hidden-control':
-                    from ctxpress.live.control_receipts import route_failures as _route_failures
+                    from ctxpress.live.control_receipts import route_failures
                     outputs = [item for request in requests for item in request.get('input', [])
                                if item.get('call_id') == 'fixture_0' and item.get('type') == 'custom_tool_call_output']
                     checks = dict(control_executed=bool(issued), no_direct_boundary=not observed_receipts,
                         output_discarded=bool(outputs) and all('start [expl]' not in content_text(item.get('output')) for item in outputs),
                         host_inventory_unavailable=bool(outputs) and all(not (item.get('internal_chat_message_metadata_passthrough') or {}).get('executed_tool_calls') for item in outputs),
-                        receipt_audit_rejected=any('no verified direct' in f['error'] for f in _route_failures(dict(rewrites=rows))),
+                        receipt_audit_rejected=any('no verified direct' in f['error'] for f in route_failures(dict(rewrites=rows))),
                         receipts_not_sent_to_model='<ctxpress-control-receipt:' not in json.dumps(requests))
                     expected_exit = process.returncode != 0
                 cleaned = not list(Path(home).glob('ctxpress-*.config.toml'))

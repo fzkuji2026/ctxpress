@@ -21,6 +21,7 @@ def load(request):
     sys.path[:0] = [str(package), str(official / framework / 'src'), str(official / 'dependencies')]
     from ctxpress.core import toml
     from ctxpress.harness.jobs import plan as eval_plan
+    from ctxpress.core import artifacts as artifact_io
     if eval_plan.file_sha256(sys.executable) != runtime['sha256']:
         raise ValueError('Harbor Python binary changed')
     from ctxpress.harness.runtime.codex_agent import check_catalog
@@ -85,10 +86,11 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
     from ctxpress.harness.runtime import codex_agent
     from ctxpress.benchmarks.harbor import environment as harbor_environment
     from ctxpress.harness.jobs import plan as eval_plan
+    from ctxpress.core import artifacts as artifact_io
     Codex, ExecInput, LimitError, Docker, ExecResult, Config, Trial = official
     owner = resource_record(request, channel, journal['daemon_id'])
     path = Path(request['folder']) / ('resources-harbor-' + request['project'] + '.json')
-    eval_plan.atomic_json(path, owner)
+    artifact_io.atomic_json(path, owner)
     trial = None
     async def cleanup(environment):
         if trial is not None:
@@ -99,10 +101,10 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
             owner['compose_sha256'] = eval_plan.file_sha256(environment._ctxpress_guard_path)
         if environment.ctxpress_gpu_evidence is not None:
             owner['gpu'] = environment.ctxpress_gpu_evidence
-        eval_plan.atomic_json(path, owner)
+        artifact_io.atomic_json(path, owner)
     def credentials(may_exist):
         owner['credentials_may_exist'] = may_exist
-        eval_plan.atomic_json(path, owner)
+        artifact_io.atomic_json(path, owner)
     trial_root = Path(request['folder']) / request['project']
     binds = {request['package']:True, request['bindir']:True, request['profiles']:True,
              str(Path(request['task'])/'environment'):True,
@@ -131,7 +133,7 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
             if request.get('pro_base_commit'):
                 from ctxpress.benchmarks.pro.trial import check_repository
                 await check_repository(self,request['pro_base_commit'])
-                owner['pro_base_commit']=request['pro_base_commit'];eval_plan.atomic_json(path,owner)
+                owner['pro_base_commit']=request['pro_base_commit'];artifact_io.atomic_json(path,owner)
     # The official factories import these custom classes by module path.
     sys.modules['ctxpress.benchmarks.harbor.worker'] = sys.modules[__name__]
     trial = Trial(trial_config(request, Config, channel))
@@ -154,7 +156,7 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
     state = dict(stop=stop, calls=calls)
     if trial._environment.ctxpress_gpu_evidence is not None:
         state['gpu'] = trial._environment.ctxpress_gpu_evidence
-    eval_plan.atomic_json(Path(request['folder'])/'harbor-worker-result.json', state)
+    artifact_io.atomic_json(Path(request['folder'])/'harbor-worker-result.json', state)
 
 
 def main(argv=None):
@@ -171,15 +173,16 @@ def main(argv=None):
         return
     from ctxpress.harness.runtime import connect_proxy, socket_bridge
     from ctxpress.harness.jobs import plan as eval_plan
+    from ctxpress.core import artifacts as artifact_io
     from ctxpress.benchmarks.harbor.driver import docker, cleanup_channel
     daemon_id = docker('info', '--format', '{{.ID}}').strip()
     if request.get('gpu_daemon_id') and request['gpu_daemon_id'] != daemon_id:
         raise ValueError('Docker daemon changed after GPU reservation')
     channel = Path(tempfile.mkdtemp(prefix=request['project']+'-channel-'))
     channel.chmod(0o755)
-    eval_plan.atomic_json(channel/'owner.json', dict(project=request['project'], label=request['label']))
+    artifact_io.atomic_json(channel/'owner.json', dict(project=request['project'], label=request['label']))
     resource_path = Path(request['folder']) / ('resources-harbor-' + request['project'] + '.json')
-    eval_plan.atomic_json(resource_path, resource_record(request, channel, daemon_id))
+    artifact_io.atomic_json(resource_path, resource_record(request, channel, daemon_id))
     server, thread = None, None
     try:
         template = connect_proxy.make_server('127.0.0.1', 0, [request['target']], via=request['via'])

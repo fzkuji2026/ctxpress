@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from ctxpress.benchmarks.pro import v1 as pro_v1
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.benchmarks.swe.containers import check_repo
 
 
@@ -104,5 +105,5 @@ def grade(request,module,client,sample,owner,agent_owner,prediction):
         agent_image=agent_owner.record['image'],verifier_image=image_id,
         agent_resources_sha256=eval_plan.file_sha256(agent_owner.path),verifier_resources_sha256=eval_plan.file_sha256(owner.path),
         protocol='ctxpress_comparison',published_protocol_reproduced=False)
-    eval_plan.atomic_json(root/'pro-v1-grade.json',record)
+    artifact_io.atomic_json(root/'pro-v1-grade.json',record)
     return report

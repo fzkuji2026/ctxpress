@@ -8,6 +8,7 @@ from ctxpress.benchmarks.bigcode import protocol as code_protocol
 from ctxpress.benchmarks.swe import driver as swe_driver
 from ctxpress.benchmarks.bigcode import grading as code_grading, report as code_report, trial as code_trial
 from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.harness.results import outcomes as eval_outcomes, report as eval_report
 from test_swe_runner import Client, AGENT, GRADER, request as swe_request
 
@@ -120,7 +121,7 @@ def test_frozen_host_and_grader_preflight_checks_author_api_after_sources_remove
     req,_=swe_driver.prepare(found,job['method'],config,job,directory/'attempt','plan-job')
     assert req['api']=='codebench' and req['sample_index']==0 and req['n_samples']==3
     assert 'hidden' not in json.dumps(req) and not plan['benchmark']['real_run_verified']
-    path=directory/'preflight.json';eval_plan.atomic_json(path,req)
+    path=directory/'preflight.json';artifact_io.atomic_json(path,req)
     result=original_run([sys.executable,'-I','-S','-B',str(swe_driver.WORKER),str(path),'--check'],
         capture_output=True,text=True,timeout=15,env={'PATH':'/usr/bin:/bin'})
     if change is None:
@@ -203,7 +204,7 @@ class CodeClient(Client):
                 output=Path(next(path for path,mount in volumes.items() if mount['bind']=='/ctxpress-grade-output'))
                 request=json.loads((inputs/'request.json').read_text(encoding='utf-8'));problem=json.loads((inputs/'problem.json').read_text(encoding='utf-8'))
                 result_data=code_grading.evaluate(request,self.official,problem,(inputs/'solution.py').read_text(encoding='utf-8'))
-                eval_plan.atomic_json(output/'sample-result.json',result_data)
+                artifact_io.atomic_json(output/'sample-result.json',result_data)
             return result
         container.exec_run=execute;return container
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib, signal, threading
 from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 
 
 class DrainTimeout(RuntimeError):
@@ -34,12 +35,12 @@ def drain(trial, owner, seconds):
                   container=owner.record['container'], phase='stopping-agent',
                   agent_quiesced=False, watcher_present=watcher is not None,
                   watcher_joined=False, author_cleanup_returned=False)
-    eval_plan.atomic_json(path, record)
+    artifact_io.atomic_json(path, record)
     try:
         if owner.existing():
             owner.stop_agent()
         record.update(agent_quiesced=True, phase='draining-grades')
-        eval_plan.atomic_json(path, record)
+        artifact_io.atomic_json(path, record)
         stop.set()
         if watcher is not None:
             # An existing Thread object that never started is a contract error,
@@ -49,11 +50,11 @@ def drain(trial, owner, seconds):
                 raise DrainTimeout('native grading workers are still active; retain owned resources')
         record.update(phase='drained', watcher_joined=True,
                       watcher_exited_clean=bool(getattr(trial, '_watcher_exited_clean', False)))
-        eval_plan.atomic_json(path, record)
+        artifact_io.atomic_json(path, record)
         return path, record
     except BaseException as error:
         record.update(phase='drain-incomplete', error_type=type(error).__name__)
-        eval_plan.atomic_json(path, record)
+        artifact_io.atomic_json(path, record)
         raise
 
 
@@ -92,13 +93,13 @@ def installed(code, owner, shutdown_seconds):
                 self.remove_container = False
                 result = super().cleanup()
                 record.update(phase='author-cleanup-returned', author_cleanup_returned=True)
-                eval_plan.atomic_json(path, record)
+                artifact_io.atomic_json(path, record)
                 owner.registry.release_trial(record)
                 return result
             except BaseException as error:
                 if record is not None:
                     record.update(phase='author-cleanup-failed', error_type=type(error).__name__)
-                    eval_plan.atomic_json(path, record)
+                    artifact_io.atomic_json(path, record)
                 raise
             finally:
                 self.remove_container = previous_remove

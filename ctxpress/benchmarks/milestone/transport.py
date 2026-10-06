@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from ctxpress.harness.runtime import connect_proxy, socket_bridge
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 from ctxpress.benchmarks.milestone.resources import docker, identity, SCHEMA as CONTAINER_SCHEMA
 from ctxpress.harness.runtime.socket_bridge import cleanup_channel
@@ -36,7 +37,7 @@ class Channel:
             channel=None,cleaned=False,phase='prepared')
         self.persist()
 
-    def persist(self):eval_plan.atomic_json(self.path,self.record)
+    def persist(self):artifact_io.atomic_json(self.path,self.record)
 
     def open(self):
         if self.record['phase']!='prepared':raise ValueError('native channel can open only once')
@@ -50,7 +51,7 @@ class Channel:
         else:raise ValueError('could not allocate an unused native channel')
         self.record.update(channel=str(channel),phase='creating');self.persist()
         channel.mkdir(mode=0o755);channel.chmod(0o755)
-        eval_plan.atomic_json(channel/'owner.json',dict(project=self.registry.project,label=self.registry.label))
+        artifact_io.atomic_json(channel/'owner.json',dict(project=self.registry.project,label=self.registry.label))
         template=connect_proxy.make_server('127.0.0.1',0,[self.target],via=self.via)
         handler=template.RequestHandlerClass;template.server_close()
         self.server=socket_bridge.unix_server(channel/'model.sock',handler);(channel/'model.sock').chmod(0o666)
@@ -114,7 +115,7 @@ def recover(path,label):
         raise ValueError('native worker is still alive; channel recovery cannot interrupt it')
     if docker('info','--format','{{.ID}}').strip()!=record['daemon_id']:raise ValueError('native channel Docker daemon changed')
     _verify_agent_removed(record,path.parent);_remove_channel(record)
-    record.update(cleaned=True,phase='stopped');eval_plan.atomic_json(path,record)
+    record.update(cleaned=True,phase='stopped');artifact_io.atomic_json(path,record)
 
 
 RELAY_START='''import json,subprocess,time

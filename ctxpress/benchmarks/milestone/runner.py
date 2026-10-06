@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib, datetime, math, os, re, signal
 from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.benchmarks.milestone import agent as milestone_agent, budget as milestone_budget, containers as milestone_containers
 from ctxpress.benchmarks.milestone import grade as milestone_grade, native as milestone_native, resources as milestone_resources, transport as milestone_transport
 from ctxpress.benchmarks.milestone import trial as milestone_trial, version as milestone_version
@@ -133,7 +134,7 @@ def run(request, source):
                     runtime_policy_binding=prepared['runtime_policy_binding'].to_metadata(trial),
                     **{name:metadata.get(name,[]) for name in ('repo_src_dirs','test_dirs','exclude_patterns','generated_patterns','modifiable_test_patterns')})
                 if catalog_metadata is not None:author_metadata['ctxpress_model_catalog']=catalog_metadata
-                eval_plan.atomic_json(trial/'trial_metadata.json',author_metadata)
+                artifact_io.atomic_json(trial/'trial_metadata.json',author_metadata)
                 owner=native.container_setup.ctxpress_owner
                 drain_seconds=run.get('grading_timeout',native.config.evaluation_timeout)
                 with milestone_agent.installed(source,owner,auth,budget), milestone_trial.installed(source,owner,drain_seconds):
@@ -162,12 +163,12 @@ def run(request, source):
             author_success=bool(success),stop=budget.reason or ('trial_error' if error else 'completed' if success else 'agent_incomplete'),
             error_type=error,cleanup_complete=not failures,calls=budget.count,real_run_verified=False)
         if catalog_metadata is not None:state['model_catalog']=catalog_metadata
-        eval_plan.atomic_json(folder/'native-execution.json',state)
+        artifact_io.atomic_json(folder/'native-execution.json',state)
         if failures:raise RuntimeError('native cleanup incomplete; resource journals retained') from failures[0]
     try:grade=milestone_grade.read(task,source,trial)
     except BaseException as failure:
         state.update(stop='grading_error',error_type=type(failure).__name__)
-        eval_plan.atomic_json(folder/'native-execution.json',state)
+        artifact_io.atomic_json(folder/'native-execution.json',state)
         raise
-    eval_plan.atomic_json(folder/'native-grade.json',grade)
+    artifact_io.atomic_json(folder/'native-grade.json',grade)
     return state

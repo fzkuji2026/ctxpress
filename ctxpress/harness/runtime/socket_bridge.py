@@ -9,6 +9,7 @@ import argparse, json, socket, socketserver, tempfile, threading
 from pathlib import Path
 from ctxpress.harness.runtime.connect_proxy import relay
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 
 
@@ -62,7 +63,7 @@ def main(argv=None):
     parser.add_argument('--ready-file', required=True)
     args = parser.parse_args(argv)
     with loopback_server(args.socket) as server:
-        eval_plan.atomic_json(args.ready_file, dict(pid=os.getpid(), identity=processes.identity(os.getpid()),
+        artifact_io.atomic_json(args.ready_file, dict(pid=os.getpid(), identity=processes.identity(os.getpid()),
             url=f'http://127.0.0.1:{server.server_address[1]}'))
         server.serve_forever()
 

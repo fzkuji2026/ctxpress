@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from ctxpress.harness.results import compare as eval_compare
 from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.live import usage as eval_usage
 from ctxpress.harness.results.report import report, write_report
 from test_evaluation import config
@@ -35,7 +36,7 @@ def cohort(tmp_path,reference=((True,True),(False,False)),candidate=((True,True)
                     evaluation_environment=dict(harness_revision='ctxpress-frozen:'+GRADING,snapshot_agent_tag_commit=spec['id'],
                         repo_config_binding_mode='trial-pinned',repo_config_sha256='fixture-config-hash',runtime_policy_binding_mode='trial-pinned',
                         runtime_policy_mode='protected',runtime_policy_sha256='fixture-config-hash'))
-                eval_plan.atomic_json(path,raw)
+                artifact_io.atomic_json(path,raw)
                 usage=dict(input_tokens=tokens,cached_tokens=10,output_tokens=2)
                 result=dict(model='fixture-model',reasoning='low',requests=1,rewrites=[dict(request=1,usage=usage)],
                     usage=dict(summary_calls=0,api_input_tokens=tokens,api_cached_tokens=10,api_output_tokens=2),
@@ -118,7 +119,7 @@ def test_incomplete_or_unverified_pairs_never_become_successes(tmp_path,failure)
             elif failure=='synthetic': result['test_only']=True
             elif failure=='raw-synthetic':
                 path=Path(result['grade']['report']);raw=json.loads(path.read_text(encoding='utf-8'));raw['test_only']=True
-                eval_plan.atomic_json(path,raw);result['grade']['report_sha256']=eval_plan.file_sha256(path)
+                artifact_io.atomic_json(path,raw);result['grade']['report_sha256']=eval_plan.file_sha256(path)
             elif failure=='wrong-environment': result['environment']['boundary_image_id']='changed'
             elif failure=='wrong-grader': result['grade']['grading_manifest_sha256']='changed'
             elif failure=='wrong-model': result['model']='another-model'

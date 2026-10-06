@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import quote
 from ctxpress.harness.runtime import connect_proxy, socket_bridge
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.harness.runtime.docker import docker
 from ctxpress.harness.runtime.service_resources import Rejected, Response, Scope, recover as recover_scope
 
@@ -185,7 +186,7 @@ class Gateway:
         if root.exists() or root.is_symlink():raise Rejected('service transport name is already occupied')
         self.record.update(channel=str(root),phase='creating');self.scope.persist()
         root.mkdir(mode=0o755);root.chmod(0o755)
-        eval_plan.atomic_json(root/'owner.json',{'project':self.record['project'],'label':self.record['label'],'scope':self.record['scope']})
+        artifact_io.atomic_json(root/'owner.json',{'project':self.record['project'],'label':self.record['label'],'scope':self.record['scope']})
         self.server=socket_bridge.unix_server(root/'docker.sock',handler(self.scope,self.connections));(root/'docker.sock').chmod(0o666)
         self.thread=threading.Thread(target=self.server.serve_forever,name='ctxpress-services-'+self.record['scope'],daemon=True)
         self.thread.start();self.record['phase']='serving';self.scope.persist();return root

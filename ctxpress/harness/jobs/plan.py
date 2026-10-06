@@ -2,7 +2,6 @@
 from __future__ import annotations
 import hashlib, json, math
 from pathlib import Path
-from ctxpress.core.artifacts import atomic_json
 from ctxpress import benchmarks
 
 

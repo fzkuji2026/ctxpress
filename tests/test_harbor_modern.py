@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 from ctxpress import benchmarks
 from ctxpress.benchmarks.harbor import driver as harbor_driver, protocol as harbor_protocol
+from ctxpress.harness.runtime import gpu as runtime_gpu
 from ctxpress.benchmarks.harbor.environment import compose_output
 from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan, resources as task_resources
 from ctxpress.benchmarks.harbor import modern as harbor_modern
@@ -116,8 +117,8 @@ def test_phase_resource_capture_binds_grader_gpus_before_image_inspection(tmp_pa
     monkeypatch.setattr(eval_environment,'image',lambda value:{'id':IMAGE})
     lock=task_resources.capture(spec,selected)
     assert lock['tasks'][selected[0]['id']]['verifier_gpu_device_ids']==[A]
-    assert harbor_protocol.claimed_gpus(dict(gpu_device_ids=None,verifier_gpu_device_ids=[A]))==[A]
-    assert harbor_protocol.claimed_gpus(dict(gpu_device_ids=[A],verifier_gpu_device_ids=[A.lower()]))==[A]
+    assert runtime_gpu.claimed_gpus(dict(gpu_device_ids=None,verifier_gpu_device_ids=[A]))==[A]
+    assert runtime_gpu.claimed_gpus(dict(gpu_device_ids=[A],verifier_gpu_device_ids=[A.lower()]))==[A]
 
 
 def test_scheduler_reserves_grader_only_devices_without_consuming_cpu_slots():
@@ -170,9 +171,9 @@ def test_prepare_dispatches_frozen_modern_api_and_separate_gpu_phase(tmp_path,mo
 def test_reports_keep_grader_gpu_binding_without_agent_devices(tmp_path):
     from ctxpress.harness.jobs import queue as evaluation
     from ctxpress.harness.results.report import report, write_report
-    from ctxpress.harness.runtime import gpu as harbor_gpu
+    from ctxpress.harness.runtime import gpu as runtime_gpu
     _,directory,_,job,_=frozen_modern(tmp_path)
-    evidence=harbor_gpu.observed(QUERY,[A],['H100'])
+    evidence=runtime_gpu.observed(QUERY,[A],['H100'])
     with evaluation.database(directory) as connection:
         connection.execute("UPDATE jobs SET status='completed',attempt=1,result=? WHERE id=?",(json.dumps(dict(test_only=True,
             verifier_gpu=evidence,network_policy='ctxpress_private_services_model_socket_only',harbor_api='single_step',

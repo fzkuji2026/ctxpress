@@ -5,7 +5,7 @@ from graphlib import TopologicalSorter
 from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan, trees as eval_trees
 from ctxpress.harness.jobs.task import validate
-from ctxpress.benchmarks.fresh import dataset_file as _file
+from ctxpress.benchmarks.fresh import dataset_file
 
 
 def _ids(path):
@@ -15,12 +15,12 @@ def _ids(path):
 
 def itinerary(workspace):
     root = Path(workspace).expanduser().resolve()
-    metadata = json.loads(_file(root, 'metadata.json').read_text(encoding='utf-8'))
+    metadata = json.loads(dataset_file(root, 'metadata.json').read_text(encoding='utf-8'))
     if not isinstance(metadata.get('repo_name'), str) or not metadata['repo_name']:
         raise ValueError('dataset metadata must declare repo_name')
     inputs = []; seen = set(); directories = set()
     def add(relative, role):
-        path = _file(root, relative)
+        path = dataset_file(root, relative)
         if str(path) not in seen:
             inputs.append(dict(role=role, path=str(path), sha256=eval_plan.file_sha256(path)))
             seen.add(str(path))
@@ -76,7 +76,7 @@ def itinerary(workspace):
     sibling_config_sha256 = None
     config = root.parent / 'config' / (root.name + '.yaml')
     if config.exists() or config.is_symlink():
-        path = _file(root.parent, 'config/' + root.name + '.yaml')
+        path = dataset_file(root.parent, 'config/' + root.name + '.yaml')
         sibling_config_sha256 = eval_plan.file_sha256(path)
         inputs.append(dict(role='grading', path=str(path), sha256=sibling_config_sha256))
     for value in active:

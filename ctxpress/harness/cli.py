@@ -5,6 +5,7 @@ import argparse, json, sqlite3
 from pathlib import Path
 from ctxpress import benchmarks
 from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation, task as tasks
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.harness.results import task_compare
 
 
@@ -109,7 +110,7 @@ def main(argv=None):
         if destination == spec_path or any(destination == root or root in destination.parents for root in roots):
             ap.error('resource manifest output must be outside its dataset, official input trees and capture specification')
         lock = task_resources.capture(spec, [catalog[key] for key in args.task])
-        eval_plan.atomic_json(destination, lock)
+        artifact_io.atomic_json(destination, lock)
         result = dict(manifest=str(destination), sha256=lock['sha256'], tasks=list(args.task),
                       experiments_started=0, downloads_started=0, scope=lock['scope'])
     elif args.command == 'capture-environment':
@@ -125,11 +126,11 @@ def main(argv=None):
             ap.error('boundaries must use n:j coordinates')
         lock = eval_environment.capture(source, args.base_image, coordinates)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        eval_plan.atomic_json(destination, lock)
+        artifact_io.atomic_json(destination, lock)
         result = dict(manifest=str(destination), sha256=lock['sha256'], images=lock['images'],
                       workspace_files=len(lock['workspace']['files']), experiments_started=0)
     elif args.command == 'capture-grader':
-        from ctxpress.benchmarks.milestone import checkpoint_grading as eval_grading
+        from ctxpress.harness.jobs import grading_inputs
         destination = Path(args.output).expanduser().resolve()
         sources = [Path(path).expanduser().resolve() for path in (args.code,args.data,args.trials)]
         if any(destination == source or source in destination.parents for source in sources):
@@ -140,9 +141,9 @@ def main(argv=None):
                 raise ValueError()
         except ValueError:
             ap.error('boundaries must use n:j coordinates')
-        lock = eval_grading.capture(args.code,args.data,args.trials,coordinates)
+        lock = grading_inputs.capture(args.code,args.data,args.trials,coordinates)
         destination.parent.mkdir(parents=True,exist_ok=True)
-        eval_plan.atomic_json(destination,lock)
+        artifact_io.atomic_json(destination,lock)
         result = dict(manifest=str(destination),sha256=lock['sha256'],images=lock['images'],
                       input_files=sum(len(tree['files']) for tree in lock['trees'].values()),scope=lock['scope'],experiments_started=0)
     elif args.command == 'configure':
@@ -157,7 +158,7 @@ def main(argv=None):
         source = Path(args.config)
         plan = eval_plan.compile_plan(json.loads(source.read_text(encoding="utf-8")), source.resolve().parent)
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-        eval_plan.atomic_json(args.output, plan)
+        artifact_io.atomic_json(args.output, plan)
         result = {key: plan[key] for key in ("sha256", "run_count", "max_parallel", "agent_timeout_seconds_upper_bound", "context_evidence", "cost_evidence", "missing_environment_files")}
     elif args.command == "run":
         result = evaluation.start(args.plan, args.directory, args.background, args.retry)

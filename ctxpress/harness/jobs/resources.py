@@ -36,9 +36,9 @@ def verify(lock, benchmark, selected):
         if not isinstance(record, dict) or record.get('task_sha256') != task_digest(task):
             raise ValueError('task resources do not bind the selected task data: ' + task['id'])
         if 'gpu_device_ids' in record:
-            from ctxpress.harness.runtime import gpu as harbor_gpu
-            count = harbor_gpu.requirements(task['initial_state'].get('environment', {}))['count']
-            harbor_gpu.device_ids(record['gpu_device_ids'], count)
+            from ctxpress.harness.runtime import gpu as runtime_gpu
+            count = runtime_gpu.requirements(task['initial_state'].get('environment', {}))['count']
+            runtime_gpu.device_ids(record['gpu_device_ids'], count)
         from ctxpress.harness.runtime.gpu import validate_verifier_gpus
         validate_verifier_gpus(task, record)
         validate_verifier_caps(benchmark, record)
@@ -128,10 +128,10 @@ def capture(spec, selected):
                 not re.fullmatch(r'[a-zA-Z0-9_-]+', key) or not isinstance(reference, str) or not reference
                 for key, reference in services.items())):
             raise ValueError('declare explicit auxiliary service names and image references')
-        from ctxpress.harness.runtime import gpu as harbor_gpu
-        count = harbor_gpu.requirements(task['initial_state'].get('environment', {}))['count']
+        from ctxpress.harness.runtime import gpu as runtime_gpu
+        count = runtime_gpu.requirements(task['initial_state'].get('environment', {}))['count']
         if count or 'gpu_device_ids' in definition:
-            harbor_gpu.device_ids(definition.get('gpu_device_ids'), count)
+            runtime_gpu.device_ids(definition.get('gpu_device_ids'), count)
         from ctxpress.harness.runtime.gpu import validate_verifier_gpus
         validate_verifier_gpus(task, definition, require=True)
         validate_verifier_caps(spec['benchmark'], definition)

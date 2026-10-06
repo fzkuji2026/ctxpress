@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ctxpress import benchmarks
 from ctxpress.harness.jobs import plan as eval_plan, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 
 # the SWE-Milestone authors' code checkout
 AUTHOR_CODE = Path(os.environ.get('CTXPRESS_MILESTONE_AUTHOR_CODE', '~/swe/SWE-Milestone')).expanduser()
@@ -120,7 +121,7 @@ def main():
     result = inventory(protocol, project)
     destination = (project/args.output).resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
-    eval_plan.atomic_json(destination, result)
+    artifact_io.atomic_json(destination, result)
     print(json.dumps(dict(output=str(destination), experiments_started=0, downloads_started=0,
                          families=[{key: row[key] for key in ('family', 'task_count', 'ready_for_real_run')} for row in result['families']]),
                      ensure_ascii=False, indent=2))

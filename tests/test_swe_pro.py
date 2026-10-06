@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 from ctxpress import benchmarks
 from ctxpress.benchmarks.harbor import driver as harbor_driver
+from ctxpress.harness.runtime import socket_bridge
 from ctxpress.benchmarks.pro import protocol as pro_protocol
 from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
 from ctxpress.benchmarks.harbor import modern as harbor_modern, worker as harbor_worker
@@ -228,7 +229,7 @@ def test_full_pro_pipeline_uses_native_guards_capture_and_clean_replay(tmp_path,
     assert not any(mount['target'] in ('/cxbin','/ctxpress-runtime','/ctxpress-channel') for mount in envs[1]._mounts)
     grade=benchmarks.get('swe-bench-pro').read_grade(found,state['official_report'])
     assert grade['resolved']==bool(patch_text) and grade['authoritative_phase']=='fresh_regrade'
-    harbor_driver.cleanup_channel(json.loads((tmp_path/('resources-harbor-'+state['fresh_regrade']['regrade_project']+'.json')).read_text(encoding='utf-8')))
+    socket_bridge.cleanup_channel(json.loads((tmp_path/('resources-harbor-'+state['fresh_regrade']['regrade_project']+'.json')).read_text(encoding='utf-8')))
     before=Path(state['official_report']).read_bytes();Path(state['official_report']).write_bytes(before+b' ')
     assert benchmarks.get('swe-bench-pro').read_grade(found,state['official_report'])['resolved'] is None
 

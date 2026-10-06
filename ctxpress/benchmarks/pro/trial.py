@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy, hashlib, importlib, inspect, json, re, shutil
 from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 
 
 def load(request,official):
@@ -100,7 +101,7 @@ async def run_trial(request,official,channel,journal):
     primary=artifact(agent_report)
     if not request['run']['grade']:
         agent_state.update(agent_report=primary,submission=artifact(copied),pro_version='v2',fresh_regrade=False)
-        eval_plan.atomic_json(state_path,agent_state);return
+        artifact_io.atomic_json(state_path,agent_state);return
     regrade=copy.deepcopy(request);regrade['project']='ctxp-hb-'+hashlib.sha256((request['project']+':pro-regrade').encode()).hexdigest()[:24]
     regrade.update(pro_replay=True,model='replay',images={'main':request['grading_image']},separate_verifier=False)
     regrade['run']['timeout']=300  # Author replay applies the patch with a 300s limit.
@@ -114,7 +115,7 @@ async def run_trial(request,official,channel,journal):
         agent_report=primary,regrade_report=secondary,submission=artifact(copied),
         agent_resources_sha256=eval_plan.file_sha256(owner_path),regrade_resources_sha256=eval_plan.file_sha256(regrade_owner),
         checked_agent_cleanup=True,regrade_model_calls=0,published_protocol_reproduced=False)
-    eval_plan.atomic_json(folder/'pro-regrade.json',record)
+    artifact_io.atomic_json(folder/'pro-regrade.json',record)
     grade_state=json.loads(state_path.read_text(encoding='utf-8'))
     agent_state.update(official_report=str(regrade_report.resolve()),agent_report=primary,regrade_report=secondary,
         submission=record['submission'],pro_version='v2',fresh_regrade=record,
@@ -123,4 +124,4 @@ async def run_trial(request,official,channel,journal):
         official_artifacts={**agent_state.get('official_artifacts',{}),
             **{regrade['project']+'/'+key:value for key,value in grade_state.get('official_artifacts',{}).items()},
             'pro-submission/model.patch':record['submission'],'pro-regrade.json':artifact(folder/'pro-regrade.json')})
-    eval_plan.atomic_json(state_path,agent_state)
+    artifact_io.atomic_json(state_path,agent_state)

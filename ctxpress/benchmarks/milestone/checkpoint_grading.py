@@ -3,8 +3,7 @@ from __future__ import annotations
 import hashlib, importlib.util, json, os, re, subprocess, sys
 from pathlib import Path
 from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan
-from ctxpress.harness.jobs.grading_inputs import (SCHEMA, FOLDERS, capture, dependencies, folder, load, read,
-    relative, tree, verify, verify_copies)  # noqa: F401  (the grading interface)
+from ctxpress.harness.jobs.grading_inputs import folder, load, verify, verify_copies
 
 
 def runtime(lock,root,n,j,check_images=True):

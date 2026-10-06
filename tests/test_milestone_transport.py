@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 from ctxpress.benchmarks.milestone import transport
 from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.harness.runtime import agent_process
 from ctxpress.core import processes
 from test_connect_proxy import header
@@ -49,9 +50,9 @@ def test_channel_directory_is_preserved_while_an_agent_or_credentials_are_retain
     path=tmp_path/('resources-milestone-'+PROJECT+'-agent.json')
     record=dict(schema=transport.CONTAINER_SCHEMA,project=PROJECT,label='fixture',daemon_id=registry.daemon,
         container=PROJECT+'-agent',cleaned=True,credentials_may_exist=True)
-    eval_plan.atomic_json(path,record)
+    artifact_io.atomic_json(path,record)
     with pytest.raises(ValueError,match='checked and removed'):channel.cleanup()
-    record['credentials_may_exist']=False;eval_plan.atomic_json(path,record);channel.cleanup()
+    record['credentials_may_exist']=False;artifact_io.atomic_json(path,record);channel.cleanup()
     assert channel.record['cleaned']
 
 

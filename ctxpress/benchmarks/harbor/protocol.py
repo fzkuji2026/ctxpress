@@ -1,8 +1,6 @@
 """Explicit Harbor phase and frozen runtime API selection, without imports."""
 from __future__ import annotations
 import copy
-from ctxpress.harness.runtime import gpu as harbor_gpu
-from ctxpress.harness.runtime.gpu import claimed_gpus, validate_verifier_gpus
 
 
 def verifier_environment(config):

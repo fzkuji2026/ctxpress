@@ -8,6 +8,7 @@ import shutil, sys
 from pathlib import Path
 from ctxpress.benchmarks.milestone.protocol import metadata_source
 from ctxpress.harness.jobs import plan as eval_plan, trees as eval_trees
+from ctxpress.core import artifacts as artifact_io
 
 
 def layout(task):
@@ -109,6 +110,6 @@ def prepare(task,code,directory):
         e2e_config_sha256=eval_plan.file_sha256(config_path),
         inputs={name:dict(path=str(directory/'native-inputs'/name),sha256=item['sha256'],role=item['role']) for name,item in layout(task).items()},
         native_dag=True,containers_started=0,model_calls=0,execution_supported=False,real_run_verified=False)
-    eval_plan.atomic_json(directory/'preparation.json',audit)
+    artifact_io.atomic_json(directory/'preparation.json',audit)
     return dict(workspace=workspace,trial=trial,metadata=metadata,config_path=config_path,
         repo_config_binding=config_binding,runtime_policy_binding=policy_binding,dag=dag,audit=audit)

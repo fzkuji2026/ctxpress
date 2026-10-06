@@ -3,6 +3,7 @@ from __future__ import annotations
 import json, os, re, signal, subprocess, time, urllib.parse, uuid
 from pathlib import Path
 from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 from ctxpress.live.telemetry import summary
 from ctxpress.harness.runtime import codex_agent
@@ -98,14 +99,14 @@ def recover(path,label):
                 'rm -f /ctxpress-private/codex/auth.json; test ! -e /ctxpress-private/codex/auth.json && test ! -L /ctxpress-private/codex/auth.json')
             docker('stop','-t','5',identifier)
         docker('rm','-f','-v',identifier)
-    record.update(cleaned=True,phase='recovered',credentials_may_exist=False);eval_plan.atomic_json(path,record)
+    record.update(cleaned=True,phase='recovered',credentials_may_exist=False);artifact_io.atomic_json(path,record)
     if record['role']=='agent':socket_bridge.cleanup_channel(record)
 
 
 def execute(adapter,task,entry,config,job,*,paths,folder,label):
     folder=Path(folder).resolve();folder.mkdir(parents=True,exist_ok=True)
     request,auth=prepare(task,entry,config,job,folder,label)
-    request_path=folder/'swe-request.json';eval_plan.atomic_json(request_path,request)
+    request_path=folder/'swe-request.json';artifact_io.atomic_json(request_path,request)
     command=[request['runtime']['python'],'-I','-S','-B',str(WORKER),str(request_path)]
     env={key:os.environ[key] for key in ('PATH','DOCKER_HOST','DOCKER_CONTEXT','DOCKER_CONFIG','XDG_RUNTIME_DIR','HOME','TEMP','TMP') if key in os.environ}
     env['CTXPRESS_CODEX_AUTH_FILE']=auth

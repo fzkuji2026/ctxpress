@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import pytest
 from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, queue as evaluation
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.benchmarks.milestone import checkpoint_grading as eval_grading
 from ctxpress.harness.jobs import grading_inputs
 from test_eval_inputs import inputs
@@ -53,8 +54,8 @@ def main():
     monkeypatch.setitem(sys.modules,'yaml',SimpleNamespace(safe_load=json.loads))
     monkeypatch.setattr(grading_inputs,'dependencies',lambda: {name:eval_environment.workspace(deps/name) for name in ('yaml','pathspec')})
     monkeypatch.setattr(eval_environment,'image',lambda ref:dict(reference=ref,id=IMAGE,os='fixture',architecture='fixture',repo_digests=[]))
-    lock=eval_grading.capture(code,data,trials,[(3,14)])
-    path=tmp_path/'grading.json'; eval_plan.atomic_json(path,lock)
+    lock=grading_inputs.capture(code,data,trials,[(3,14)])
+    path=tmp_path/'grading.json'; artifact_io.atomic_json(path,lock)
     cfg['environment']['grading']=str(path)
     return cfg,lock
 
@@ -110,7 +111,7 @@ def test_official_grading_children_use_frozen_code_inputs_and_dependencies(tmp_p
 def test_mutated_grader_inputs_block_job_launch(tmp_path,monkeypatch,key):
     cfg,lock=declared(tmp_path,monkeypatch)
     directory=evaluation.prepare(eval_plan.compile_plan(cfg),tmp_path/'run')
-    root=directory/'inputs/grading'/eval_grading.folder(lock,key)
+    root=directory/'inputs/grading'/grading_inputs.folder(lock,key)
     (root/'injected.py').write_text('unreviewed code',encoding='utf-8')
     with pytest.raises(ValueError,match='grading input copy changed'):
         evaluation.schedule(directory,launch=lambda *a:pytest.fail('launched changed grading code'))
@@ -131,7 +132,7 @@ def test_declaration_cannot_reference_an_unfrozen_trial_config(tmp_path,monkeypa
     content={key:copy.deepcopy(value) for key,value in lock.items() if key!='sha256'}
     content['boundaries']['3:14']['repo_config']='outside.yaml'
     with pytest.raises(ValueError,match='undeclared input'):
-        eval_grading.verify(grading_inputs._seal(content))
+        grading_inputs.verify(grading_inputs._seal(content))
 
 
 def test_detached_task_resolves_grader_copies_and_keeps_synthetic_evidence(tmp_path,monkeypatch):
@@ -145,10 +146,10 @@ def test_detached_task_resolves_grader_copies_and_keeps_synthetic_evidence(tmp_p
     Path(cfg['environment']['grading']).unlink()
     script='''import sys
 from pathlib import Path
-from ctxpress.benchmarks.milestone import checkpoint_run as codex_docker, checkpoint_grading as eval_grading; from ctxpress.harness.jobs import queue as evaluation
+from ctxpress.benchmarks.milestone import checkpoint_run as codex_docker, checkpoint_grading as eval_grading; from ctxpress.harness.jobs import grading_inputs, queue as evaluation
 
 def run(n,j,entry,**kwargs):
-    lock=eval_grading.load(kwargs['grading'],[(n,j)])
+    lock=grading_inputs.load(kwargs['grading'],[(n,j)])
     roots,record=eval_grading.runtime(lock,kwargs['grading_root'],n,j,check_images=False)
     assert '/inputs/grading/' in roots['code'].replace('\\\\','/')
     assert Path(roots['trials'],record['repo_config']).is_file()
@@ -198,4 +199,4 @@ def test_wrong_official_boundary_mapping_is_rejected(tmp_path,monkeypatch):
     content={key:copy.deepcopy(value) for key,value in lock.items() if key!='sha256'}
     content['boundaries']['3:14']['milestone']='milestone_003_sub-01'
     with pytest.raises(ValueError,match='official boundary mapping'):
-        eval_grading.verify(grading_inputs._seal(content))
+        grading_inputs.verify(grading_inputs._seal(content))

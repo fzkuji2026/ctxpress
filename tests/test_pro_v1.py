@@ -7,6 +7,7 @@ from ctxpress import benchmarks
 from ctxpress.benchmarks.pro import v1 as pro_v1
 from ctxpress.benchmarks.swe import driver as swe_driver
 from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.benchmarks.pro import v1_grading as pro_v1_grading
 from ctxpress.benchmarks.swe import containers as swe_containers
 from test_swe_runner import Client, COMMIT, AGENT, GRADER, request as swe_request
@@ -103,7 +104,7 @@ def test_v1_isolated_preflight_uses_frozen_inputs_after_originals_removed(tmp_pa
     req,_=swe_driver.prepare(found,job['method'],config,job,directory/'attempt','plan-job')
     assert req['api']=='pro-v1' and req['agent_image']==AGENT and req['grading_image']==GRADER and req['run']['grading_timeout']==23
     assert 'hidden' not in json.dumps(req) and not plan['benchmark']['real_run_verified']
-    request_file=directory/'preflight.json';eval_plan.atomic_json(request_file,req)
+    request_file=directory/'preflight.json';artifact_io.atomic_json(request_file,req)
     result=original_run([sys.executable,'-I','-S','-B',str(swe_driver.WORKER),str(request_file),'--check'],
         capture_output=True,text=True,timeout=15,env={'PATH':'/usr/bin:/bin'})
     if change is None:

@@ -7,6 +7,7 @@ from ctxpress import benchmarks
 from ctxpress.benchmarks.deepswe import adapter as deep_swe, pier_codex
 from ctxpress.benchmarks.harbor import driver as harbor_driver
 from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.benchmarks.deepswe.pier_trial import submission, trial_config
 from test_original_benchmarks import terminal_data
 from test_harbor_driver import IMAGE, PROJECT
@@ -309,7 +310,7 @@ def test_grader_recovery_has_no_credential_restart_or_model_channel(tmp_path,mon
     from test_harbor_driver import journal,container,docker_fixture
     path,record=journal(tmp_path)
     record.update(role='verifier',channel=None,credentials_may_exist=False,images={'main':GRADER})
-    eval_plan.atomic_json(path,record)
+    artifact_io.atomic_json(path,record)
     value=container(record);value['Image']=GRADER
     calls=[];monkeypatch.setattr(harbor_driver,'docker',docker_fixture(record,value,calls))
     harbor_driver.recover(path,'plan-job')

@@ -14,6 +14,7 @@ def load(request):
     source=official/framework
     sys.path[:0]=[str(package),str(source/'src') if framework=='polybench' else str(source),str(official/'dependencies')]
     from ctxpress.harness.jobs import plan as eval_plan
+    from ctxpress.core import artifacts as artifact_io
     if eval_plan.file_sha256(sys.executable)!=runtime['sha256']:raise ValueError('SWE-bench Python binary changed')
     from ctxpress.harness.runtime.codex_agent import check_catalog
     check_catalog(request,probe=True)
@@ -113,13 +114,14 @@ def main(argv=None):
         print(json.dumps(dict(imports='verified',framework=framework,version=importlib.metadata.version(framework),model_calls=0)));return
     from ctxpress.harness.runtime import connect_proxy, socket_bridge
     from ctxpress.harness.jobs import plan as eval_plan
+    from ctxpress.core import artifacts as artifact_io
     from ctxpress.benchmarks.swe import trial as swe_trial
     from ctxpress.harness.runtime.socket_bridge import cleanup_channel
     timeout=max(1800,request['run'].get('grading_timeout',3600 if request['api']=='pro-v1' else 1800)+60)
     client=docker.from_env(timeout=timeout);client._ctxpress_not_found=docker.errors.NotFound
     daemon_id=client.info()['ID']
     channel=Path(tempfile.mkdtemp(prefix=request['project']+'-channel-'));channel.chmod(0o755)
-    eval_plan.atomic_json(channel/'owner.json',dict(project=request['project'],label=request['label']))
+    artifact_io.atomic_json(channel/'owner.json',dict(project=request['project'],label=request['label']))
     server,thread=None,None
     async def execute():
         runner=swe_trial.run

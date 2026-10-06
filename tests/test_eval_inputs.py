@@ -3,6 +3,7 @@ import copy, json, subprocess, sys
 from pathlib import Path
 import pytest
 from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, queue as evaluation
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.replay.calibrate import fit
 
 
@@ -135,7 +136,7 @@ def test_input_manifest_cannot_escape_the_snapshot_directory(tmp_path):
     # Even an otherwise resealed map cannot reference a mutable source outside inputs.
     manifest['files'][source]['path'] = source
     content = {key:value for key,value in manifest.items() if key!='sha256'}
-    eval_plan.atomic_json(path,eval_inputs._sealed(content))
+    artifact_io.atomic_json(path,eval_inputs._sealed(content))
     with pytest.raises(ValueError,match='snapshot changed'):
         evaluation._verified_plan(directory)
 
@@ -164,7 +165,7 @@ def test_incomplete_boundary_catalog_is_explicit_and_does_not_start(tmp_path,mon
     (tmp_path/'scripts/valid_points.json').write_text('[]',encoding='utf-8')
     plan = eval_plan.compile_plan(cfg)
     assert any('#boundary-3-14' in path for path in plan['missing_environment_files'])
-    path = tmp_path/'plan.json'; eval_plan.atomic_json(path,plan)
+    path = tmp_path/'plan.json'; artifact_io.atomic_json(path,plan)
     monkeypatch.setattr(subprocess,'Popen',lambda *a,**k: pytest.fail('started incomplete evaluation'))
     with pytest.raises(ValueError,match='incomplete'):
         evaluation.start(path,tmp_path/'run',background=True)

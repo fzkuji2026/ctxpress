@@ -92,6 +92,7 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
     from ctxpress.harness.runtime import codex_agent
     from ctxpress.benchmarks.harbor import environment as harbor_environment, modern_codex as harbor_modern_codex
     from ctxpress.harness.jobs import plan as eval_plan
+    from ctxpress.core import artifacts as artifact_io
     from ctxpress.benchmarks.harbor.worker import resource_record
     Codex, LimitError, Docker, ExecResult, Config, Trial, definition, Caps = official
     project = request['project']
@@ -107,7 +108,7 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
     environments = {}
     def persist(role):
         record = records[role]
-        eval_plan.atomic_json(Path(request['folder']) / ('resources-harbor-' + record['project'] + '.json'), record)
+        artifact_io.atomic_json(Path(request['folder']) / ('resources-harbor-' + record['project'] + '.json'), record)
     for role in records:
         persist(role)
     trial = None
@@ -278,4 +279,4 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
             agent_image=request['images']['main'], verifier_image=request['grading_image'],
             author_collect=True, author_artifact_handler=True, bundled_tests=actual.bundled_tests,
             verifier_started='verifier' in environments, checked_cleanup=True)
-    eval_plan.atomic_json(Path(request['folder'])/'harbor-worker-result.json', state)
+    artifact_io.atomic_json(Path(request['folder'])/'harbor-worker-result.json', state)

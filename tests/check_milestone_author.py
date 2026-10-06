@@ -11,6 +11,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from ctxpress import benchmarks
 from ctxpress.benchmarks.milestone import driver as milestone_driver
 from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.benchmarks.milestone import version as milestone_version
 
 
@@ -26,7 +27,7 @@ def main():
         sys.path.insert(0,str(Path(__file__).resolve().parent))
         from check_milestone_scoring import check
         result=check(args.code,args.pilot_grade)
-        args.output.parent.mkdir(parents=True,exist_ok=True);eval_plan.atomic_json(args.output,result)
+        args.output.parent.mkdir(parents=True,exist_ok=True);artifact_io.atomic_json(args.output,result)
         print(json.dumps(result));return
     if args.yaml is None or args.pathspec is None:
         parser.error('--yaml and --pathspec are required unless --collector-only is used')
@@ -154,7 +155,7 @@ def main():
             author_trial_watcher_start_stop_verified=True,author_trial_cleanup_returned=True,
             repo_config_sha256=actual['repo_config_sha256'],runtime_policy_sha256=actual['runtime_policy_sha256'],
             model_calls=0,containers_started=0,real_run_verified=False)
-        args.output.parent.mkdir(parents=True,exist_ok=True);eval_plan.atomic_json(args.output,result)
+        args.output.parent.mkdir(parents=True,exist_ok=True);artifact_io.atomic_json(args.output,result)
         print(json.dumps(result))
 
 

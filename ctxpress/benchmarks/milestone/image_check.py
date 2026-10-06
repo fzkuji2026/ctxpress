@@ -35,6 +35,7 @@ def main():
     # existing isolated loader verifies runtime, task remapping and author trees.
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     from ctxpress.harness.jobs import plan as eval_plan, resources as task_resources
+    from ctxpress.core import artifacts as artifact_io
     from ctxpress.benchmarks.milestone import worker as milestone_worker, version as milestone_version
     source = milestone_worker.load(request)
     lock, _ = task_resources.read(request['resources'], 'swe-milestone', [request['original_task']])
@@ -43,7 +44,7 @@ def main():
         with milestone_version.pinned_environment(lock['release']):
             result = verify(request['task'], source, lock['tasks'][request['task']['id']]['images'],
                             Path(temporary) / 'preparation')
-    eval_plan.atomic_json(folder / 'native-images.json', result)
+    artifact_io.atomic_json(folder / 'native-images.json', result)
     print(json.dumps(result))
 
 

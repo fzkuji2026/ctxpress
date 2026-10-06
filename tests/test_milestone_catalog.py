@@ -44,7 +44,7 @@ def driver_inputs(tmp_path, monkeypatch, with_catalog=True):
     monkeypatch.setattr(milestone_driver, 'check_images', lambda *args: events.append('images'))
     monkeypatch.setattr(codex_binary, 'preflight', lambda *args: events.append('binary') or
                         {'version': '0.159.0-alpha.12.1'})
-    monkeypatch.setattr(harbor_driver, 'method_inputs', lambda entry, path: dict(entry))
+    monkeypatch.setattr(harbor_driver.method_inputs, 'freeze', lambda entry, path: dict(entry))
     auth = tmp_path / 'synthetic-auth.json'
     auth.write_text('synthetic', encoding='utf-8')
     monkeypatch.setenv('CTXPRESS_CODEX_AUTH_FILE', str(auth))

@@ -9,6 +9,7 @@ from pathlib import Path
 from ctxpress import benchmarks
 from ctxpress.core import policy as policies
 from ctxpress.harness.jobs import plan as eval_plan, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.live import usage as eval_usage
 
 
@@ -325,8 +326,8 @@ def write(source, output, **kwargs):
             raise ValueError('configuration outputs must be outside their input files and trees')
         if path.exists():
             raise ValueError('configuration output already exists; choose a new output path')
-    eval_plan.atomic_json(destination, config)
-    eval_plan.atomic_json(provenance, receipt)
+    artifact_io.atomic_json(destination, config)
+    artifact_io.atomic_json(provenance, receipt)
     return dict(config=str(destination), provenance=str(provenance), **{
         key: receipt[key] for key in ('family', 'phase', 'config_sha256', 'run_count', 'max_parallel',
                                       'missing_environment_files', 'resources_complete', 'experiments_started', 'downloads_started')})

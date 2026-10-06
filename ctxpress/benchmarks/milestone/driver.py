@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy, json, os, re, signal, subprocess, time, uuid
 from pathlib import Path
 from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan, resources as task_resources, task as task_api
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.benchmarks.milestone import protocol as milestone_protocol
 from ctxpress.live.telemetry import summary
 
@@ -32,7 +33,7 @@ def _invoke(task,config,job,folder,mode,trial=None):
     folder=Path(folder).resolve();folder.mkdir(parents=True,exist_ok=True)
     payload=request(task,config,job,folder);path=folder/('milestone-'+mode+'-request.json')
     if trial is not None:payload['trial']=str(Path(trial).absolute())
-    eval_plan.atomic_json(path,payload)
+    artifact_io.atomic_json(path,payload)
     lock,_=task_resources.read(payload['resources'],'swe-milestone',[job['task']])
     command=[lock['runtime']['python'],'-I','-S','-B',str(WORKER),str(path),'--'+mode]
     # Preparation has no Docker/credential environment, package installation or
@@ -51,7 +52,7 @@ def preflight(task,config,job,folder):
 def check_images(payload):
     """Inspect prepared images through the author API before credentials or Agent work."""
     folder=Path(payload['folder']);folder.mkdir(parents=True,exist_ok=True)
-    path=folder/'milestone-images-request.json';eval_plan.atomic_json(path,payload)
+    path=folder/'milestone-images-request.json';artifact_io.atomic_json(path,payload)
     lock,_=task_resources.read(payload['resources'],'swe-milestone',[payload['original_task']])
     command=[lock['runtime']['python'],'-I','-S','-B',str(IMAGE_CHECK),str(path)]
     environment={key:os.environ[key] for key in ('PATH','DOCKER_HOST','DOCKER_CONTEXT','DOCKER_CONFIG',
@@ -71,7 +72,7 @@ def read_grade(task,config,job,folder,trial):
 def prepare_execution(task,entry,config,job,folder,label):
     from ctxpress.benchmarks.milestone import resources as milestone_resources, transport as milestone_transport, version as milestone_version
     from ctxpress.methods import build
-    from ctxpress.harness.runtime.method_inputs import freeze as method_inputs
+    from ctxpress.harness.runtime import method_inputs
     payload=request(task,config,job,folder)
     lock,_=task_resources.read(payload['resources'],'swe-milestone',[job['task']])
     if 'native_data_version' not in lock:
@@ -102,7 +103,7 @@ def prepare_execution(task,entry,config,job,folder,label):
     if not auth or Path(auth).is_symlink() or not Path(auth).is_file():
         raise ValueError('set CTXPRESS_CODEX_AUTH_FILE to existing credentials; auth is never frozen in the plan')
     profiles=Path(folder).resolve()/'method-inputs'
-    payload['execution']=dict(project=project,label=label,method=method_inputs(entry,profiles),
+    payload['execution']=dict(project=project,label=label,method=method_inputs.freeze(entry,profiles),
         model=config['model'],reasoning=config['reasoning'],run=copy.deepcopy(config['run']),
         compact_limit=job['compact_limit'],binary_version=match.group(1),bindir=str(binary.parent),
         profiles=str(profiles),upstream=upstream,via=environment.get('via'))
@@ -133,7 +134,7 @@ def recover_attempt(folder,label):
 def execute(adapter,task,entry,config,job,*,paths,folder,label):
     folder=Path(folder).resolve();folder.mkdir(parents=True,exist_ok=True)
     payload,runtime,auth=prepare_execution(task,entry,config,job,folder,label)
-    path=folder/'milestone-execute-request.json';eval_plan.atomic_json(path,payload)
+    path=folder/'milestone-execute-request.json';artifact_io.atomic_json(path,payload)
     command=[runtime['python'],'-I','-S','-B',str(WORKER),str(path)]
     child_env={key:os.environ[key] for key in ('PATH','DOCKER_HOST','DOCKER_CONTEXT','DOCKER_CONFIG',
         'XDG_RUNTIME_DIR','SYSTEMROOT','WINDIR','TEMP','TMP','HOME') if key in os.environ}

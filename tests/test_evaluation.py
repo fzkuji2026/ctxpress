@@ -2,6 +2,7 @@ import copy, json, os, subprocess, sys, time
 from pathlib import Path
 import pytest
 from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 from ctxpress.harness.results.report import report
 
@@ -125,7 +126,7 @@ def test_background_start_returns_while_jobs_continue(tmp_path, monkeypatch):
     cfg['environment'] = dict(bindir=str(binary), scripts=str(scripts))
     plan = eval_plan.compile_plan(cfg)
     path = tmp_path / 'plan.json'
-    eval_plan.atomic_json(path, plan)
+    artifact_io.atomic_json(path, plan)
     actual = subprocess.Popen
     started = []
     def launch(command, **kwargs):

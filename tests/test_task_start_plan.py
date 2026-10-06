@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from ctxpress.benchmarks.milestone.data import itinerary
 from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 from test_task_instances import dataset, seal
 
 
@@ -98,7 +99,7 @@ def test_frozen_tree_changes_are_refused_without_source_fallback(tmp_path,change
 def test_partial_plan_cannot_launch_an_unimplemented_executor(tmp_path,monkeypatch):
     cfg=config(tmp_path,resources=False);plan=eval_plan.compile_plan(cfg)
     assert len(plan['missing_environment_files'])>=2
-    path=tmp_path/'plan.json';eval_plan.atomic_json(path,plan)
+    path=tmp_path/'plan.json';artifact_io.atomic_json(path,plan)
     monkeypatch.setattr(subprocess,'Popen',lambda *a,**kw: pytest.fail('launched incomplete native executor'))
     with pytest.raises(ValueError,match='incomplete'): evaluation.start(path,tmp_path/'run',background=True)
     assert not (tmp_path/'run').exists()

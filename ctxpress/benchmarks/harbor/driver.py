@@ -7,13 +7,14 @@ from __future__ import annotations
 import copy, json, os, re, shutil, signal, subprocess, tempfile, time, urllib.parse, uuid
 from pathlib import Path
 from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan, resources as task_resources
+from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 from ctxpress.live.telemetry import summary
-from ctxpress.harness.runtime import codex_agent, gpu as harbor_gpu
+from ctxpress.harness.runtime import codex_agent, gpu as runtime_gpu
 from ctxpress.benchmarks.harbor import protocol as harbor_protocol
 from ctxpress.harness.runtime.docker import docker
 from ctxpress.harness.runtime.socket_bridge import cleanup_channel
-from ctxpress.harness.runtime.method_inputs import freeze as method_inputs
+from ctxpress.harness.runtime import method_inputs
 
 SCHEMA = 'ctxpress.eval.harbor_resources'
 WORKER = Path(__file__).with_name('worker.py')
@@ -63,12 +64,12 @@ def requirements(config, tasks, lock):
         if task['initial_state'].get('steps'):
             missing.append('Harbor multi-step tasks require a dedicated execution protocol: ' + task['id'])
         environment = task['initial_state']['environment']
-        gpu = harbor_gpu.requirements(environment)
+        gpu = runtime_gpu.requirements(environment)
         record = lock['tasks'][task['id']]
         if gpu['count'] and not record.get('gpu_device_ids'):
             missing.append('Harbor GPU resource binding: declare ' + str(gpu['count']) + ' full NVIDIA device UUIDs for ' + task['id'])
         try:
-            harbor_protocol.validate_verifier_gpus(task, record, require=True)
+            runtime_gpu.validate_verifier_gpus(task, record, require=True)
         except ValueError as error:
             missing.append('Harbor verifier GPU binding: ' + str(error) + ': ' + task['id'])
         images = record['images']
@@ -166,7 +167,7 @@ def recover(path, label):
     for value in volumes:
         docker('volume', 'rm', value['Name'])
     record.update(cleaned=True, phase='recovered')
-    eval_plan.atomic_json(path, record)
+    artifact_io.atomic_json(path, record)
     cleanup_channel(record)
 
 
@@ -211,7 +212,7 @@ def prepare(task, entry, config, job, folder, label):
     profiles = folder / 'method-inputs'
     request = dict(schema='ctxpress.eval.harbor_trial', version=1, project=project, label=label,
         task=str(task_directory(task)), task_id=task['id'], benchmark=task['benchmark'],
-        method=method_inputs(entry, profiles), model=config['model'], reasoning=config['reasoning'],
+        method=method_inputs.freeze(entry, profiles), model=config['model'], reasoning=config['reasoning'],
         run=config['run'], compact_limit=job['compact_limit'], binary_version=match.group(1),
         bindir=str(binary.parent), package=str(package), official=str(official), profiles=str(profiles),
         folder=str(folder), runtime=runtime, images={'main':job['resources']['images']['agent']['id'],
@@ -250,7 +251,7 @@ def available_gpus(ids):
             if allocation.get('Driver') != 'nvidia' and not any('gpu' in group for group in capabilities):
                 continue
             bound = allocation.get('DeviceIDs') or []
-            if not bound or any(not harbor_gpu.UUID.fullmatch(item) for item in bound) or selected & {item.casefold() for item in bound}:
+            if not bound or any(not runtime_gpu.UUID.fullmatch(item) for item in bound) or selected & {item.casefold() for item in bound}:
                 raise RuntimeError('GPU devices overlap a retained ctxpress container allocation; recover its owning attempt first')
 
 
@@ -258,7 +259,7 @@ def execute(adapter, task, entry, config, job, *, paths, folder, label):
     folder = Path(folder).resolve(); folder.mkdir(parents=True, exist_ok=True)
     request, auth = prepare(task, entry, config, job, folder, label)
     request_path = folder / 'harbor-request.json'
-    eval_plan.atomic_json(request_path, request)
+    artifact_io.atomic_json(request_path, request)
     # Source/dependency imports are checked before Docker access or model relay.
     command = [request['runtime']['python'], '-I', '-S', '-B', str(WORKER), str(request_path)]
     child_env = {key:os.environ[key] for key in ('PATH','DOCKER_HOST','DOCKER_CONTEXT','DOCKER_CONFIG',
@@ -268,15 +269,15 @@ def execute(adapter, task, entry, config, job, *, paths, folder, label):
     with (folder / 'harbor-worker.log').open('wb') as output:
         subprocess.run(command + ['--check'], env=child_env, stdin=subprocess.DEVNULL,
                        stdout=output, stderr=subprocess.STDOUT, check=True, timeout=60)
-        ids = harbor_protocol.claimed_gpus(request)
+        ids = runtime_gpu.claimed_gpus(request)
         daemon_id = docker('info', '--format', '{{.ID}}').strip() if ids else None
         if daemon_id is not None:
             request['gpu_daemon_id'] = daemon_id
-            eval_plan.atomic_json(request_path, request)
+            artifact_io.atomic_json(request_path, request)
         def gpu_progress(phase):
-            eval_plan.atomic_json(folder/'gpu-reservation.json', dict(schema='ctxpress.eval.gpu_reservation', version=1,
+            artifact_io.atomic_json(folder/'gpu-reservation.json', dict(schema='ctxpress.eval.gpu_reservation', version=1,
                 label=label, phase=phase, device_ids=ids, daemon_id=daemon_id))
-        with harbor_gpu.reservation(ids, daemon_id, gpu_progress if daemon_id is not None else None):
+        with runtime_gpu.reservation(ids, daemon_id, gpu_progress if daemon_id is not None else None):
             available_gpus(ids)
             process = subprocess.Popen(command, env=child_env, stdin=subprocess.DEVNULL, stdout=output,
                                        stderr=subprocess.STDOUT, start_new_session=True)

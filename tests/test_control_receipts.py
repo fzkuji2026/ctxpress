@@ -5,7 +5,7 @@ import uuid
 import pytest
 from ctxpress.live.control_receipts import ControlReceipts
 from ctxpress.live.method_tools import MethodTools, MethodToolRouteError
-from ctxpress.live.control_receipts import route_failures as _route_failures
+from ctxpress.live.control_receipts import route_failures
 from ctxpress.methods import CWL
 
 
@@ -24,7 +24,7 @@ def fixture(tmp_path):
 
 
 def health(log):
-    return _route_failures(dict(rewrites=[json.loads(line) for line in log.read_text().splitlines()]))
+    return route_failures(dict(rewrites=[json.loads(line) for line in log.read_text().splitlines()]))
 
 
 def test_receipt_is_removed_before_policy_and_provider_and_survives_restart(tmp_path):

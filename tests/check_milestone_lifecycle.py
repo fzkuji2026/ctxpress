@@ -21,6 +21,7 @@ def main():
     from milestone_mock_engine import Daemon,serving
     from ctxpress.benchmarks.milestone.worker import load
     from ctxpress.harness.jobs import plan as eval_plan
+    from ctxpress.core import artifacts as artifact_io
     from ctxpress.benchmarks.milestone import agent as milestone_agent, containers as milestone_containers, images as milestone_images
     from ctxpress.benchmarks.milestone import resources as milestone_resources, runner as milestone_runner, transport as milestone_transport
     from ctxpress.harness.jobs import resources as task_resources
@@ -225,7 +226,7 @@ def main():
         native_resource_provider_used=True,native_model_channel_used=True,native_service_gateway_used=bool(service_exercised),
         substituted=['Docker IO','container runtime checks','model initialization/output','test execution'],
         containers_started=0,model_calls=0,real_run_verified=False)
-    eval_plan.atomic_json(args.output,result);print(json.dumps(result))
+    artifact_io.atomic_json(args.output,result);print(json.dumps(result))
 
 
 if __name__=='__main__':main()

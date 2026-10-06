@@ -2,7 +2,8 @@
 from __future__ import annotations
 import html, json
 from pathlib import Path
-from ctxpress.harness.jobs.plan import atomic_json, verify
+from ctxpress.core.artifacts import atomic_json
+from ctxpress.harness.jobs.plan import verify
 from ctxpress.live import usage as eval_usage
 from ctxpress.harness.results import compare as eval_compare, mechanism as eval_mechanism, outcomes as eval_outcomes
 from ctxpress.harness.jobs import task as tasks

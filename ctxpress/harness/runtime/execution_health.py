@@ -2,7 +2,7 @@
 from __future__ import annotations
 import hashlib, json, re
 from pathlib import Path
-from ctxpress.live.control_receipts import route_failures as _route_failures
+from ctxpress.live.control_receipts import route_failures
 
 _SPAWN_FAILURE = re.compile(r'failed to spawn code-mode host ([^\r\n]*codex-code-mode-host): ([^\r\n]+)')
 
@@ -80,13 +80,13 @@ def observe(result):
         if stored is not None and not valid:
             errors.append('stored execution_health is malformed; tool runtime health is unknown')
         failures = list(stored['tool_runtime_failures']) if valid else []
-        for failure in _route_failures(result):
+        for failure in route_failures(result):
             if failure not in failures:
                 failures.append(failure)
         return dict(execution_invalid=bool(failures or errors), health_unknown=bool(errors), evidence_errors=errors,
             tool_calls=stored['tool_calls'] if valid else 0, tool_outputs=stored['tool_outputs'] if valid else 0,
             tool_runtime_failures=failures)
-    observed = dict(execution_invalid=False, tool_calls=0, tool_outputs=0, tool_runtime_failures=_route_failures(result),
+    observed = dict(execution_invalid=False, tool_calls=0, tool_outputs=0, tool_runtime_failures=route_failures(result),
                     health_unknown=False, evidence_errors=errors)
     for path in sorted(files):
         try:
