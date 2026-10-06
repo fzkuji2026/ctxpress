@@ -9,7 +9,11 @@ from pathlib import Path
 from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan, resources as task_resources
 from ctxpress.core import processes
 from ctxpress.live.telemetry import summary
-from ctxpress.benchmarks.harbor import codex_hook as harbor_codex, gpu as harbor_gpu, protocol as harbor_protocol
+from ctxpress.harness.runtime import codex_agent, gpu as harbor_gpu
+from ctxpress.benchmarks.harbor import protocol as harbor_protocol
+from ctxpress.harness.runtime.docker import docker
+from ctxpress.harness.runtime.socket_bridge import cleanup_channel
+from ctxpress.harness.runtime.method_inputs import freeze as method_inputs
 
 SCHEMA = 'ctxpress.eval.harbor_resources'
 WORKER = Path(__file__).with_name('worker.py')
@@ -105,36 +109,6 @@ def task_directory(task):
     return root
 
 
-def method_inputs(entry, folder):
-    entry = copy.deepcopy(entry)
-    folder = Path(folder)
-    folder.mkdir()
-    def visit(value):
-        args = value.get('args') or {}
-        field = {'CostModel':'profile', 'AutoCostModel':'policy'}.get(value.get('class'))
-        if field and args.get(field) and not isinstance(args[field], dict):
-            source = Path(args[field]); digest = eval_plan.file_sha256(source)
-            target = folder / (digest + '.json')
-            shutil.copyfile(source, target)
-            if eval_plan.file_sha256(target) != digest:
-                raise ValueError('frozen method input changed during copy')
-            args[field] = '/ctxpress-method/' + target.name
-        if isinstance(args.get('inner'), dict):
-            visit(args['inner'])
-        for child in args.get('methods', []):
-            visit(child)
-    visit(entry)
-    return entry
-
-
-def docker(*args):
-    result = subprocess.run(['docker', *args], capture_output=True, text=True, timeout=60,
-                            stdin=subprocess.DEVNULL)
-    if result.returncode:
-        raise RuntimeError('managed Harbor Docker operation failed')
-    return result.stdout
-
-
 def owned_resources(record, kind):
     project = record['project']
     arguments = ('ps', '-aq') if kind == 'container' else (kind, 'ls', '-q')
@@ -153,25 +127,6 @@ def owned_resources(record, kind):
                 raise ValueError('Harbor recovery service or image identity changed')
         records.append(value)
     return records
-
-
-def cleanup_channel(record):
-    if record.get('channel') is None and record.get('role') == 'verifier' and record.get('credentials_may_exist') is False:
-        return
-    channel = Path(record['channel'])
-    if not channel.exists():
-        return
-    if (channel.is_symlink() or channel.parent != Path(tempfile.gettempdir()).resolve() or
-            not channel.name.startswith(record['project'] + '-channel-')):
-        raise ValueError('Harbor recovery channel path is not owned')
-    owner = json.loads((channel / 'owner.json').read_text(encoding='utf-8'))
-    if owner != dict(project=record['project'], label=record['label']):
-        raise ValueError('Harbor recovery channel owner changed')
-    if any(path.name not in ('owner.json', 'model.sock') for path in channel.iterdir()):
-        raise ValueError('Harbor recovery channel contains undeclared files')
-    (channel / 'model.sock').unlink(missing_ok=True)
-    (channel / 'owner.json').unlink()
-    channel.rmdir()
 
 
 def recover(path, label):
@@ -218,7 +173,7 @@ def recover(path, label):
 def prepare(task, entry, config, job, folder, label):
     folder = Path(folder).resolve()
     environment = config['environment']
-    catalog = harbor_codex.catalog_input(environment, config['model'], config['reasoning'])
+    catalog = codex_agent.catalog_input(environment, config['model'], config['reasoning'])
     lock, _ = task_resources.read(environment['resources'], task['benchmark'], [job['task']])
     if job.get('resources') != lock['tasks'][task['id']]:
         raise ValueError('Harbor job resources differ from the frozen manifest')
@@ -359,7 +314,7 @@ def execute(adapter, task, entry, config, job, *, paths, folder, label):
         stop=state['stop'], seconds=round(time.monotonic()-started, 1), calls=state['calls'], requests=telemetry['requests'],
         usage=telemetry, rewrites=rows, grade=grade, proxy_log=str(logs), official_report=str(report),
         binary_version=request['binary_version'], gpu=state.get('gpu'), protocol='ctxpress_comparison', real_run_verified=False)
-    if catalog := harbor_codex.check_catalog(request):
+    if catalog := codex_agent.check_catalog(request):
         result['model_catalog'] = catalog
     for field in ('separate_verifier', 'official_artifacts', 'verifier_gpu', 'network_policy', 'harbor_api',
                   'agent_report','regrade_report','submission','pro_version','fresh_regrade'):

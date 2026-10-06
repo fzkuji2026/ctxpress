@@ -5,7 +5,7 @@ socket; a container forwards loopback TCP to that socket. This module does not
 resolve destinations, inspect HTTP headers, or record traffic.
 """
 from __future__ import annotations
-import argparse, socket, socketserver, threading
+import argparse, json, socket, socketserver, tempfile, threading
 from pathlib import Path
 from ctxpress.harness.runtime.connect_proxy import relay
 from ctxpress.harness.jobs import plan as eval_plan
@@ -69,3 +69,22 @@ def main(argv=None):
 
 if __name__ == '__main__':
     main()
+
+
+def cleanup_channel(record):
+    if record.get('channel') is None and record.get('role') == 'verifier' and record.get('credentials_may_exist') is False:
+        return
+    channel = Path(record['channel'])
+    if not channel.exists():
+        return
+    if (channel.is_symlink() or channel.parent != Path(tempfile.gettempdir()).resolve() or
+            not channel.name.startswith(record['project'] + '-channel-')):
+        raise ValueError('Harbor recovery channel path is not owned')
+    owner = json.loads((channel / 'owner.json').read_text(encoding='utf-8'))
+    if owner != dict(project=record['project'], label=record['label']):
+        raise ValueError('Harbor recovery channel owner changed')
+    if any(path.name not in ('owner.json', 'model.sock') for path in channel.iterdir()):
+        raise ValueError('Harbor recovery channel contains undeclared files')
+    (channel / 'model.sock').unlink(missing_ok=True)
+    (channel / 'owner.json').unlink()
+    channel.rmdir()

@@ -28,7 +28,7 @@ def load(official):
 
 
 def trial_config(request, config_class, channel):
-    from ctxpress.benchmarks.harbor.codex_hook import catalog_mounts
+    from ctxpress.harness.runtime.codex_agent import catalog_mounts
     root = Path(request['folder']) / request['project']
     mounts = [dict(type='bind', source=source, target=target, read_only=True, bind={'create_host_path':False})
         for source, target in ((request['package'], '/ctxpress-runtime'), (request['bindir'], '/cxbin'),
@@ -65,7 +65,8 @@ def submission(root, target):
 
 
 async def run_trial(request, official, channel, journal):
-    from ctxpress.benchmarks.harbor import codex_hook as harbor_codex, environment as harbor_environment
+    from ctxpress.harness.runtime import codex_agent
+    from ctxpress.benchmarks.harbor import environment as harbor_environment
     from ctxpress.benchmarks.deepswe import pier_codex
     from ctxpress.harness.jobs import plan as eval_plan
     from ctxpress.core import processes
@@ -106,7 +107,7 @@ async def run_trial(request, official, channel, journal):
     CtxpressCodex = pier_codex.framework(Codex, Install, dict(method=request['method'], profiles=request.get('profiles'), model=request['model'],
         reasoning=request['reasoning'], binary_version=request['binary_version'], compact_limit=request['compact_limit'],
         upstream=request['upstream'], auth_file=os.environ['CTXPRESS_CODEX_AUTH_FILE'],
-        max_calls=request['run']['max_calls'], **harbor_codex.catalog_settings(request)), LimitError, credentials)
+        max_calls=request['run']['max_calls'], **codex_agent.catalog_settings(request)), LimitError, credentials)
 
     class CtxpressDocker:
         """Factory selects an owned environment for the official phase."""
@@ -133,7 +134,7 @@ async def run_trial(request, official, channel, journal):
             if role == 'agent':
                 roots.update({request['package']:True, request['bindir']:True, request['profiles']:True,
                               str(channel):True, str(trial_root/'agent'):False, str(trial_root/'artifacts'):False})
-                for mount in harbor_codex.catalog_mounts(request):
+                for mount in codex_agent.catalog_mounts(request):
                     roots[mount['source']] = True
                 images = request['images']
             else:
@@ -203,7 +204,7 @@ async def run_trial(request, official, channel, journal):
         raise RuntimeError('Pier returned without checked environment cleanup')
     if not agent_record['cleaned'] or (request['run']['grade'] and not records['verifier']['cleaned']):
         raise RuntimeError('Pier returned without checked Agent/verifier cleanup')
-    progress = harbor_codex.CallProgress(trial_root/'agent'/'sessions')
+    progress = codex_agent.CallProgress(trial_root/'agent'/'sessions')
     calls, _ = progress.update()
     exception = result.exception_info.exception_type if result.exception_info else None
     stop = trial._agent.ctxpress_stop or ('timeout' if exception == 'AgentTimeoutError' else

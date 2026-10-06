@@ -10,7 +10,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ctxpress.benchmarks.harbor import codex_hook as harbor_codex, driver as harbor_driver
+from ctxpress.harness.runtime import codex_agent
+from ctxpress.benchmarks.harbor import driver as harbor_driver
 from ctxpress.benchmarks.swe import driver as swe_driver
 from ctxpress.core import toml
 from ctxpress.harness.runtime import codex_catalog
@@ -93,7 +94,7 @@ def test_frozen_catalog_reaches_direct_driver_after_original_inputs_are_removed(
     assert seen == [(effective['environment']['bindir'], copied, cfg['model'], effective['reasoning'])]
     assert auth == str(credentials)
     assert PROMPT not in json.dumps(request)
-    assert harbor_codex.check_catalog(request) == codex_catalog.inspect(copied, request['model'], request['reasoning'])
+    assert codex_agent.check_catalog(request) == codex_catalog.inspect(copied, request['model'], request['reasoning'])
 
 
 @pytest.mark.parametrize('driver', [harbor_driver, swe_driver])
@@ -122,7 +123,7 @@ def test_worker_catalog_declaration_is_strict_and_immutable(tmp_path, monkeypatc
     elif change == 'bad-hash': request['model_catalog_sha256'] = 'not-a-digest'
     else: Path(request['model_catalog']).write_text(Path(request['model_catalog']).read_text(encoding='utf-8') + '\n', encoding='utf-8')
     monkeypatch.setattr(codex_catalog, 'preflight', lambda *args: pytest.fail('bad binding reached parser'))
-    with pytest.raises(ValueError): harbor_codex.check_catalog(request, probe=True)
+    with pytest.raises(ValueError): codex_agent.check_catalog(request, probe=True)
 
 
 def test_change_during_parser_preflight_fails_closed(tmp_path, monkeypatch):
@@ -132,7 +133,7 @@ def test_change_during_parser_preflight_fails_closed(tmp_path, monkeypatch):
         path.write_text(path.read_text(encoding='utf-8') + '\n', encoding='utf-8')
     monkeypatch.setattr(codex_catalog, 'preflight', mutate)
     with pytest.raises(ValueError, match='changed during preflight'):
-        harbor_codex.check_catalog(request, probe=True)
+        codex_agent.check_catalog(request, probe=True)
 
 
 @pytest.mark.parametrize('runner', [harbor_worker, harbor_modern, pier_trial])
@@ -149,7 +150,7 @@ def test_harbor_runner_mounts_exact_file_read_only_without_creation(tmp_path, ru
         replay = dict(request, pro_replay=True)
         config = runner.trial_config(replay, lambda **kwargs: kwargs, tmp_path / 'channel')
         assert not config['environment'].get('mounts_json', config['environment'].get('mounts'))
-        assert harbor_codex.catalog_settings(replay) == {}
+        assert codex_agent.catalog_settings(replay) == {}
 
 
 @pytest.mark.parametrize('environment_class', [swe_containers.AgentEnvironment, code_trial.CodeEnvironment])
@@ -180,7 +181,7 @@ def test_swe_and_bigcode_agents_mount_catalog_but_separate_verifier_does_not(tmp
 
 def test_catalog_agent_checks_parser_before_credentials_and_relay_and_writes_root_key():
     cfg = dict(settings(), model_catalog=codex_catalog.CONTAINER_PATH, model_catalog_sha256='a' * 64)
-    agent = harbor_codex.framework(OfficialFixture, SimpleNamespace, cfg)()
+    agent = codex_agent.framework(OfficialFixture, SimpleNamespace, cfg)()
     environment = EnvironmentFixture()
     asyncio.run(agent.setup(environment))
     first = shlex.split(environment.commands[0][0])[-1]
@@ -192,7 +193,7 @@ def test_catalog_agent_checks_parser_before_credentials_and_relay_and_writes_roo
     # Evaluate only the recorded synthetic config writer into an in-memory sink.
     namespace = {}
     class Sink:
-        def __init__(self, path): assert path == harbor_codex.HOME + '/config.toml'
+        def __init__(self, path): assert path == codex_agent.HOME + '/config.toml'
         def write_text(self, data): namespace['data'] = data
     source = writes[0].replace('from pathlib import Path; ', '')
     exec(source, {'Path':Sink})
@@ -210,7 +211,7 @@ def test_container_catalog_failure_never_uploads_credentials_or_starts_model_rel
             assert 'catalog_preflight' in command
             return SimpleNamespace(return_code=1, stdout=PROMPT)
     environment = Rejected()
-    agent = harbor_codex.framework(OfficialFixture, SimpleNamespace, cfg)()
+    agent = codex_agent.framework(OfficialFixture, SimpleNamespace, cfg)()
     with pytest.raises(RuntimeError) as error: asyncio.run(agent.setup(environment))
     assert not environment.uploads and len(environment.commands) == 1
     assert PROMPT not in str(error.value)
@@ -237,7 +238,7 @@ def test_container_probe_executes_frozen_hash_check_before_any_auth(tmp_path, mo
                 return SimpleNamespace(return_code=0, stdout='')
             return await super().exec(command, **kwargs)
     environment = Environment()
-    agent = harbor_codex.framework(OfficialFixture, SimpleNamespace, cfg)()
+    agent = codex_agent.framework(OfficialFixture, SimpleNamespace, cfg)()
     if changed:
         with pytest.raises(RuntimeError): asyncio.run(agent.setup(environment))
         assert not environment.uploads and len(environment.commands) == 1
@@ -264,12 +265,12 @@ def test_catalog_survives_complete_harbor_lifecycle_and_separate_verifier(tmp_pa
     async def run(request, *args, **kwargs):
         return await original_run(dict(request, **catalog), *args, **kwargs)
     monkeypatch.setattr(target, 'run_trial', run)
-    original_framework = harbor_codex.framework
+    original_framework = codex_agent.framework
     received = []
     def framework(base, exec_input, cfg, *args, **kwargs):
         received.append(copy.deepcopy(cfg))
         return original_framework(base, exec_input, cfg, *args, **kwargs)
-    monkeypatch.setattr(harbor_codex, 'framework', framework)
+    monkeypatch.setattr(codex_agent, 'framework', framework)
     if runner == 'legacy':
         fixture.test_worker_invokes_trial_with_owned_hooks_and_verifier_after_agent(tmp_path, monkeypatch, False)
     elif runner == 'modern':
@@ -292,23 +293,23 @@ def test_catalog_survives_complete_harbor_lifecycle_and_separate_verifier(tmp_pa
 @pytest.mark.parametrize('path', [None, '', '/host/models.json'])
 def test_agent_catalog_settings_accept_only_fixed_container_path(path):
     with pytest.raises(ValueError, match='container catalog path'):
-        harbor_codex.framework(OfficialFixture, SimpleNamespace, dict(settings(), model_catalog=path))
+        codex_agent.framework(OfficialFixture, SimpleNamespace, dict(settings(), model_catalog=path))
 
 
 @pytest.mark.parametrize('digest', [None, '', 'bad-hash'])
 def test_agent_requires_catalog_hash_with_container_path(digest):
     with pytest.raises(ValueError, match='frozen SHA-256'):
-        harbor_codex.framework(OfficialFixture, SimpleNamespace,
+        codex_agent.framework(OfficialFixture, SimpleNamespace,
             dict(settings(), model_catalog=codex_catalog.CONTAINER_PATH, model_catalog_sha256=digest))
 
 
 def test_optional_catalog_keeps_old_requests_and_agent_settings_compatible(tmp_path, monkeypatch):
     monkeypatch.setattr(codex_catalog, 'inspect', lambda *args: pytest.fail('old request inspected a catalog'))
     monkeypatch.setattr(codex_catalog, 'preflight', lambda *args: pytest.fail('old request invoked catalog parser'))
-    assert harbor_codex.catalog_input({}, 'fixture-model', 'medium') == {}
-    assert harbor_codex.check_catalog({}) is None
-    assert harbor_codex.catalog_mounts({}) == [] and harbor_codex.catalog_settings({}) == {}
-    instance = harbor_codex.framework(OfficialFixture, SimpleNamespace, settings())()
+    assert codex_agent.catalog_input({}, 'fixture-model', 'medium') == {}
+    assert codex_agent.check_catalog({}) is None
+    assert codex_agent.catalog_mounts({}) == [] and codex_agent.catalog_settings({}) == {}
+    instance = codex_agent.framework(OfficialFixture, SimpleNamespace, settings())()
     environment = EnvironmentFixture()
     asyncio.run(instance.setup(environment))
     assert not any('catalog_preflight' in command or 'model_catalog_json' in command for command, _ in environment.commands)
@@ -323,7 +324,7 @@ def test_shared_swe_agent_forwards_catalog_to_strict_hook(tmp_path, monkeypatch)
     def framework(base, exec_input, cfg, **kwargs):
         received.append(copy.deepcopy(cfg))
         return base
-    monkeypatch.setattr(harbor_codex, 'framework', framework)
+    monkeypatch.setattr(codex_agent, 'framework', framework)
     swe_trial.agent_class(request, lambda *args: None)
     assert received[0]['model_catalog'] == codex_catalog.CONTAINER_PATH
     assert received[0]['model_catalog_sha256'] == request['model_catalog_sha256']

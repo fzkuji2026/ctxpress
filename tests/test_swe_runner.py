@@ -218,7 +218,7 @@ def test_recovery_checks_all_ownership_before_deleting_anything(tmp_path,monkeyp
         if args[0]=='ps':return container.id
         if args[:2]==('container','inspect'):return json.dumps([value])
         pytest.fail('mutated resources before identity verification')
-    monkeypatch.setattr(swe_driver.harbor_driver,'docker',docker)
+    monkeypatch.setattr(swe_driver.runtime_docker,'docker',docker)
     with pytest.raises(ValueError):swe_driver.recover(owner.path,req['label'])
     assert not json.loads(owner.path.read_text(encoding='utf-8'))['cleaned']
 
@@ -337,7 +337,7 @@ def test_recovery_deletes_credentials_before_container_and_stops_if_deletion_fai
         if args[:2]==('container','inspect'):return json.dumps([value])
         if args[0]=='exec':raise RuntimeError('checked credentials removal failed')
         return ''
-    monkeypatch.setattr(swe_driver.harbor_driver,'docker',docker)
+    monkeypatch.setattr(swe_driver.runtime_docker,'docker',docker)
     with pytest.raises(RuntimeError,match='credentials'):swe_driver.recover(owner.path,req['label'])
     assert not any(args[0]=='rm' for args in calls)
     assert not json.loads(owner.path.read_text(encoding='utf-8'))['cleaned']

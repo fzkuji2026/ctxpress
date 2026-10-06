@@ -7,7 +7,7 @@ from ctxpress.harness.runtime import connect_proxy, socket_bridge
 from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.core import processes
 from ctxpress.benchmarks.milestone.resources import docker, identity, SCHEMA as CONTAINER_SCHEMA
-from ctxpress.benchmarks.harbor.driver import cleanup_channel
+from ctxpress.harness.runtime.socket_bridge import cleanup_channel
 
 SCHEMA='ctxpress.eval.milestone_channel'
 

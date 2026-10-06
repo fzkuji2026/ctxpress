@@ -5,16 +5,7 @@ from graphlib import TopologicalSorter
 from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan, trees as eval_trees
 from ctxpress.harness.jobs.task import validate
-
-
-def _file(root, relative):
-    path = root / relative
-    resolved = path.resolve()
-    if root not in resolved.parents or any(parent.is_symlink() for parent in (path, *path.parents) if parent != root and root in parent.parents):
-        raise ValueError(f'dataset input escapes the workspace or uses a symlink: {relative}')
-    if not path.is_file():
-        raise FileNotFoundError(path)
-    return path
+from ctxpress.benchmarks.fresh import dataset_file as _file
 
 
 def _ids(path):

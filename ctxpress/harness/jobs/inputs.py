@@ -20,7 +20,7 @@ def _relative(plan, source, digest):
         if relative:
             return relative
     if plan.get('grading_snapshot'):
-        from ctxpress.benchmarks.milestone import checkpoint_grading as eval_grading
+        from ctxpress.harness.jobs import grading_inputs as eval_grading
         relative = eval_grading.relative(plan['grading_snapshot'],source)
         if relative:
             return relative
@@ -51,7 +51,7 @@ def prepare(plan, directory):
             from ctxpress.harness.jobs import trees as eval_trees
             eval_trees.prepare_directories(plan, staged)
         if plan.get('grading_snapshot'):
-            from ctxpress.benchmarks.milestone import checkpoint_grading as eval_grading
+            from ctxpress.harness.jobs import grading_inputs as eval_grading
             for key,descriptor in plan['grading_snapshot']['trees'].items():
                 root = staged/'grading'/eval_grading.folder(plan['grading_snapshot'],key)
                 root.mkdir(parents=True,exist_ok=True)
@@ -112,7 +112,7 @@ def verify(plan, directory):
         from ctxpress.harness.jobs import trees as eval_trees
         eval_trees.verify_copies(plan, directory)
     if plan.get('grading_snapshot'):
-        from ctxpress.benchmarks.milestone import checkpoint_grading as eval_grading
+        from ctxpress.harness.jobs import grading_inputs as eval_grading
         source = plan['config']['environment']['grading']
         if eval_grading.load(resolved[source]) != plan['grading_snapshot']:
             raise ValueError('grading manifest differs from the reviewed plan')

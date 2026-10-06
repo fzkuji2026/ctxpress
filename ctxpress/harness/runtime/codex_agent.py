@@ -8,7 +8,7 @@ It does not install an agent, prepare task environments, or change grading.
 from __future__ import annotations
 import asyncio, copy, json, re, shlex
 from pathlib import Path
-from ctxpress.benchmarks.method_inputs import validate_live
+from ctxpress.harness.runtime.method_inputs import validate_live
 
 PRIVATE = '/ctxpress-private'
 HOME = PRIVATE + '/codex'

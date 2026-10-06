@@ -165,3 +165,23 @@ def reservation(ids, daemon_id, progress=None):
             os.close(descriptor)
         if progress:
             progress('released')
+
+
+def claimed_gpus(record):
+    """Both phases reserve their resources before a job consumes a worker slot."""
+    ids = [*((record or {}).get('gpu_device_ids') or []),
+           *((record or {}).get('verifier_gpu_device_ids') or [])]
+    unique = {}
+    for value in ids:
+        unique.setdefault(value.casefold(), value)
+    return list(unique.values())
+
+
+def validate_verifier_gpus(task, record, *, require=False):
+    environment = task['initial_state'].get('verifier_environment')
+    if 'verifier_gpu_device_ids' in record and environment is None:
+        raise ValueError('verifier GPU binding requires a separate verifier environment')
+    count = requirements(environment or {})['count']
+    if 'verifier_gpu_device_ids' in record or require and count:
+        device_ids(record.get('verifier_gpu_device_ids'), count)
+    return count

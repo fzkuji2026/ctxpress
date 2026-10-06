@@ -155,6 +155,22 @@ class SWEMilestone:
         result['benchmark'] = dict(self.describe(), task_id=point['id'])
         return result
 
+    def recorded_points(self):
+        return POINTS
+
+    def recover_native(self, folder, label):
+        """Recover a native itinerary attempt from its resource journals."""
+        from ctxpress.benchmarks.milestone.driver import recover_attempt
+        recover_attempt(folder, label)
+
+    def validate_native_version(self, record):
+        from ctxpress.benchmarks.milestone import version
+        version.validate(record)
+
+    def capture_native_version(self, selected, release):
+        from ctxpress.benchmarks.milestone import version
+        return version.capture(selected, release)
+
     def recover(self, path, label):
         if Path(path).name.startswith('resources-milestone-'):
             from ctxpress.benchmarks.milestone.driver import recover_attempt

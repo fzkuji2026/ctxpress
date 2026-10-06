@@ -11,7 +11,7 @@ from pathlib import Path,PurePosixPath
 from urllib.parse import parse_qs,quote,unquote,urlsplit,urlencode
 from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.core import processes
-from ctxpress.benchmarks.milestone.resources import identity, image_id, labels
+from ctxpress.harness.runtime.docker import identity, image_id, labels
 
 SCHEMA='ctxpress.eval.milestone_services'
 HEX=re.compile(r'[0-9a-f]{64}')

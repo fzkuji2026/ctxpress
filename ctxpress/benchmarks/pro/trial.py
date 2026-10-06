@@ -33,12 +33,13 @@ async def check_repository(environment,commit):
 
 def capture_factory(tooling,modern):
     def factory(base,exec_input,settings,limit_error,credentials):
-        from ctxpress.benchmarks.harbor import codex_hook as harbor_codex, modern_codex as harbor_modern_codex
+        from ctxpress.harness.runtime import codex_agent
+        from ctxpress.benchmarks.harbor import modern_codex as harbor_modern_codex
         if not issubclass(tooling['locked'],base):raise ValueError('Pro locked Agent parent changed')
         if modern:
             instrumented=harbor_modern_codex.framework(tooling['locked'],settings,limit_error,credentials)
         else:
-            instrumented=harbor_codex.framework(tooling['locked'],exec_input,settings,limit_error=limit_error,credential_state=credentials)
+            instrumented=codex_agent.framework(tooling['locked'],exec_input,settings,limit_error=limit_error,credential_state=credentials)
         class Capture(instrumented):
             async def run(self,instruction,environment,context):
                 try:return await super().run(instruction,environment,context)

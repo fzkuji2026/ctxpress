@@ -3,7 +3,8 @@ import asyncio, json
 from types import SimpleNamespace
 import pytest
 from ctxpress import benchmarks
-from ctxpress.benchmarks.harbor import driver as harbor_driver, gpu as harbor_gpu
+from ctxpress.benchmarks.harbor import driver as harbor_driver
+from ctxpress.harness.runtime import gpu as harbor_gpu
 from ctxpress.benchmarks.harbor.environment import framework, guarded_compose
 from ctxpress.harness.jobs import environment as eval_environment, resources as task_resources
 from test_harbor_environment import OfficialFixture, model, settings

@@ -2,7 +2,7 @@
 import asyncio, json, shlex
 from types import SimpleNamespace
 import pytest
-from ctxpress.benchmarks.harbor.codex_hook import CallProgress, framework, HOME
+from ctxpress.harness.runtime.codex_agent import CallProgress, framework, HOME
 
 
 class OfficialFixture:

@@ -2,7 +2,7 @@
 from __future__ import annotations
 import contextlib,math,os,signal,threading,time
 from pathlib import Path
-from ctxpress.benchmarks.harbor.codex_hook import CallProgress
+from ctxpress.harness.runtime.codex_agent import CallProgress
 from ctxpress.harness.jobs import plan as eval_plan
 
 

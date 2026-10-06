@@ -28,3 +28,13 @@ class FreshAdapter:
     def recover(self, path, label):
         # No runtime resources can be created before an executor is implemented.
         raise ValueError(self.describe()['name'] + ': task-start executor integration pending')
+
+
+def dataset_file(root, relative):
+    path = root / relative
+    resolved = path.resolve()
+    if root not in resolved.parents or any(parent.is_symlink() for parent in (path, *path.parents) if parent != root and root in parent.parents):
+        raise ValueError(f'dataset input escapes the workspace or uses a symlink: {relative}')
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    return path

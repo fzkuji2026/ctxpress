@@ -15,7 +15,7 @@ def load(request):
     sys.path[:0]=[str(package),str(source/'src') if framework=='polybench' else str(source),str(official/'dependencies')]
     from ctxpress.harness.jobs import plan as eval_plan
     if eval_plan.file_sha256(sys.executable)!=runtime['sha256']:raise ValueError('SWE-bench Python binary changed')
-    from ctxpress.benchmarks.harbor.codex_hook import check_catalog
+    from ctxpress.harness.runtime.codex_agent import check_catalog
     check_catalog(request,probe=True)
     if request['api']=='codebench':
         import docker
@@ -114,7 +114,7 @@ def main(argv=None):
     from ctxpress.harness.runtime import connect_proxy, socket_bridge
     from ctxpress.harness.jobs import plan as eval_plan
     from ctxpress.benchmarks.swe import trial as swe_trial
-    from ctxpress.benchmarks.harbor.driver import cleanup_channel
+    from ctxpress.harness.runtime.socket_bridge import cleanup_channel
     timeout=max(1800,request['run'].get('grading_timeout',3600 if request['api']=='pro-v1' else 1800)+60)
     client=docker.from_env(timeout=timeout);client._ctxpress_not_found=docker.errors.NotFound
     daemon_id=client.info()['ID']

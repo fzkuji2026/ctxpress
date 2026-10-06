@@ -170,7 +170,7 @@ def test_prepare_dispatches_frozen_modern_api_and_separate_gpu_phase(tmp_path,mo
 def test_reports_keep_grader_gpu_binding_without_agent_devices(tmp_path):
     from ctxpress.harness.jobs import queue as evaluation
     from ctxpress.harness.results.report import report, write_report
-    from ctxpress.benchmarks.harbor import gpu as harbor_gpu
+    from ctxpress.harness.runtime import gpu as harbor_gpu
     _,directory,_,job,_=frozen_modern(tmp_path)
     evidence=harbor_gpu.observed(QUERY,[A],['H100'])
     with evaluation.database(directory) as connection:

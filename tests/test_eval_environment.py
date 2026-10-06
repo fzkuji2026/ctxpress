@@ -3,6 +3,7 @@ import builtins, copy, json, shutil, subprocess, sys
 from pathlib import Path
 import pytest
 from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, queue as evaluation
+from ctxpress.harness import cli as eval_cli
 from test_eval_inputs import inputs
 
 BASE = 'sha256:' + '1'*64
@@ -120,7 +121,7 @@ def test_capture_cli_only_inspects_images_and_writes_declaration(tmp_path,monkey
         return subprocess.CompletedProcess(command,0,json.dumps([dict(Id=digest,Os='linux',Architecture='amd64')]),'')
     monkeypatch.setattr(eval_environment.subprocess,'run',docker)
     output = tmp_path/'captured.json'
-    evaluation.main(['capture-environment','--workspace',str(root),'--base-image','fixture-base',
+    eval_cli.main(['capture-environment','--workspace',str(root),'--base-image','fixture-base',
                      '--boundary','3:14','--output',str(output)])
     result = json.loads(capsys.readouterr().out)
     assert result['experiments_started'] == 0 and result['workspace_files'] == 1

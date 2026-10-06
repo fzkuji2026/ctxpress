@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 import shlex
 from ctxpress.core import toml
-from ctxpress.benchmarks.harbor import codex_hook as harbor_codex
+from ctxpress.harness.runtime import codex_agent
 
 
 def framework(base, settings, limit_error, credential_state):
@@ -13,7 +13,7 @@ def framework(base, settings, limit_error, credential_state):
             if not servers:
                 return None
             data = toml.dumps({'mcp_servers':servers})
-            source = 'from pathlib import Path; p=Path(' + repr(harbor_codex.HOME + '/config.toml') + \
+            source = 'from pathlib import Path; p=Path(' + repr(codex_agent.HOME + '/config.toml') + \
                 '); p.write_text(p.read_text() + "\\n" + ' + repr(data) + ')'
             return 'python3 -c ' + shlex.quote(source)
 
@@ -25,5 +25,5 @@ def framework(base, settings, limit_error, credential_state):
                     raise limit_error('pinned Codex command exited unsuccessfully')
             # Trial retains official prompt rendering and trajectory conversion.
 
-    return harbor_codex.framework(Bridge, SimpleNamespace, settings,
+    return codex_agent.framework(Bridge, SimpleNamespace, settings,
         limit_error=limit_error, credential_state=credential_state)

@@ -17,6 +17,7 @@ Layout (each layer imports only the ones above it; settings depends on nothing)
     benchmarks/
                one package per benchmark family (milestone, swe, pro, polybench, bigcode, harbor, deepswe) with its
                data, agent sessions and official grading; the registry and shared planners at the top.
+               harbor and swe also carry the execution engines the other families plug into.
                The framework above never imports harness or benchmarks.
 """
 from ctxpress.methods import REGISTRY, METHODS, build, method_table, BudgetSpec  # noqa: F401

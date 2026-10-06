@@ -6,11 +6,13 @@ API accounting completeness are independent; neither implies significance.
 """
 from __future__ import annotations
 
+import contextlib
 import copy
 import hashlib
 import json
 import math
 import re
+import sqlite3
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -600,3 +602,36 @@ def compare(plan, jobs, *, reference, directory):
                       reasons=dict(Counter(r for v in assessments.values() for r in v['reasons'] + v['quality_reasons']))),
         jobs=[dict(task_id=key[0], repeat=key[1], method=key[2], **value) for key, value in assessments.items()],
         candidates=candidates, **cohort_evidence)
+
+
+def compare_results(directory, reference, output=None):
+    """Analyze a consistent read-only job snapshot without changing its evidence."""
+    directory = Path(directory).resolve()
+    db = directory / 'jobs.sqlite'
+    if db.is_symlink() or not db.is_file():
+        raise ValueError('comparison requires an existing regular evaluation database')
+    with contextlib.closing(sqlite3.connect(db.as_uri() + '?mode=ro', uri=True)) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute('BEGIN')
+        record = connection.execute("SELECT value FROM metadata WHERE key='plan'").fetchone()
+        if record is None:
+            raise ValueError('comparison database has no frozen plan')
+        plan = eval_plan.verify(json.loads(record['value']), check_inputs=False)
+        jobs = [dict(row) for row in connection.execute('SELECT * FROM jobs ORDER BY id')]
+    destination = Path(output).expanduser().resolve() if output is not None else None
+    if destination is not None:
+        protected = [directory / name for name in ('inputs', 'runtime', 'jobs')]
+        protected += [Path(item['tree']['root']).resolve() for item in plan.get('input_trees', {}).values()]
+        if (destination.exists() or Path(output).expanduser().is_symlink() or
+                destination.name.lower() == 'auth.json' or
+                str(destination) in plan.get('artifacts', {}) or
+                any(destination == root or root in destination.parents for root in protected)):
+            raise ValueError('comparison output must be a new file outside frozen evidence and input trees')
+    result = compare(plan, jobs, reference=reference, directory=directory)
+    if destination is not None:
+        serialized = json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + '\n'
+        # Exclusive creation also refuses an output that appeared during analysis.
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open('x', encoding='utf-8') as stream:
+            stream.write(serialized)
+    return result

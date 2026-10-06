@@ -6,7 +6,7 @@ from ctxpress.core import toml
 from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.harness.jobs.task import validate
 from ctxpress.benchmarks.fresh import FreshAdapter
-from ctxpress.benchmarks.milestone.data import _file
+from ctxpress.benchmarks.fresh import dataset_file as _file
 
 
 class HarborTasks(FreshAdapter):
@@ -75,7 +75,7 @@ class HarborTasks(FreshAdapter):
             if not instruction.strip():raise ValueError('Harbor task instructions must not be empty')
             config=toml.load(add('task.toml','runtime'))
             if not isinstance(config.get('environment',{}),dict):raise ValueError('invalid Harbor environment configuration')
-            from ctxpress.benchmarks.harbor.gpu import requirements
+            from ctxpress.harness.runtime.gpu import requirements
             requirements(config.get('environment', {}))
             from ctxpress.benchmarks.harbor.protocol import verifier_environment
             grading_environment = verifier_environment(config)

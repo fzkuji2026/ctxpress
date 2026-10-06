@@ -71,7 +71,7 @@ def read_grade(task,config,job,folder,trial):
 def prepare_execution(task,entry,config,job,folder,label):
     from ctxpress.benchmarks.milestone import resources as milestone_resources, transport as milestone_transport, version as milestone_version
     from ctxpress.methods import build
-    from ctxpress.benchmarks.harbor.driver import method_inputs
+    from ctxpress.harness.runtime.method_inputs import freeze as method_inputs
     payload=request(task,config,job,folder)
     lock,_=task_resources.read(payload['resources'],'swe-milestone',[job['task']])
     if 'native_data_version' not in lock:

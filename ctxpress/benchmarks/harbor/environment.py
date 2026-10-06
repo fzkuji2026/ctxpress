@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio, codecs, copy, json, os, re
 from pathlib import Path, PurePosixPath
 from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan
-from ctxpress.benchmarks.harbor import gpu as harbor_gpu
+from ctxpress.harness.runtime import gpu as harbor_gpu
 
 
 async def compose_output(process, stdin_data, on_output):

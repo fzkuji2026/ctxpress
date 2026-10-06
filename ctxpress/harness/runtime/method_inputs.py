@@ -1,6 +1,7 @@
 """Validate mounted method inputs on the host without changing container arguments."""
 from __future__ import annotations
 import copy
+import shutil
 import re
 from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan
@@ -39,3 +40,25 @@ def host_entry(entry, profiles=None):
 
 def validate_live(entry, profiles=None):
     build(host_entry(entry, profiles)).validate_live()
+
+
+def freeze(entry, folder):
+    entry = copy.deepcopy(entry)
+    folder = Path(folder)
+    folder.mkdir()
+    def visit(value):
+        args = value.get('args') or {}
+        field = {'CostModel':'profile', 'AutoCostModel':'policy'}.get(value.get('class'))
+        if field and args.get(field) and not isinstance(args[field], dict):
+            source = Path(args[field]); digest = eval_plan.file_sha256(source)
+            target = folder / (digest + '.json')
+            shutil.copyfile(source, target)
+            if eval_plan.file_sha256(target) != digest:
+                raise ValueError('frozen method input changed during copy')
+            args[field] = '/ctxpress-method/' + target.name
+        if isinstance(args.get('inner'), dict):
+            visit(args['inner'])
+        for child in args.get('methods', []):
+            visit(child)
+    visit(entry)
+    return entry

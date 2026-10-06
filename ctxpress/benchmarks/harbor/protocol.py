@@ -1,7 +1,8 @@
 """Explicit Harbor phase and frozen runtime API selection, without imports."""
 from __future__ import annotations
 import copy
-from ctxpress.benchmarks.harbor import gpu as harbor_gpu
+from ctxpress.harness.runtime import gpu as harbor_gpu
+from ctxpress.harness.runtime.gpu import claimed_gpus, validate_verifier_gpus
 
 
 def verifier_environment(config):
@@ -27,21 +28,3 @@ def api(lock):
     return 'legacy'
 
 
-def claimed_gpus(record):
-    """Both phases reserve their resources before a job consumes a worker slot."""
-    ids = [*((record or {}).get('gpu_device_ids') or []),
-           *((record or {}).get('verifier_gpu_device_ids') or [])]
-    unique = {}
-    for value in ids:
-        unique.setdefault(value.casefold(), value)
-    return list(unique.values())
-
-
-def validate_verifier_gpus(task, record, *, require=False):
-    environment = task['initial_state'].get('verifier_environment')
-    if 'verifier_gpu_device_ids' in record and environment is None:
-        raise ValueError('verifier GPU binding requires a separate verifier environment')
-    count = harbor_gpu.requirements(environment or {})['count']
-    if 'verifier_gpu_device_ids' in record or require and count:
-        harbor_gpu.device_ids(record.get('verifier_gpu_device_ids'), count)
-    return count

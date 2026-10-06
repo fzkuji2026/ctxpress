@@ -2,7 +2,7 @@
 from __future__ import annotations
 import asyncio, hashlib, io, json, os, shlex, tarfile
 from pathlib import Path
-from ctxpress.benchmarks.harbor import codex_hook as harbor_codex
+from ctxpress.harness.runtime import codex_agent
 from ctxpress.benchmarks.bigcode.adapter import BigCodeBench
 from ctxpress.benchmarks.bigcode.protocol import PROOF
 from ctxpress.harness.jobs import plan as eval_plan
@@ -18,7 +18,7 @@ class CodeEnvironment(AgentEnvironment):
         volumes={str(Path(request['package'])/'ctxpress'):{'bind':'/ctxpress-runtime/ctxpress','mode':'ro'},
             request['bindir']:{'bind':'/cxbin','mode':'ro'},request['profiles']:{'bind':'/ctxpress-method','mode':'ro'},
             str(self.channel):{'bind':'/ctxpress-channel','mode':'ro'},str(logs):{'bind':'/logs/agent','mode':'rw'}}
-        for mount in harbor_codex.catalog_mounts(request):
+        for mount in codex_agent.catalog_mounts(request):
             volumes[mount['source']]={'bind':mount['target'],'mode':'ro'}
         container=await completed_thread(self.owner.create,user='root',volumes=volumes,init=True,entrypoint=[])
         await completed_thread(container.start)
@@ -111,7 +111,7 @@ async def run(request,module,client,problem,channel,daemon_id):
     else:owner.cleanup()
     root=Path(request['folder']);files=[root/'samples.jsonl']
     files.extend(path for path in (root/'official-logs').rglob('*') if path.is_file() and not path.is_symlink())
-    progress=harbor_codex.CallProgress(root/'agent/sessions');calls,_=progress.update()
+    progress=codex_agent.CallProgress(root/'agent/sessions');calls,_=progress.update()
     eval_plan.atomic_json(root/'swe-worker-result.json',dict(stop=stop,calls=calls,agent_exception=exception,
         official_report=str(report) if report else None,code_samples=str(root/'samples.jsonl'),sample_id=request['sample_index'],artifact_kind='code_samples',
         official_artifacts={path.relative_to(root).as_posix():dict(path=str(path.resolve()),sha256=eval_plan.file_sha256(path)) for path in files},

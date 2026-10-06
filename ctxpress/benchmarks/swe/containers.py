@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.core import processes
-from ctxpress.benchmarks.harbor import codex_hook as harbor_codex
+from ctxpress.harness.runtime import codex_agent
 
 SCHEMA='ctxpress.eval.swe_resources'
 
@@ -35,7 +35,7 @@ class Owner:
         self.record=dict(schema=SCHEMA,version=1,project=request['project'],container=name,label=request['label'],
             image=image,role=role,daemon_id=daemon_id,channel=str(channel) if channel else None,
             credentials_may_exist=False,cleaned=False,phase='prepared',pid=os.getpid(),identity=processes.identity(os.getpid()))
-        if role=='agent' and (catalog:=harbor_codex.check_catalog(request)):
+        if role=='agent' and (catalog:=codex_agent.check_catalog(request)):
             self.record['model_catalog']=catalog
         self.container=None;self.persist()
     def persist(self):eval_plan.atomic_json(self.path,self.record)
@@ -91,7 +91,7 @@ class AgentEnvironment:
         volumes={str(Path(request['package'])/'ctxpress'):{'bind':'/ctxpress-runtime/ctxpress','mode':'ro'},request['bindir']:{'bind':'/cxbin','mode':'ro'},
             request['profiles']:{'bind':'/ctxpress-method','mode':'ro'},str(self.channel):{'bind':'/ctxpress-channel','mode':'ro'},
             str(logs):{'bind':'/logs/agent','mode':'rw'}}
-        for mount in harbor_codex.catalog_mounts(request):
+        for mount in codex_agent.catalog_mounts(request):
             volumes[mount['source']]={'bind':mount['target'],'mode':'ro'}
         options=dict(entrypoint=[]) if request['api']=='pro-v1' else {}
         container=await completed_thread(self.owner.create,user='root',volumes=volumes,init=True,**options)

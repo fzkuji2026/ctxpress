@@ -1,4 +1,5 @@
-"""Built-in benchmark adapters, independent of context-management methods."""
+"""Built-in benchmark adapters, independent of context-management methods: the registry, shared planners and one
+package per family. Two families also carry an execution engine others plug into (harbor, swe)."""
 from ctxpress.benchmarks.milestone.adapter import SWEMilestone
 from ctxpress.benchmarks.swe.adapter import SWEBench, SWEBenchVerified, SWEBenchLite
 from ctxpress.benchmarks.harbor.terminal_bench import TerminalBench

@@ -4,7 +4,7 @@ Pier owns prompt rendering and post-run trajectory conversion. ctxpress owns
 the Codex command, context proxy, tool budget and checked credential cleanup.
 """
 from types import SimpleNamespace
-from ctxpress.benchmarks.harbor import codex_hook as harbor_codex
+from ctxpress.harness.runtime import codex_agent
 
 
 def framework(base, install_spec, settings, limit_error, credential_state):
@@ -25,5 +25,5 @@ def framework(base, install_spec, settings, limit_error, credential_state):
             # The official Trial calls populate_context_post_run after logs are
             # available, including the timeout and tool-budget paths.
 
-    return harbor_codex.framework(Bridge, SimpleNamespace, settings,
+    return codex_agent.framework(Bridge, SimpleNamespace, settings,
         limit_error=limit_error, credential_state=credential_state)

@@ -27,19 +27,19 @@ def verify(lock, benchmark, selected):
     if not isinstance(lock.get('tasks'), dict) or not isinstance(lock.get('trees'), dict):
         raise ValueError('task resources require task and official input tree bindings')
     if 'native_data_version' in lock:
-        from ctxpress.benchmarks.milestone import version as milestone_version
+        from ctxpress import benchmarks
         if benchmark!='swe-milestone' or not isinstance(lock['native_data_version'],dict) or lock['native_data_version'].get('release')!=lock['release']:
             raise ValueError('native Git data version belongs to another benchmark/release')
-        milestone_version.validate(lock['native_data_version'])
+        benchmarks.get(benchmark).validate_native_version(lock['native_data_version'])
     for task in selected:
         record = lock['tasks'].get(task['id'])
         if not isinstance(record, dict) or record.get('task_sha256') != task_digest(task):
             raise ValueError('task resources do not bind the selected task data: ' + task['id'])
         if 'gpu_device_ids' in record:
-            from ctxpress.benchmarks.harbor import gpu as harbor_gpu
+            from ctxpress.harness.runtime import gpu as harbor_gpu
             count = harbor_gpu.requirements(task['initial_state'].get('environment', {}))['count']
             harbor_gpu.device_ids(record['gpu_device_ids'], count)
-        from ctxpress.benchmarks.harbor.protocol import validate_verifier_gpus
+        from ctxpress.harness.runtime.gpu import validate_verifier_gpus
         validate_verifier_gpus(task, record)
         validate_verifier_caps(benchmark, record)
         images = record.get('images')
@@ -128,17 +128,20 @@ def capture(spec, selected):
                 not re.fullmatch(r'[a-zA-Z0-9_-]+', key) or not isinstance(reference, str) or not reference
                 for key, reference in services.items())):
             raise ValueError('declare explicit auxiliary service names and image references')
-        from ctxpress.benchmarks.harbor import gpu as harbor_gpu
+        from ctxpress.harness.runtime import gpu as harbor_gpu
         count = harbor_gpu.requirements(task['initial_state'].get('environment', {}))['count']
         if count or 'gpu_device_ids' in definition:
             harbor_gpu.device_ids(definition.get('gpu_device_ids'), count)
-        from ctxpress.benchmarks.harbor.protocol import validate_verifier_gpus
+        from ctxpress.harness.runtime.gpu import validate_verifier_gpus
         validate_verifier_gpus(task, definition, require=True)
         validate_verifier_caps(spec['benchmark'], definition)
     provenance={}
     if spec.get('native_data_version'):
-        from ctxpress.benchmarks.milestone import version as milestone_version
-        provenance['native_data_version']=milestone_version.capture(selected,spec['release'])
+        from ctxpress import benchmarks
+        adapter=benchmarks.get(spec['benchmark'])
+        if not hasattr(adapter,'capture_native_version'):
+            raise ValueError('native Git data version belongs to another benchmark')
+        provenance['native_data_version']=adapter.capture_native_version(selected,spec['release'])
     # All file selections and task declarations are validated before contacting Docker.
     cache = {}
     def image(reference):

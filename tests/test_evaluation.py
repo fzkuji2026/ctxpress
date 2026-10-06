@@ -129,7 +129,7 @@ def test_background_start_returns_while_jobs_continue(tmp_path, monkeypatch):
     actual = subprocess.Popen
     started = []
     def launch(command, **kwargs):
-        if command[1:4] == ['-m', 'ctxpress.harness.jobs.queue', 'worker']:
+        if command[1:4] == ['-m', 'ctxpress.harness.cli', 'worker']:
             directory = command[command.index('--directory') + 1]
             process = actual([sys.executable, str(Path(__file__).with_name('fake_eval_scheduler.py')), directory], **kwargs)
             started.append(process)

@@ -2,28 +2,13 @@
 from __future__ import annotations
 import io,json,os,re,subprocess,tarfile,threading,uuid
 from pathlib import Path,PurePosixPath
-from ctxpress.benchmarks.harbor.driver import docker
+from ctxpress.harness.runtime.docker import docker, identity, image_id, labels
 from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.core import processes
 
 SCHEMA='ctxpress.eval.milestone_resources'
 NETWORK_SCHEMA='ctxpress.eval.milestone_network'
 PRIVATE='/home/fakeroot/.codex/auth.json'
-
-
-def identity(project,label):
-    if not re.fullmatch(r'ctxp-ms-[0-9a-f]{24}',project) or not isinstance(label,str) or not label:
-        raise ValueError('native resources require an explicit run identity')
-
-
-def image_id(value):
-    if not isinstance(value,str) or not re.fullmatch(r'sha256:[0-9a-f]{64}',value):
-        raise ValueError('native resources require immutable image IDs')
-    return value
-
-
-def labels(project,label,role):
-    return {'ctxpress.managed':'true','ctxpress.run':label,'ctxpress.milestone.project':project,'ctxpress.milestone.role':role}
 
 
 class Registry:

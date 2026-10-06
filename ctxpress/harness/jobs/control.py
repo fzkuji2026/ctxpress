@@ -77,8 +77,7 @@ def recover_attempt(adapter, folder, label):
     if any(path.name.startswith('resources-milestone-') for path in journals):
         if adapter.describe()['name'] != 'swe-milestone':
             raise ValueError('native resource journal belongs to a different benchmark')
-        from ctxpress.benchmarks.milestone.driver import recover_attempt as native_recover
-        native_recover(folder, label)
+        adapter.recover_native(folder, label)
         return len(journals)
     # All current two-phase adapters use an Agent journal and a verifier journal.
     # Credential-bearing resources must disappear before verifier/network cleanup.

@@ -5,6 +5,7 @@ import sqlite3
 import pytest
 
 from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation
+from ctxpress.harness import cli as eval_cli
 from ctxpress.harness.results import task_compare as eval_task_compare
 from test_task_start_plan import config
 
@@ -27,7 +28,7 @@ def run(tmp_path):
 def test_missing_run_does_not_create_a_database(tmp_path):
     directory = tmp_path / 'absent'
     with pytest.raises(ValueError, match='existing regular evaluation database'):
-        evaluation.compare_results(directory, 'reference')
+        eval_task_compare.compare_results(directory, 'reference')
     assert not directory.exists()
 
 
@@ -44,7 +45,7 @@ def test_cli_passes_frozen_snapshot_and_keeps_database_unchanged(run, tmp_path, 
         return analysis
     monkeypatch.setattr(eval_task_compare, 'compare', compare)
     output = tmp_path / 'analysis' / 'result.json'
-    evaluation.main(['compare', '--directory', str(directory), '--reference', 'explicit-reference',
+    eval_cli.main(['compare', '--directory', str(directory), '--reference', 'explicit-reference',
                      '--output', str(output)])
     assert json.loads(capsys.readouterr().out) == analysis
     assert json.loads(output.read_text(encoding='utf-8')) == analysis
@@ -63,7 +64,7 @@ def test_output_cannot_replace_or_pollute_frozen_evidence(run, tmp_path, monkeyp
     destination = destinations.get(target, directory / target / 'analysis.json')
     monkeypatch.setattr(eval_task_compare, 'compare', lambda *a, **kw: pytest.fail('unsafe output reached analysis'))
     with pytest.raises(ValueError, match='new file outside frozen evidence'):
-        evaluation.compare_results(directory, 'reference', destination)
+        eval_task_compare.compare_results(directory, 'reference', destination)
     assert existing.read_text(encoding='utf-8') == 'keep me'
     if target != 'existing':
         assert not destination.exists()
@@ -77,7 +78,7 @@ def test_output_created_during_analysis_is_not_overwritten(run, tmp_path, monkey
         return {'result': 'ours'}
     monkeypatch.setattr(eval_task_compare, 'compare', compare)
     with pytest.raises(FileExistsError):
-        evaluation.compare_results(directory, 'reference', destination)
+        eval_task_compare.compare_results(directory, 'reference', destination)
     assert destination.read_text(encoding='utf-8') == 'other writer'
 
 
@@ -86,12 +87,12 @@ def test_rejected_analysis_does_not_publish_an_empty_file(run, tmp_path, monkeyp
     destination = tmp_path / 'invalid.json'
     monkeypatch.setattr(eval_task_compare, 'compare', lambda *a, **kw: {'invalid': float('nan')})
     with pytest.raises(ValueError):
-        evaluation.compare_results(directory, 'reference', destination)
+        eval_task_compare.compare_results(directory, 'reference', destination)
     assert not destination.exists()
 
 
 def test_cli_requires_explicit_reference(run, capsys):
     with pytest.raises(SystemExit) as error:
-        evaluation.main(['compare', '--directory', str(run[0])])
+        eval_cli.main(['compare', '--directory', str(run[0])])
     assert error.value.code == 2
     assert '--reference' in capsys.readouterr().err

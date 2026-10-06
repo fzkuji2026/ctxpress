@@ -1,7 +1,7 @@
 """Real Linux file-lock scheduling checks; these do not require or use a GPU."""
 import hashlib, json, os, subprocess, sys, tempfile, time, unittest, uuid
 from pathlib import Path
-from ctxpress.benchmarks.harbor.gpu import reservation
+from ctxpress.harness.runtime.gpu import reservation
 
 A='GPU-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 B='GPU-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -13,7 +13,7 @@ class ReservationChecks(unittest.TestCase):
         waiting=folder/(name+'-waiting');acquired=folder/(name+'-acquired')
         source='''import time
 from pathlib import Path
-from ctxpress.benchmarks.harbor.gpu import reservation
+from ctxpress.harness.runtime.gpu import reservation
 def progress(phase):
     if phase == 'waiting': Path(WAITING).write_text('waiting')
 with reservation(IDS, DAEMON, progress):

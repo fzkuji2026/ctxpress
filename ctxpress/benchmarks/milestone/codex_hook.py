@@ -7,7 +7,7 @@ from __future__ import annotations
 import contextlib, copy, json, re, shlex, uuid
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
-from ctxpress.benchmarks.method_inputs import validate_live
+from ctxpress.harness.runtime.method_inputs import validate_live
 
 
 def check_catalog(execution, *, probe=False):

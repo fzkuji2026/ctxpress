@@ -6,9 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from ctxpress.benchmarks.harbor import codex_hook as harbor_codex, driver as harbor_driver
+from ctxpress.harness.runtime import codex_agent
+from ctxpress.benchmarks.harbor import driver as harbor_driver
 from ctxpress.benchmarks.milestone import codex_hook as milestone_codex
-from ctxpress.benchmarks.method_inputs import host_entry, validate_live
+from ctxpress.harness.runtime.method_inputs import host_entry, validate_live
 from ctxpress.core import policy
 from ctxpress.replay.tune import tune
 from test_harbor_codex import OfficialFixture, settings
@@ -57,7 +58,7 @@ def test_official_launcher_validates_actual_policy_and_keeps_container_path(stag
             monkeypatch.setenv('CTXPRESS_CODEX_AUTH_FILE', '/synthetic-auth-not-read')
             agent = agent_class(dict(cfg, run={'max_calls': 100}, folder=str(directory.parent)), lambda _: None)()
         else:
-            agent = harbor_codex.framework(OfficialFixture, SimpleNamespace, cfg)()
+            agent = codex_agent.framework(OfficialFixture, SimpleNamespace, cfg)()
         agent._ctxpress_proxy = 'http://127.0.0.1:3456'
         command = agent.create_run_agent_commands('fixture')[-1].command
     args = shlex.split(command)
@@ -112,12 +113,12 @@ def test_file_policy_survives_official_trial_lifecycle(staged, tmp_path, monkeyp
     async def run(request, *args, **kwargs):
         return await original_run(dict(request, method=entry, profiles=str(directory)), *args, **kwargs)
     monkeypatch.setattr(target, 'run_trial', run)
-    original_framework = harbor_codex.framework
+    original_framework = codex_agent.framework
     received = []
     def framework(base, exec_input, cfg, *args, **kwargs):
         received.append(copy.deepcopy(cfg))
         return original_framework(base, exec_input, cfg, *args, **kwargs)
-    monkeypatch.setattr(harbor_codex, 'framework', framework)
+    monkeypatch.setattr(codex_agent, 'framework', framework)
     if runner == 'legacy':
         fixture.test_worker_invokes_trial_with_owned_hooks_and_verifier_after_agent(tmp_path, monkeypatch, False)
     elif runner == 'modern':

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio, inspect, os
 from pathlib import Path
 from types import SimpleNamespace
-from ctxpress.benchmarks.harbor import codex_hook as harbor_codex
+from ctxpress.harness.runtime import codex_agent
 from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.benchmarks.swe.containers import AgentEnvironment, Owner, check_repo
 
@@ -22,10 +22,10 @@ def agent_class(request,credentials):
             for command in self.create_run_agent_commands(instruction):
                 result=await environment.exec(command='set -o pipefail; '+command.command,env=command.env)
                 if result.return_code:raise AgentExitError('pinned Codex exited unsuccessfully')
-    return harbor_codex.framework(Launcher,SimpleNamespace,dict(method=request['method'], profiles=request.get('profiles'),model=request['model'],
+    return codex_agent.framework(Launcher,SimpleNamespace,dict(method=request['method'], profiles=request.get('profiles'),model=request['model'],
         reasoning=request['reasoning'],binary_version=request['binary_version'],compact_limit=request['compact_limit'],
         upstream=request['upstream'],auth_file=os.environ['CTXPRESS_CODEX_AUTH_FILE'],max_calls=request['run']['max_calls'],
-        **harbor_codex.catalog_settings(request)),
+        **codex_agent.catalog_settings(request)),
         limit_error=AgentExitError,credential_state=credentials)
 
 
@@ -119,7 +119,7 @@ async def run(request,module,client,spec,channel,daemon_id):
     if request['run']['grade']:
         report=await asyncio.to_thread(grade,request,module,client,spec,grader_owner,agent_owner,prediction)
     else:grader_owner.cleanup()
-    progress=harbor_codex.CallProgress(Path(request['folder'])/'agent'/'sessions');calls,_=progress.update()
+    progress=codex_agent.CallProgress(Path(request['folder'])/'agent'/'sessions');calls,_=progress.update()
     root=Path(request['folder']);files=[root/'model.patch',root/'predictions.jsonl']
     files.extend(path for path in (root/'official-logs').rglob('*') if path.is_file() and not path.is_symlink())
     pro={}

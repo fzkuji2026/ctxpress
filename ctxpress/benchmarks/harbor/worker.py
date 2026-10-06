@@ -23,7 +23,7 @@ def load(request):
     from ctxpress.harness.jobs import plan as eval_plan
     if eval_plan.file_sha256(sys.executable) != runtime['sha256']:
         raise ValueError('Harbor Python binary changed')
-    from ctxpress.benchmarks.harbor.codex_hook import check_catalog
+    from ctxpress.harness.runtime.codex_agent import check_catalog
     check_catalog(request, probe=True)
     if framework == 'pier':
         from ctxpress.benchmarks.deepswe.pier_trial import load as load_pier
@@ -54,7 +54,7 @@ def load(request):
 
 
 def trial_config(request, config_class, channel):
-    from ctxpress.benchmarks.harbor.codex_hook import catalog_mounts
+    from ctxpress.harness.runtime.codex_agent import catalog_mounts
     mounts = []
     for source, target in ((request['package'], '/ctxpress-runtime'), (request['bindir'], '/cxbin'),
                            (request['profiles'], '/ctxpress-method'), (str(channel), '/ctxpress-channel')):
@@ -71,7 +71,7 @@ def trial_config(request, config_class, channel):
 
 def resource_record(request, channel, daemon_id):
     from ctxpress.core import processes
-    from ctxpress.benchmarks.harbor.codex_hook import check_catalog
+    from ctxpress.harness.runtime.codex_agent import check_catalog
     catalog = check_catalog(request)
     return dict(schema='ctxpress.eval.harbor_resources', version=1, project=request['project'],
         label=request['label'], images=request['images'], daemon_id=daemon_id,
@@ -82,7 +82,8 @@ def resource_record(request, channel, daemon_id):
 
 
 async def run_trial(request, official, channel, journal,agent_factory=None):
-    from ctxpress.benchmarks.harbor import codex_hook as harbor_codex, environment as harbor_environment
+    from ctxpress.harness.runtime import codex_agent
+    from ctxpress.benchmarks.harbor import environment as harbor_environment
     from ctxpress.harness.jobs import plan as eval_plan
     Codex, ExecInput, LimitError, Docker, ExecResult, Config, Trial = official
     owner = resource_record(request, channel, journal['daemon_id'])
@@ -110,15 +111,15 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
     if request.get('pro_replay'):
         binds={str(Path(request['task'])/'environment'):True,
                **{str(trial_root/name):False for name in ('agent','verifier','artifacts')}}
-    for mount in harbor_codex.catalog_mounts(request):
+    for mount in codex_agent.catalog_mounts(request):
         binds[mount['source']] = True
     global CtxpressCodex, CtxpressDocker
     settings=dict(method=request['method'], profiles=request.get('profiles'), model=request['model'],
         reasoning=request['reasoning'], binary_version=request['binary_version'], compact_limit=request['compact_limit'],
         upstream=request['upstream'], auth_file=os.environ['CTXPRESS_CODEX_AUTH_FILE'],
-        max_calls=request['run']['max_calls'], **harbor_codex.catalog_settings(request))
+        max_calls=request['run']['max_calls'], **codex_agent.catalog_settings(request))
     CtxpressCodex = agent_factory(Codex,ExecInput,settings,LimitError,credentials) if agent_factory else \
-        harbor_codex.framework(Codex,ExecInput,settings,limit_error=LimitError,credential_state=credentials)
+        codex_agent.framework(Codex,ExecInput,settings,limit_error=LimitError,credential_state=credentials)
     environment_settings = dict(images=request['images'], bind_roots=binds, run_label=request['label'])
     if request.get('gpu_device_ids'):
         environment_settings['gpu_device_ids'] = request['gpu_device_ids']
@@ -145,7 +146,7 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
             loop.remove_signal_handler(action)
     if trial._environment._ctxpress_started or not owner['cleaned']:
         raise RuntimeError('Harbor returned without verified environment cleanup')
-    progress = harbor_codex.CallProgress(trial_root / 'agent' / 'sessions')
+    progress = codex_agent.CallProgress(trial_root / 'agent' / 'sessions')
     calls, _ = progress.update()
     exception = result.exception_info.exception_type if result.exception_info else None
     stop = trial._agent.ctxpress_stop or ('timeout' if exception == 'AgentTimeoutError' else

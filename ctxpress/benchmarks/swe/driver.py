@@ -5,7 +5,8 @@ from pathlib import Path
 from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan, resources as task_resources
 from ctxpress.core import processes
 from ctxpress.live.telemetry import summary
-from ctxpress.benchmarks.harbor import codex_hook as harbor_codex, driver as harbor_driver
+from ctxpress.harness.runtime import codex_agent
+from ctxpress.harness.runtime import docker as runtime_docker, method_inputs, socket_bridge
 from ctxpress.benchmarks.swe import protocol as swe_protocol
 
 WORKER=Path(__file__).with_name('worker.py')
@@ -13,7 +14,7 @@ WORKER=Path(__file__).with_name('worker.py')
 
 def prepare(task,entry,config,job,folder,label):
     environment=config['environment']
-    catalog=harbor_codex.catalog_input(environment,config['model'],config['reasoning'])
+    catalog=codex_agent.catalog_input(environment,config['model'],config['reasoning'])
     lock,_=task_resources.read(environment['resources'],task['benchmark'],[job['task']])
     if job.get('resources')!=lock['tasks'][task['id']]:raise ValueError('SWE-bench job resource binding changed')
     if task['benchmark']=='bigcodebench':
@@ -57,7 +58,7 @@ def prepare(task,entry,config,job,folder,label):
     folder=Path(folder).resolve();folder.mkdir(parents=True,exist_ok=True)
     profiles=folder/'method-inputs';resource=job['resources']
     request=dict(schema='ctxpress.eval.swe_trial',version=1,project='ctxp-sw-'+uuid.uuid4().hex[:24],label=label,
-        task=task,method=harbor_driver.method_inputs(entry,profiles),model=config['model'],reasoning=config['reasoning'],
+        task=task,method=method_inputs.freeze(entry,profiles),model=config['model'],reasoning=config['reasoning'],
         run=config['run'],compact_limit=job['compact_limit'],binary_version=match.group(1),bindir=str(binary.parent),
         package=str(Path(__file__).resolve().parents[3]),official=str(official),profiles=str(profiles),folder=str(folder),runtime=runtime,
         api=mode,agent_image=resource['images']['agent']['id'],grading_image=resource['images']['grading']['verifier']['id'],
@@ -75,11 +76,11 @@ def recover(path,label):
             not re.fullmatch(r'sha256:[0-9a-f]{64}',record.get('image',''))):
         raise ValueError('invalid SWE-bench recovery owner')
     if record.get('cleaned'):
-        if record['role']=='agent':harbor_driver.cleanup_channel(record)
+        if record['role']=='agent':socket_bridge.cleanup_channel(record)
         return
     if type(record.get('pid')) is int and processes.alive(record['pid'],record.get('identity')):
         raise ValueError('SWE-bench worker is still alive; recovery cannot interrupt it')
-    docker=harbor_driver.docker
+    docker=runtime_docker.docker
     if docker('info','--format','{{.ID}}').strip()!=record.get('daemon_id'):
         raise ValueError('SWE-bench recovery Docker daemon changed')
     ids=docker('ps','-aq','--filter','name=^/'+record['container']+'$').split()
@@ -98,7 +99,7 @@ def recover(path,label):
             docker('stop','-t','5',identifier)
         docker('rm','-f','-v',identifier)
     record.update(cleaned=True,phase='recovered',credentials_may_exist=False);eval_plan.atomic_json(path,record)
-    if record['role']=='agent':harbor_driver.cleanup_channel(record)
+    if record['role']=='agent':socket_bridge.cleanup_channel(record)
 
 
 def execute(adapter,task,entry,config,job,*,paths,folder,label):
@@ -139,6 +140,6 @@ def execute(adapter,task,entry,config,job,*,paths,folder,label):
                                               'pro_version','regrade_report','submission','fresh_regrade',
                                               'code_samples','sample_id','artifact_kind') if field in state},
         real_run_verified=False)
-    if catalog:=harbor_codex.check_catalog(request):result['model_catalog']=catalog
+    if catalog:=codex_agent.check_catalog(request):result['model_catalog']=catalog
     from ctxpress.harness.runtime import execution_health
     return execution_health.retain(result)

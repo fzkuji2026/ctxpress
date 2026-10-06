@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, queue as evaluation
 from ctxpress.benchmarks.milestone import checkpoint_grading as eval_grading
+from ctxpress.harness.jobs import grading_inputs
 from test_eval_inputs import inputs
 
 IMAGE = 'sha256:'+'1'*64
@@ -50,7 +51,7 @@ def main():
     (trials/trial/'runtime_policy.yaml').write_text('{}',encoding='utf-8')
     (folder/'source_snapshot.integrity.json').write_text(json.dumps(dict(capture_filter={},manifest_overlay={},agent_base_image_id=IMAGE)),encoding='utf-8')
     monkeypatch.setitem(sys.modules,'yaml',SimpleNamespace(safe_load=json.loads))
-    monkeypatch.setattr(eval_grading,'dependencies',lambda: {name:eval_environment.workspace(deps/name) for name in ('yaml','pathspec')})
+    monkeypatch.setattr(grading_inputs,'dependencies',lambda: {name:eval_environment.workspace(deps/name) for name in ('yaml','pathspec')})
     monkeypatch.setattr(eval_environment,'image',lambda ref:dict(reference=ref,id=IMAGE,os='fixture',architecture='fixture',repo_digests=[]))
     lock=eval_grading.capture(code,data,trials,[(3,14)])
     path=tmp_path/'grading.json'; eval_plan.atomic_json(path,lock)
@@ -130,7 +131,7 @@ def test_declaration_cannot_reference_an_unfrozen_trial_config(tmp_path,monkeypa
     content={key:copy.deepcopy(value) for key,value in lock.items() if key!='sha256'}
     content['boundaries']['3:14']['repo_config']='outside.yaml'
     with pytest.raises(ValueError,match='undeclared input'):
-        eval_grading.verify(eval_grading._seal(content))
+        eval_grading.verify(grading_inputs._seal(content))
 
 
 def test_detached_task_resolves_grader_copies_and_keeps_synthetic_evidence(tmp_path,monkeypatch):
@@ -197,4 +198,4 @@ def test_wrong_official_boundary_mapping_is_rejected(tmp_path,monkeypatch):
     content={key:copy.deepcopy(value) for key,value in lock.items() if key!='sha256'}
     content['boundaries']['3:14']['milestone']='milestone_003_sub-01'
     with pytest.raises(ValueError,match='official boundary mapping'):
-        eval_grading.verify(eval_grading._seal(content))
+        eval_grading.verify(grading_inputs._seal(content))

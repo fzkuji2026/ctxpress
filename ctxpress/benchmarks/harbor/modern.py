@@ -74,7 +74,7 @@ def load(official):
 
 
 def trial_config(request, config_class, channel):
-    from ctxpress.benchmarks.harbor.codex_hook import catalog_mounts
+    from ctxpress.harness.runtime.codex_agent import catalog_mounts
     mounts = [dict(type='bind', source=source, target=target, read_only=True, bind={'create_host_path':False})
         for source, target in ((request['package'], '/ctxpress-runtime'), (request['bindir'], '/cxbin'),
                               (request['profiles'], '/ctxpress-method'), (str(channel), '/ctxpress-channel'))]
@@ -89,7 +89,8 @@ def trial_config(request, config_class, channel):
 
 
 async def run_trial(request, official, channel, journal,agent_factory=None):
-    from ctxpress.benchmarks.harbor import codex_hook as harbor_codex, environment as harbor_environment, modern_codex as harbor_modern_codex
+    from ctxpress.harness.runtime import codex_agent
+    from ctxpress.benchmarks.harbor import environment as harbor_environment, modern_codex as harbor_modern_codex
     from ctxpress.harness.jobs import plan as eval_plan
     from ctxpress.benchmarks.harbor.worker import resource_record
     Codex, LimitError, Docker, ExecResult, Config, Trial, definition, Caps = official
@@ -131,7 +132,7 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
     settings=dict(method=request['method'], profiles=request.get('profiles'), model=request['model'],
         reasoning=request['reasoning'], binary_version=request['binary_version'], compact_limit=request['compact_limit'],
         upstream=request['upstream'], auth_file=os.environ['CTXPRESS_CODEX_AUTH_FILE'],
-        max_calls=request['run']['max_calls'], **harbor_codex.catalog_settings(request))
+        max_calls=request['run']['max_calls'], **codex_agent.catalog_settings(request))
     CtxpressCodex = agent_factory(Codex,None,settings,LimitError,credentials) if agent_factory else \
         harbor_modern_codex.framework(Codex,settings,LimitError,credentials)
 
@@ -184,7 +185,7 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
                         str(trial_root/'agent'):False,str(trial_root/'artifacts'):False}
                 if not separate:
                     roots[str(trial_root/'verifier')] = False
-                for mount in harbor_codex.catalog_mounts(request):
+                for mount in codex_agent.catalog_mounts(request):
                     roots[mount['source']] = True
             else:
                 roots.update({str(Path(request['task'])/'tests'):True, str(trial_root/'verifier'):False})
@@ -261,7 +262,7 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
         raise RuntimeError('Harbor returned without checked environment cleanup')
     if separate and request['run']['grade'] and 'verifier' in environments and not records['verifier']['cleaned']:
         raise RuntimeError('Harbor returned without checked verifier cleanup')
-    progress = harbor_codex.CallProgress(trial_root/'agent'/'sessions')
+    progress = codex_agent.CallProgress(trial_root/'agent'/'sessions')
     calls, _ = progress.update()
     exception = result.exception_info.exception_type if result.exception_info else None
     stop = trial.agent.ctxpress_stop or ('timeout' if exception == 'AgentTimeoutError' else

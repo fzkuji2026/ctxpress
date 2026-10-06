@@ -180,7 +180,8 @@ def review(directory, reference, output, exclusion_file=None, inspect_resources=
     if (output.exists() or any(p.is_symlink() for p in (output, *output.parents)) or
             any(output == p or p in output.parents for p in protected)):
         raise ValueError('review output must be a new directory outside frozen evidence')
-    detail = evaluation.compare_results(root, reference)
+    from ctxpress.harness.results.task_compare import compare_results
+    detail = compare_results(root, reference)
     excluded, exclusion_ref = exclusions(detail, exclusion_file)
     clean = cleanup(root, detail, inspect_resources)
     jobs, candidates = assess(detail, excluded, exclusion_ref is not None, clean)

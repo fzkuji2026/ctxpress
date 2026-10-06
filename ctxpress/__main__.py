@@ -33,7 +33,7 @@ def main(argv=None):
         sys.stdout.reconfigure(encoding="utf-8")
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments and arguments[0] == 'eval':
-        from ctxpress.harness.jobs.queue import main as eval_main
+        from ctxpress.harness.cli import main as eval_main
         return eval_main(arguments[1:])
     if arguments and arguments[0] == 'acm-author':
         from ctxpress.harness.author_acm import main as acm_main
@@ -160,7 +160,7 @@ def main(argv=None):
         summary, md, out = run_config(x.config, workers=x.workers)
         print(md); print(f"\nwritten to {out}")
     elif x.cmd == "eval":
-        from ctxpress.harness.jobs.queue import main as eval_main
+        from ctxpress.harness.cli import main as eval_main
         eval_main(x.eval_args)
     elif x.cmd == "doctor":
         from ctxpress.hosts.codex.doctor import main as doctor_main

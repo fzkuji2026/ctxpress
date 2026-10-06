@@ -41,32 +41,60 @@ def test_the_package_entry_point_uses_the_framework_only():
     assert imports(PACKAGE / "__init__.py") <= {"core", "methods", "live"}
 
 
-def submodules(path):
-    """ctxpress.<a>.<b> imports as "a.b" (or "a" for a top-level module)."""
+
+def imported(path):
+    """Everything a file imports from ctxpress, as dotted names without the "ctxpress." prefix."""
     out = set()
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-        names = []
-        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module and node.module.startswith("ctxpress."):
-            names = [node.module + "." + alias.name for alias in node.names]
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module and node.module.startswith("ctxpress"):
+            out.update((node.module + "." + alias.name).split(".", 1)[1] for alias in node.names)
         elif isinstance(node, ast.Import):
-            names = [alias.name for alias in node.names if alias.name.startswith("ctxpress.")]
-        for name in names:
-            parts = name.split(".")[1:]
-            out.add(".".join(parts[:2]) if parts[0] in ("harness", "benchmarks") and len(parts) > 1 else parts[0])
+            out.update(alias.name.split(".", 1)[1] for alias in node.names if alias.name.startswith("ctxpress."))
     return out
 
 
+FAMILIES = sorted(p.name for p in (PACKAGE / "benchmarks").iterdir() if (p / "__init__.py").exists())
+# execution engine -> the families built on it (the engine dispatches to them; they use the engine)
+ENGINES = {"harbor": {"pro", "deepswe"}, "swe": {"pro", "polybench", "bigcode"}}
+
+
+def family(name):
+    parts = name.split(".")
+    return parts[1] if parts[0] == "benchmarks" and len(parts) > 1 and parts[1] in FAMILIES else None
+
+
+def under(name, *prefixes):
+    return any(name == p or name.startswith(p + ".") for p in prefixes)
+
+
 def test_evaluation_layers():
-    """Benchmarks and the container runtime never reach into results or checks; checks need no benchmark."""
+    """runtime needs no benchmark and no results; jobs reach benchmarks only through the registry and results only to
+    write the final report; checks need no benchmark; a family imports another only along an engine; nothing but
+    the CLI entry point imports the command line."""
     problems = []
-    families = [p for p in (PACKAGE / "benchmarks").iterdir() if p.is_dir() and (p / "__init__.py").exists()]
-    for folder in families + [PACKAGE / "harness" / "runtime"]:
-        for path in folder.rglob("*.py"):
-            bad = {m for m in submodules(path) if m in ("harness.results", "harness.checks")}
-            if bad:
-                problems.append(f"{path.relative_to(PACKAGE)} imports {sorted(bad)}")
-    for path in (PACKAGE / "harness" / "checks").rglob("*.py"):
-        bad = {m for m in submodules(path) if m.startswith("benchmarks")}
-        if bad:
-            problems.append(f"{path.relative_to(PACKAGE)} imports {sorted(bad)}")
+
+    def check(paths, allowed):
+        for path in paths:
+            for name in sorted(imported(path)):
+                if not allowed(name, path):
+                    problems.append(f"{path.relative_to(PACKAGE)} imports {name}")
+
+    harness = PACKAGE / "harness"
+    check((harness / "runtime").rglob("*.py"),
+          lambda n, p: not under(n, "benchmarks", "harness.results", "harness.checks", "harness.cli"))
+    check((harness / "jobs").rglob("*.py"),
+          lambda n, p: not family(n) and not under(n, "harness.checks", "harness.cli")
+          and (not under(n, "harness.results") or under(n, "harness.results.report")))
+    check((harness / "checks").rglob("*.py"), lambda n, p: not under(n, "benchmarks", "harness.cli"))
+    check((harness / "results").rglob("*.py"), lambda n, p: not under(n, "harness.checks", "harness.cli"))
+
+    def family_rule(name, path):
+        own = path.relative_to(PACKAGE / "benchmarks").parts[0]
+        other = family(name)
+        if under(name, "harness.results", "harness.checks", "harness.cli"):
+            return False
+        if own not in FAMILIES:                   # the registry and shared planners at the top
+            return True
+        return (other is None or other == own or own in ENGINES.get(other, ()) or other in ENGINES.get(own, ()))
+    check((PACKAGE / "benchmarks").rglob("*.py"), family_rule)
     assert not problems, "\n".join(problems)
