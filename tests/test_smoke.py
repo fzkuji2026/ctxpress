@@ -7,7 +7,8 @@ from ctxpress.methods import REGISTRY
 
 def test_every_method_runs_and_reports_statistics(tmp_path):
     report = smoke(tmp_path / "smoke", turns=12, chars=3000)
-    assert report["passed"] and report["synthetic"]
+    failed = [(row["method"], row.get("error")) for row in report["methods"] if not row.get("ok")]
+    assert report["passed"] and report["synthetic"], failed
     rows = {row["method"]: row for row in report["methods"]}
     assert set(rows) == set(REGISTRY)
     for name, row in rows.items():

@@ -1,7 +1,10 @@
 """Stands in for Codex in tests: reads -c openai_base_url=..., sends one Responses request with the history in
 FAKE_INPUT (a JSON file) and exits."""
 import json, os, sys, urllib.request
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:                     # Python 3.10
+    from ctxpress._vendor import tomllib
 args = sys.argv[1:]
 assert args[0] == "--profile" and args[1].startswith("ctxpress"), args
 prof = os.path.join(os.environ["CODEX_HOME"], args[1] + ".config.toml")

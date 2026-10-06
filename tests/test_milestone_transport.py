@@ -27,6 +27,7 @@ def fixture(tmp_path,monkeypatch):
     return registry,state,calls
 
 
+@pytest.mark.linux_only
 @pytest.mark.skipif(not hasattr(socketserver,'UnixStreamServer'),reason='native Unix channel requires Linux/macOS')
 def test_real_owned_channel_allows_only_declared_model_destination_and_cleans_socket(tmp_path,monkeypatch):
     registry,state,calls=fixture(tmp_path,monkeypatch);channel=transport.Channel(registry,'https://fixture.invalid/responses')

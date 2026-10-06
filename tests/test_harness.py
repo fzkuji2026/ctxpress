@@ -30,7 +30,7 @@ def test_flat_history_import_rejects_unknown_storage_before_writing(tmp_path):
 
 
 def test_native_compact_threshold_reaches_wrapped_codex_profile(tmp_path, monkeypatch):
-    import tomllib
+    from ctxpress.core import toml as tomllib
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setenv("CTXPRESS_HOME", str(tmp_path / "ctxpress"))
     got = []

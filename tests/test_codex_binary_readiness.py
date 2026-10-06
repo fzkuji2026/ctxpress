@@ -83,6 +83,7 @@ def test_older_executable_and_opaque_fixtures_remain_hashable(tmp_path):
     assert str(helper) in codex_binary.capture(opaque)[0]
 
 
+@pytest.mark.linux_only
 @posix_fixture
 def test_actual_ipc_probe_executes_javascript_in_isolated_home(tmp_path, monkeypatch):
     root=cli(tmp_path/'bin'); helper=host(root)
@@ -102,6 +103,7 @@ def test_help_or_presence_cannot_substitute_for_runtime_health(tmp_path, kwargs)
         codex_binary.probe_companion(helper,timeout=0.2)
 
 
+@pytest.mark.linux_only
 @pytest.mark.parametrize('mode', ['checkpoint','task_start'])
 @posix_fixture
 def test_planners_bind_mandatory_companion_and_frozen_copies_are_probed(tmp_path, mode):

@@ -2,7 +2,7 @@
 import json
 import threading
 from pathlib import Path
-import tomllib
+from ctxpress.core import toml as tomllib
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
