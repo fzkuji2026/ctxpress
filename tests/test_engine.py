@@ -1,5 +1,6 @@
 """Unit tests of the engine on small synthetic traces (no data needed)."""
 from ctxpress.core import engine
+from ctxpress.methods.base import Method
 from ctxpress.core import textops
 from ctxpress.core.params import DEFAULT, anthropic
 import ctxpress.methods as M
@@ -41,7 +42,7 @@ def test_placeholder_causes_recovery_and_misses():
 
 
 def test_truncation_keeps_tail_anchor():
-    class TruncAll(M.Method):
+    class TruncAll(Method):
         def step(self, sim, rr):
             for s in sim.outputs():
                 if s.get("form", "full") == "full" and s["kind"] == "read":
@@ -51,7 +52,7 @@ def test_truncation_keeps_tail_anchor():
 
 
 def test_structure_drops_bodies():
-    class StructAll(M.Method):
+    class StructAll(Method):
         def step(self, sim, rr):
             for s in sim.outputs():
                 if s.get("form", "full") == "full" and s["kind"] == "read":
@@ -76,7 +77,7 @@ def test_ttl_expiry_costs_more():
 
 def test_recompression_retention():
     tr = synthetic()
-    class TwoSummaries(M.Method):
+    class TwoSummaries(Method):
         def step(self, sim, rr):
             if rr in (2, 20):
                 sim.summarize()

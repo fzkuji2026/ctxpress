@@ -4,7 +4,6 @@ import json,os,re,tempfile,threading,uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 from ctxpress.harness.runtime import connect_proxy, socket_bridge
-from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 from ctxpress.benchmarks.milestone.resources import docker, identity, SCHEMA as CONTAINER_SCHEMA

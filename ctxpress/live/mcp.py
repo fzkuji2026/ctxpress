@@ -11,6 +11,7 @@ from __future__ import annotations
 import glob, json, os, re, sys
 from collections import deque
 from ctxpress import settings
+from ctxpress.core.version import __version__
 
 PROTOCOL = "2025-06-18"
 TOOLS = [
@@ -113,7 +114,7 @@ def handle(msg):
         return None
     if method == "initialize":
         return dict(jsonrpc="2.0", id=mid, result=dict(protocolVersion=(msg.get("params") or {}).get("protocolVersion", PROTOCOL),
-                                                        capabilities={"tools": {}}, serverInfo={"name": "ctxpress", "version": "0.1.0"}))
+                                                        capabilities={"tools": {}}, serverInfo={"name": "ctxpress", "version": __version__}))
     if method == "ping":
         return dict(jsonrpc="2.0", id=mid, result={})
     if method == "tools/list":

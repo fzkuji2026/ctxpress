@@ -21,7 +21,6 @@ def load(request):
     sys.path[:0] = [str(package), str(official / framework / 'src'), str(official / 'dependencies')]
     from ctxpress.core import toml
     from ctxpress.harness.jobs import plan as eval_plan
-    from ctxpress.core import artifacts as artifact_io
     if eval_plan.file_sha256(sys.executable) != runtime['sha256']:
         raise ValueError('Harbor Python binary changed')
     from ctxpress.harness.runtime.codex_agent import check_catalog
@@ -172,7 +171,6 @@ def main(argv=None):
         print(json.dumps(dict(imports='verified', framework=distribution, version=importlib.metadata.version(distribution), model_calls=0)))
         return
     from ctxpress.harness.runtime import connect_proxy, socket_bridge
-    from ctxpress.harness.jobs import plan as eval_plan
     from ctxpress.core import artifacts as artifact_io
     from ctxpress.benchmarks.harbor.driver import docker, cleanup_channel
     daemon_id = docker('info', '--format', '{{.ID}}').strip()

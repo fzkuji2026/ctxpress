@@ -34,7 +34,7 @@ def main():
     # Import only after enabling the calling frozen ctxpress package. The
     # existing isolated loader verifies runtime, task remapping and author trees.
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-    from ctxpress.harness.jobs import plan as eval_plan, resources as task_resources
+    from ctxpress.harness.jobs import resources as task_resources
     from ctxpress.core import artifacts as artifact_io
     from ctxpress.benchmarks.milestone import worker as milestone_worker, version as milestone_version
     source = milestone_worker.load(request)

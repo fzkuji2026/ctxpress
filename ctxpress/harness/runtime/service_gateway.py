@@ -9,7 +9,6 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import quote
 from ctxpress.harness.runtime import connect_proxy, socket_bridge
-from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.core import artifacts as artifact_io
 from ctxpress.harness.runtime.docker import docker
 from ctxpress.harness.runtime.service_resources import Rejected, Response, Scope, recover as recover_scope

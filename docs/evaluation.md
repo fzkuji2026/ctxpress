@@ -2,6 +2,58 @@
 
 当前固定范围为 8 个 benchmark 家族，固定实验协议在 [experiment.protocol.json](../configs/experiment.protocol.json)。任务选择、计划、状态、取消、恢复、重试和报告的本地检查与真实官方成绩分别记录；下文是接口契约，不代表某次运行的结果。各适配器的执行与评分细节见 [Benchmark 适配器](benchmarks.md)。
 
+## 概览
+
+**统一评测入口：**固定 8 个 benchmark 家族使用同一 `ctxpress eval` 命令。`benchmarks --start-mode task_start` 查看从头支持范围，`tasks` 发现本地题目，`plan` 冻结可审查设置，`run --background` 后台派发，`status` 查看进度，`cancel` 停止任务并清理所属资源，`recover` 仅恢复已停止资源，`resume --background` 重试未完成任务，`report` 生成 JSON/HTML，`compare --reference` 按任务和重复编号比较八类的原生质量指标与费用。恢复保留已完成成绩和每次尝试的产物，运行所需数据、源码、依赖、镜像及认证仍需显式准备。见 [docs/evaluation.md](evaluation.md)。
+
+**Benchmark 接入：**`ctxpress eval benchmarks` 列出内置适配器及支持范围，`ctxpress eval tasks --benchmark swe-milestone --scripts /path/to/scripts --min-context 128000 --gradable` 查询本地任务 ID。评测配置可指定 `benchmark` 和 `tasks: ["n0-j435"]`，由目录展开并冻结上下文边界；方法、Codex 后端和 benchmark 分别选择，计划与报告保留 benchmark 身份。SWE-Milestone 的本地 Navidrome 录制边界执行和官方评分仍需准备已有脚本、历史、镜像及评分资源。SWE-bench（Verified/Lite/完整集）的从头 Codex 执行、补丁导出与独立官方评分调用代码已连接；Terminal-Bench/Science 的 Harbor CPU/NVIDIA GPU 执行和 verifier 调用代码已连接。各适配器的支持范围与验证边界见 [Benchmark 适配器](benchmarks.md)，不由接口声明推断。
+
+各家族使用同一配置结构，下面模板中的模型、任务 ID 和准备路径需替换为实际值。
+
+| 家族 | 从头配置模板 |
+|---|---|
+| SWE-Milestone | [swe_milestone.example.json](../configs/swe_milestone.example.json) |
+| SWE-bench（Full/Verified/Lite） | [swe_bench.example.json](../configs/swe_bench.example.json) |
+| Terminal-Bench | [terminal_bench.example.json](../configs/terminal_bench.example.json) |
+| Terminal-Bench-Science | [terminal_science.example.json](../configs/terminal_science.example.json) |
+| DeepSWE | [deep_swe.example.json](../configs/deep_swe.example.json) |
+| SWE-bench Pro | [V1](../configs/swe_pro_v1.example.json)、[V2](../configs/swe_pro_v2.example.json) |
+| SWE-PolyBench | [polybench.example.json](../configs/polybench.example.json) |
+| BigCodeBench | [bigcodebench.example.json](../configs/bigcodebench.example.json) |
+
+适配器目录中的 `real_run_verified=false` 是静态能力声明，单题验证不会把整个家族标为已验证。具体运行应检查官方原始评分、请求日志、冻结输入和清理证据；
+
+目前 8 个家族各有一个原始任务的真实执行和官方评分证据；SWE-bench Verified 与 SWE-Milestone 上的正式方法比较正在进行，结果随论文发布。首题结果不代表完整 benchmark 已跑完，也不说明任何上下文方法的效果。
+
+### 固定实验协议
+
+固定方案在 [experiment.protocol.json](../configs/experiment.protocol.json)：8 个家族、明确的主模型/反思模型、方法参数、任务预算和重复次数。首轮正式比较集中在 SWE-bench Verified 和 SWE-Milestone，回答已发表方法在统一真实宿主与计价下的质量和成本表现；AutoCostModel 单列为探索性候选。原始任务 ID 已固定（Verified 10 题，其余六类按 seed 各选 10 题，Milestone 为完整 Navidrome itinerary），官方数据 revision、原始文件和所选附件均已核对。可在仓库根目录只读盘点本地资源（数据默认在仓库旁的 `../data`，SWE-Milestone 作者代码由 `CTXPRESS_MILESTONE_AUTHOR_CODE` 指定）：
+
+```bash
+python -m repro.evaluation_inventory --output runs/prepared/inventory.json
+```
+
+固定协议可通过 `ctxpress eval configure` 生成普通评测配置，避免手工复制模型、方法参数及任务集合：
+
+```bash
+ctxpress eval configure configs/experiment.protocol.json \
+  --family swe-milestone --phase pilot --data /prepared/swe-milestone/navidrome_navidrome_v0.57.0_v0.58.0 \
+  --bindir /path/to/codex-bin --resources /prepared/milestone-resources.json \
+  --prices configs/prices.gpt6.standard.json \
+  --output runs/next/milestone-pilot.json
+ctxpress eval configure configs/experiment.protocol.json \
+  --family swe-bench --phase pilot --data /prepared/swe-verified/dataset \
+  --bindir /path/to/codex-bin --prices configs/prices.gpt6.standard.json \
+  --output runs/next/verified-pilot.json
+ctxpress eval plan runs/next/verified-pilot.json --output runs/next/verified-pilot.plan.json
+```
+
+这些命令只读取本地输入并写出配置/来源哈希和资源缺项，不启动下载、容器或模型。配置未声明费率时费用保持未知，缺资源的计划不可启动。`--phase comparison` 加入协议中固定的 12 个基线及必需的 AutoCostModel 候选，验证策略/训练来源哈希和训练任务排除；其他六类也已冻结原始任务 ID，不隐式选择全部任务。生成器拒绝覆盖已有配置，重新生成应使用新输出路径。`artifact_root` 相对协议文件解析，候选策略写为绝对路径；移动配置目录不会改变所选策略。详见 [配置生成说明](evaluation.md#从固定协议生成配置)。
+
+基础链路通过后用 `--phase method-pilot` 生成首题上的 7 方法检查，直接继承正式基线参数，1 次重复、单 worker。正式比较须用 `configure --model-catalog <models.json>` 显式冻结宿主的模型目录，避免 Codex 回退到内置模型元数据、改变宿主提示词和工具接口。
+
+各适配器的执行、评分和资源准备细节见 [Benchmark 适配器](benchmarks.md)。
+
 ## 统一验收与分层状态
 
 ```bash
@@ -416,7 +468,7 @@ ctxpress eval run runs/mechanism-plan.json --directory runs/mechanism --backgrou
 
 ### 取消、资源恢复和继续运行
 
-全部家族的从头配置模板集中列在 [README](../README.md) 的统一入口表格。SWE-Milestone 的资源 capture specification 另需 `native_data_version: true`，以冻结实际本地 Git 版本证据；模板不自动捕获/下载资源。
+全部家族的从头配置模板集中列在本页“概览”一节的表格。SWE-Milestone 的资源 capture specification 另需 `native_data_version: true`，以冻结实际本地 Git 版本证据；模板不自动捕获/下载资源。
 
 固定 8 个家族共用以下入口。`benchmarks` 默认列出各模式的代码能力和真实验证状态；`--start-mode task_start` 仅列从头模式。版本/子集归到同一家族。
 

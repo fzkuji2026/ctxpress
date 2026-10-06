@@ -129,7 +129,7 @@ RAW = glob.glob(os.path.join(DATA, "repro", "ct-traj", "trajectories", "lindenba
                     reason="authors' code or released trajectories not available")
 @pytest.mark.parametrize("mode", ["summary", "hybrid"])
 def test_identical_to_the_authors_history_processors(mode):
-    sys.path.insert(0, os.path.join(ROOT, "ctxpress", "repro"))
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "repro"))
     import complexity_trap_summary_compare as cmp
     hp, prompt = cmp.load_authors()
     system, procs = cmp.config(mode)

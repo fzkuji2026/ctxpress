@@ -1,6 +1,6 @@
 """Isolated frozen SWE-bench worker; grading imports checked before resources."""
 from __future__ import annotations
-import argparse, asyncio, importlib.metadata, inspect, json, os, signal, sys, tempfile, threading
+import argparse, asyncio, importlib.metadata, inspect, json, signal, sys, tempfile, threading
 from pathlib import Path
 
 
@@ -14,7 +14,6 @@ def load(request):
     source=official/framework
     sys.path[:0]=[str(package),str(source/'src') if framework=='polybench' else str(source),str(official/'dependencies')]
     from ctxpress.harness.jobs import plan as eval_plan
-    from ctxpress.core import artifacts as artifact_io
     if eval_plan.file_sha256(sys.executable)!=runtime['sha256']:raise ValueError('SWE-bench Python binary changed')
     from ctxpress.harness.runtime.codex_agent import check_catalog
     check_catalog(request,probe=True)
@@ -113,7 +112,6 @@ def main(argv=None):
         framework='poly_bench_evaluation' if request['api']=='polybench' else 'swebench'
         print(json.dumps(dict(imports='verified',framework=framework,version=importlib.metadata.version(framework),model_calls=0)));return
     from ctxpress.harness.runtime import connect_proxy, socket_bridge
-    from ctxpress.harness.jobs import plan as eval_plan
     from ctxpress.core import artifacts as artifact_io
     from ctxpress.benchmarks.swe import trial as swe_trial
     from ctxpress.harness.runtime.socket_bridge import cleanup_channel

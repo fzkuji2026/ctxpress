@@ -1,11 +1,27 @@
 [project]
 name = "ctxpress"
-version = "0.1.0"
-description = "Context management for LLM coding agents: one engine, every method as a rule, evaluated on real agent traces"
+version = "1.0.0"
+description = "Context management for LLM coding agents: plug-and-play methods for Codex and Claude Code, evaluated on official benchmarks"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 readme = "README.md"
+authors = [{name = "Fzkuji"}]
+keywords = ["llm", "coding-agents", "context-management", "codex", "claude-code", "compaction", "benchmark"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = []          # the proxy / plug-and-play path uses the standard library only
+
+[project.urls]
+Homepage = "https://github.com/fzkuji2026/ctxpress"
+Repository = "https://github.com/fzkuji2026/ctxpress"
+Documentation = "https://github.com/fzkuji2026/ctxpress/tree/main/docs"
 
 [project.optional-dependencies]
 sim = ["pyyaml", "numpy"]   # replay pre-screen and experiment configs

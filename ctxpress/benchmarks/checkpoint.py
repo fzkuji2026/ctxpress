@@ -3,7 +3,7 @@
 Coordinate and catalog rules belong to this adapter, not the common scheduler.
 """
 from __future__ import annotations
-import copy, hashlib, math, os
+import copy, hashlib, os
 from pathlib import Path
 from ctxpress.methods import build
 from ctxpress import benchmarks

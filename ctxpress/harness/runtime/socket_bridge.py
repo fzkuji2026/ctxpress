@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse, json, socket, socketserver, tempfile, threading
 from pathlib import Path
 from ctxpress.harness.runtime.connect_proxy import relay
-from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 

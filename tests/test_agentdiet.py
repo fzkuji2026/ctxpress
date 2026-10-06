@@ -85,7 +85,7 @@ RAW = glob.glob(os.path.join(DATA, "repro", "ct-traj", "trajectories", "lindenba
 @pytest.mark.skipif(not RAW or not os.path.isdir(os.path.join(DATA, "repro", "agentdiet", "artifact")),
                     reason="authors' artifact or trajectories not available")
 def test_identical_to_the_authors_reflection_module():
-    sys.path.insert(0, os.path.join(ROOT, "ctxpress", "repro"))
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "repro"))
     import agentdiet_compare as cmp
     ta, manager, prompt = cmp.load_authors()
     results = [cmp.check(p, ta, manager, prompt) for p in sorted(RAW)[:8]]

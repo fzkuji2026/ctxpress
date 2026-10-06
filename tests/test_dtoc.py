@@ -11,6 +11,15 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DATA = os.environ.get("CTXPRESS_DATA", os.path.join(ROOT, "data"))
 
 
+def node_runs_typescript():
+    """The authors' TypeScript runs directly only on Node with --experimental-transform-types (22.6+)."""
+    node = shutil.which("node")
+    if not node:
+        return False
+    import subprocess
+    return subprocess.run([node, "--experimental-transform-types", "-e", ""], capture_output=True).returncode == 0
+
+
 def run(rounds):
     """rounds: lists of (call_id, tool, output-or-manage-args)."""
     ctx = LiveContext(DTOC())
@@ -81,10 +90,10 @@ def test_mcp_offers_manage_context(monkeypatch):
     assert reply["result"]["isError"] is True
 
 
-@pytest.mark.skipif(not shutil.which("node") or not os.path.isdir(os.path.join(DATA, "repro", "dtoc")),
-                    reason="Node or the authors' DTOC sources not available")
+@pytest.mark.skipif(not node_runs_typescript() or not os.path.isdir(os.path.join(DATA, "repro", "dtoc")),
+                    reason="Node with --experimental-transform-types (22.6+) or the authors' DTOC sources not available")
 def test_identical_to_the_authors_registry_tool_and_envelope(tmp_path):
-    sys.path.insert(0, os.path.join(ROOT, "ctxpress", "repro"))
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "repro"))
     import random, subprocess
     import dtoc_compare as cmp
     cmp.prepare(str(tmp_path))

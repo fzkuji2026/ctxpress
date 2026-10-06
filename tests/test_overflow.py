@@ -12,7 +12,8 @@ from ctxpress.live.telemetry import summary
 from ctxpress.live.usage import analyze
 from ctxpress.live.proxy import context_length_error, serve
 from ctxpress.live.rewrite import Rewriter
-from ctxpress.methods import CliffCompaction, NoCompaction, Method, WithMemory, Composed, PinRequirements, Trigger
+from ctxpress.methods import CliffCompaction, NoCompaction, WithMemory, Composed, PinRequirements, Trigger
+from ctxpress.methods.base import Method
 
 
 def request(turns=8):

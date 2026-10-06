@@ -38,10 +38,15 @@ def main(argv=None):
     if arguments and arguments[0] == 'acm-author':
         from ctxpress.harness.author_acm import main as acm_main
         return acm_main(arguments[1:])
+    if arguments and arguments[0] == 'smoke':
+        from ctxpress.harness.checks.smoke import main as smoke_main
+        return smoke_main(arguments[1:])
     if arguments and arguments[0] == 'analyze':
         from ctxpress.harness.results.analysis import main as analyze_main
         return analyze_main(arguments[1:])
     ap = argparse.ArgumentParser(prog="ctxpress")
+    from ctxpress.core.version import __version__
+    ap.add_argument("--version", action="version", version=f"ctxpress {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("codex"); a.add_argument("--method"); a.add_argument("--args", default="{}")
     a.add_argument("--codex-bin"); a.add_argument("--port", type=int, default=0); a.add_argument("--upstream")
@@ -72,6 +77,7 @@ def main(argv=None):
     a = sub.add_parser("eval", help="plan, run, inspect or report real execution jobs")
     sub.add_parser("acm-author", help="prepare or explicitly run the pinned ACM author agent")
     sub.add_parser("analyze", help="process evaluation of a request log, evaluation directory or strict report")
+    sub.add_parser("smoke", help="run every method through the real proxy against a fake model; synthetic")
     a.add_argument("eval_args", nargs=argparse.REMAINDER)
     a = sub.add_parser("doctor", help="inspect Codex; optional offline loopback mechanism check")
     a.add_argument("doctor_args", nargs=argparse.REMAINDER)
@@ -96,7 +102,7 @@ def main(argv=None):
             help="retention budget; unit and scope depend on the selected method (ctxpress list)")
     x = ap.parse_args(argv)
     if x.cmd in ("serve", "install", "use", "session") and x.budget is not None:
-        from ctxpress.methods import with_budget
+        from ctxpress.methods.budget import with_budget
         x.args = json.dumps(with_budget({"args": json.loads(x.args)}, x.budget)["args"])
 
     if x.cmd == "codex":

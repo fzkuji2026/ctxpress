@@ -1,6 +1,6 @@
 """Finite background evaluation jobs, with durable state and independent processes."""
 from __future__ import annotations
-import argparse, contextlib, json, os, shutil, signal, sqlite3, subprocess, sys, tempfile, time
+import contextlib, json, os, shutil, signal, sqlite3, subprocess, sys, tempfile, time
 from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan, inputs as eval_inputs
 from ctxpress.core import artifacts as artifact_io

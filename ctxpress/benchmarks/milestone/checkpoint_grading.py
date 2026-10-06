@@ -1,6 +1,6 @@
 """Official SWE-Milestone grading in an isolated child, from declared inputs (harness.jobs.grading_inputs)."""
 from __future__ import annotations
-import hashlib, importlib.util, json, os, re, subprocess, sys
+import json, os, subprocess
 from pathlib import Path
 from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan
 from ctxpress.harness.jobs.grading_inputs import folder, load, verify, verify_copies

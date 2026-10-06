@@ -4,7 +4,7 @@ This module uses only stdlib and ctxpress. The official framework is imported
 in an isolated child with explicitly captured source and dependency trees.
 """
 from __future__ import annotations
-import copy, json, os, re, shutil, signal, subprocess, tempfile, time, urllib.parse, uuid
+import json, os, re, signal, subprocess, time, urllib.parse, uuid
 from pathlib import Path
 from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan, resources as task_resources
 from ctxpress.core import artifacts as artifact_io

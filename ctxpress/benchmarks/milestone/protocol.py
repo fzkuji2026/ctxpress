@@ -51,7 +51,7 @@ def contract_errors(root):
     errors=[];root=Path(root)
     for name, classes in CONTRACTS.items():
         try:tree=ast.parse((root/name).read_text(encoding='utf-8'),filename=name)
-        except (OSError,ValueError,SyntaxError) as error:
+        except (OSError,ValueError,SyntaxError):
             errors.append('native SWE-Milestone source unavailable/invalid: '+name);continue
         for class_name, methods in classes.items():
             definitions=[node for node in tree.body if isinstance(node,ast.ClassDef) and node.name==class_name]

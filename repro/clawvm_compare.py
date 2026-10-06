@@ -8,11 +8,12 @@ Every summary row must be identical; the unchanged run must equal the reference 
     python repro/clawvm_compare.py [--orig data/repro/clawvm]
 """
 from __future__ import annotations
-import argparse, csv, io, json, os, sys
+import argparse, json, os, sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this repository, whatever its folder name
 DATA = os.environ.get("CTXPRESS_DATA", os.path.join(ROOT, "data"))   # originals, recorded sessions
-sys.path.insert(0, os.path.join(ROOT, "ctxpress"))
+sys.path.insert(0, REPO)
 
 
 def sweep(t2):
@@ -29,7 +30,7 @@ def sweep(t2):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--orig", default=os.path.join(DATA, "repro", "clawvm"))
-    ap.add_argument("--out", default=os.path.join(ROOT, "ctxpress", "runs", "repro", "clawvm.json"))
+    ap.add_argument("--out", default=os.path.join(REPO, "runs", "repro", "clawvm.json"))
     a = ap.parse_args()
     sys.path.insert(0, os.path.join(a.orig, "replay_py"))
     from clawvm_replay import tier2 as t2

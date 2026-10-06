@@ -17,8 +17,9 @@ import argparse, ast, glob, hashlib, importlib.util, json, os, re, sys, types
 from collections import defaultdict
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this repository, whatever its folder name
 DATA = os.environ.get("CTXPRESS_DATA", os.path.join(ROOT, "data"))
-sys.path.insert(0, os.path.join(ROOT, "ctxpress"))
+sys.path.insert(0, REPO)
 from ctxpress.live.context import LiveContext
 from ctxpress.methods import AgentDiet
 
@@ -129,7 +130,7 @@ def check(path, ta, MessageManager, init_prompt):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--out", default=os.path.join(ROOT, "ctxpress", "runs", "repro", "agentdiet.json"))
+    ap.add_argument("--out", default=os.path.join(REPO, "runs", "repro", "agentdiet.json"))
     a = ap.parse_args()
     ta, MessageManager, init_prompt = load_authors()
     tot = dict(instances=0, steps=0, same=0, analyses=0, erased=0, diffs=[])

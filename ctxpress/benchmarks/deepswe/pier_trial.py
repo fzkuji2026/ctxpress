@@ -56,7 +56,6 @@ def submission(root, target):
         if not patch.is_file():
             raise ValueError('DeepSWE submission must be a regular patch file')
         from ctxpress.harness.jobs import plan as eval_plan
-        from ctxpress.core import artifacts as artifact_io
         digest = eval_plan.file_sha256(patch)
         shutil.copyfile(patch, target / patch.name)
         if eval_plan.file_sha256(target / patch.name) != digest:

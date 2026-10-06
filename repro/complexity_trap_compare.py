@@ -14,8 +14,9 @@ from __future__ import annotations
 import argparse, glob, json, os, sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this repository, whatever its folder name
 DATA = os.environ.get("CTXPRESS_DATA", os.path.join(ROOT, "data"))   # originals, recorded sessions
-sys.path.insert(0, os.path.join(ROOT, "ctxpress"))
+sys.path.insert(0, REPO)
 from ctxpress.live.context import LiveContext
 from ctxpress.methods import ComplexityTrap
 
@@ -83,7 +84,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=DIR)
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--out", default=os.path.join(ROOT, "ctxpress", "runs", "repro", "complexity_trap.json"))
+    ap.add_argument("--out", default=os.path.join(REPO, "runs", "repro", "complexity_trap.json"))
     a = ap.parse_args()
     masking = glob.glob(os.path.join(a.dir, "*_N_1_M_10*"))[0]
     trajs = sorted(glob.glob(os.path.join(masking, "*", "*.traj")))[:a.limit]

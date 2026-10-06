@@ -8,7 +8,7 @@ ctxpress 是 Agent 上下文管理工具箱：所有方法复用同一个改写�
 
 | 项目 | 状态 | 边界 |
 |---|---|---|
-| 方法库 | 已发表方法、本文方法及组合包装器，见 [README](README.md#已实现的方法) | 与原实现的差别由 `ctxpress list` 逐项列出 |
+| 方法库 | 已发表方法、本文方法及组合包装器，见 [方法文档](docs/methods.md) | 与原实现的差别由 `ctxpress list` 逐项列出 |
 | 宿主接入 | Codex（`install` / `use` / `doctor`）、Claude Code（`ctxpress claude`）、其他 Responses 宿主（`ctxpress serve`） | 真实 TUI 交互检查覆盖 Codex 0.159.0-alpha.12.1 与 Claude Code 2.1.59 |
 | 8 类 benchmark 接入 | 各有一个原始任务的真实执行和官方评分证据 | 不代表完整 benchmark 已跑完 |
 | 统一验收 | `ctxpress eval review` | 绑定冻结计划，评分、费用、排除、清理和分析分别给证据 |
@@ -16,6 +16,8 @@ ctxpress 是 Agent 上下文管理工具箱：所有方法复用同一个改写�
 | 费用记账 | 主请求、摘要、宿主原生压缩和旁路调用分别计费 | 缺用量或费率时费用显示未知，不按零计 |
 | 宿主契约检查 | 每次渲染和溢出重试都检查 | 工具声明、宿主压缩状态、固定指令、媒体及调用配对；违规阻止转发 |
 | 方法机制预检查 | `ctxpress check-method` | 合成历史和假摘要；不代表真实 CLI 执行或方法质量 |
+| 全方法冒烟测试 | `ctxpress smoke`：每个方法经真实代理、假模型和真实 `ctxpress mcp` 跑通并输出统一统计 | 合成用量；不代表质量或费用 |
+| 代码结构（v1.0.0） | 框架分层 core → methods → live → hosts；评测按职责（jobs / runtime / results / checks）和 benchmark 家族分组 | `tests/test_layering.py` 检查依赖方向 |
 | ACM | 工具机制适配及作者运行桥接 | 作者 9B 权重未部署，未开始真实评测 |
 
 ## 进行中
@@ -29,12 +31,12 @@ ctxpress 是 Agent 上下文管理工具箱：所有方法复用同一个改写�
 - ACM 作者模型的实际运行：需要作者依赖、检索索引和已服务的模型权重。
 - Chat Completions 宿主。
 - Terminal-Bench / Science 的真实 GPU 任务、MIG，以及评分侧多服务 Compose。
-- `harness/` 内部按职责分组（计划、执行、评分、报告）。
 
 ## 使用入口
 
 - 运行方法：`ctxpress codex --method <Method>`、`ctxpress claude --method <Method>`；Python 使用 `ContextManager` / `apply()`。
 - 合成机制检查：`ctxpress check-method <Method> --output <new.json>`。
+- 全方法冒烟测试：`ctxpress smoke --output <new-dir>`。
 - 官方评测：`ctxpress eval configure / plan / run / status / cancel / recover / resume`。
 - 只读验收：`ctxpress eval review --directory <run> --reference <label> --output <new-dir>`。
 - 过程分析：`ctxpress analyze <log-or-report> --output <new-dir>`。

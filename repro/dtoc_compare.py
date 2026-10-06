@@ -18,8 +18,9 @@ from __future__ import annotations
 import argparse, json, os, random, shutil, subprocess, sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this repository, whatever its folder name
 DATA = os.environ.get("CTXPRESS_DATA", os.path.join(ROOT, "data"))
-sys.path.insert(0, os.path.join(ROOT, "ctxpress"))
+sys.path.insert(0, REPO)
 from ctxpress.live.context import LiveContext
 from ctxpress.methods import DTOC
 
@@ -166,8 +167,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sessions", type=int, default=300)
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--work", default=os.path.join(ROOT, "ctxpress", "runs", "repro", "dtoc-node"))
-    ap.add_argument("--out", default=os.path.join(ROOT, "ctxpress", "runs", "repro", "dtoc.json"))
+    ap.add_argument("--work", default=os.path.join(REPO, "runs", "repro", "dtoc-node"))
+    ap.add_argument("--out", default=os.path.join(REPO, "runs", "repro", "dtoc.json"))
     a = ap.parse_args()
     prepare(a.work)
     rng = random.Random(a.seed)

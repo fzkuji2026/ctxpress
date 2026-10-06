@@ -1,7 +1,7 @@
 """Declared official grading inputs for recorded-boundary runs (code, data, trials and pinned dependencies):
 capture, verify and copy them, isolated from live checkouts."""
 from __future__ import annotations
-import hashlib, importlib.util, json, os, re, subprocess, sys
+import hashlib, importlib.util, json, re, sys
 from pathlib import Path
 from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan
 

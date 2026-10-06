@@ -123,7 +123,7 @@ def run(method_entry=None, codex_args=(), codex_bin=None, port=0, upstream=None,
     store_dir = os.path.join(store_dir or settings.store_dir(), run_id)
     entry = copy.deepcopy(method_entry or {"class": cfg["method"], "args": cfg.get("args") or {}})
     if budget is not None:
-        from ctxpress.methods import with_budget
+        from ctxpress.methods.budget import with_budget
         entry = with_budget(entry, budget)
     sample = build(entry)                                                # resolve external policies once
     factory = frozen_factory(sample)

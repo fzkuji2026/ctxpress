@@ -440,7 +440,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     entry = {"class": a.method, "args": json.loads(a.args)}
     if a.budget is not None:
-        from ctxpress.methods import with_budget
+        from ctxpress.methods.budget import with_budget
         entry = with_budget(entry, a.budget)
     srv, _ = serve(frozen_factory(build(entry)), a.port, a.upstream, a.via, a.log, host=a.host, store_dir=a.store_dir, store_prefix=a.store_prefix)
     print(f"ctxpress proxy: {a.method} {a.args} on {a.host}:{a.port} -> {a.upstream}", file=sys.stderr, flush=True)

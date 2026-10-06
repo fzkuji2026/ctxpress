@@ -11,6 +11,15 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DATA = os.environ.get("CTXPRESS_DATA", os.path.join(ROOT, "data"))
 
 
+def node_runs_typescript():
+    """The authors' TypeScript runs directly only on Node with --experimental-transform-types (22.6+)."""
+    node = shutil.which("node")
+    if not node:
+        return False
+    import subprocess
+    return subprocess.run([node, "--experimental-transform-types", "-e", ""], capture_output=True).returncode == 0
+
+
 def test_delimiter_rules_and_texts_match_the_tool():
     m = CWL()
     assert m.call_tool("delimiter", {"action": "end"}) == ("No active chunk to end.", True)
@@ -113,10 +122,10 @@ def test_user_messages_survive_and_the_host_request_stays_paired():
     assert calls == outs
 
 
-@pytest.mark.skipif(not shutil.which("node") or not os.path.isdir(os.path.join(DATA, "repro", "pi-cwl")),
-                    reason="Node or the authors' pi-cwl sources not available")
+@pytest.mark.skipif(not node_runs_typescript() or not os.path.isdir(os.path.join(DATA, "repro", "pi-cwl")),
+                    reason="Node with --experimental-transform-types (22.6+) or the authors' pi-cwl sources not available")
 def test_identical_to_the_authors_filter(tmp_path):
-    sys.path.insert(0, os.path.join(ROOT, "ctxpress", "repro"))
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "repro"))
     import subprocess, random
     import cwl_compare as cmp
     cmp.prepare(str(tmp_path))

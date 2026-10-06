@@ -98,3 +98,10 @@ def test_evaluation_layers():
         return (other is None or other == own or own in ENGINES.get(other, ()) or other in ENGINES.get(own, ()))
     check((PACKAGE / "benchmarks").rglob("*.py"), family_rule)
     assert not problems, "\n".join(problems)
+
+
+def test_the_package_and_distribution_versions_agree():
+    import re
+    from ctxpress import __version__
+    pyproject = (PACKAGE.parent / "pyproject.toml").read_text(encoding="utf-8")
+    assert re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1) == __version__

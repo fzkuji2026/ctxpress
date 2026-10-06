@@ -1,7 +1,6 @@
 """Synthetic method checks. No model/network calls; not benchmark evidence."""
 from collections import Counter
 import copy
-import json
 from tempfile import TemporaryDirectory
 
 from ctxpress.live.rewrite import Rewriter

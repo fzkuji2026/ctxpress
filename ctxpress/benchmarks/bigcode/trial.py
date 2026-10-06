@@ -1,6 +1,6 @@
 """Codex code-sample sessions followed by a separate prepared official verifier."""
 from __future__ import annotations
-import asyncio, hashlib, io, json, os, shlex, tarfile
+import asyncio, io, json, shlex, tarfile
 from pathlib import Path
 from ctxpress.harness.runtime import codex_agent
 from ctxpress.benchmarks.bigcode.adapter import BigCodeBench

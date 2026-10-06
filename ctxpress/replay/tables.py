@@ -1,7 +1,7 @@
 """The framework table (experiment.zh.html table 23) generated from the methods' own declarations, so the
 documentation and the code cannot drift apart."""
 from __future__ import annotations
-from ctxpress.methods import FRAMEWORK_KEYS, FRAMEWORK_TITLES
+from ctxpress.methods.base import FRAMEWORK_KEYS, FRAMEWORK_TITLES
 import ctxpress.methods as M
 
 DEFAULTS = [M.CodexAutoCompact(), M.ClaudeCode(), M.CliffCompaction(), M.SlidingWindow(), M.ComplexityTrap(),

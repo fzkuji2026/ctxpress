@@ -8,7 +8,7 @@ built, pulled, or removed by this hook.
 from __future__ import annotations
 import asyncio, codecs, copy, json, os, re
 from pathlib import Path, PurePosixPath
-from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan
+from ctxpress.harness.jobs import environment as eval_environment
 from ctxpress.core import artifacts as artifact_io
 from ctxpress.harness.runtime import gpu as runtime_gpu
 

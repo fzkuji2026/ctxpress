@@ -4,8 +4,7 @@ so wrappers take other entries as arguments:
     {"class": "Composed", "args": {"methods": [{"class": "EntryTruncation", ...}, {"class": "Pichay"}]}}
 `METHODS` lists every method with its paper, whether it needs a model of its own, whether it runs for real
 (through ctxpress.live.proxy) and how it differs from the original implementation (`ctxpress list`)."""
-from ctxpress.methods.base import Method, FRAMEWORK_KEYS, FRAMEWORK_TITLES
-from ctxpress.methods.budget import BudgetSpec, with_budget, resolve_wrapper_budget
+from ctxpress.methods.budget import resolve_wrapper_budget
 from ctxpress.methods.native import NoCompaction, CodexAutoCompact, ClaudeCode, SlidingWindow
 from ctxpress.methods.masking import ComplexityTrap, KeepLastTokens
 from ctxpress.methods.cliff import CliffCompaction
@@ -21,7 +20,7 @@ from ctxpress.methods.dtoc import DTOC
 from ctxpress.methods.acm import ACM
 from ctxpress.methods.workingview import WorkingView
 from ctxpress.methods.legacy import ClearThenSummarize, PichayApprox, ClawVMApprox
-from ctxpress.methods.cost_model import CostModel, ALL_TYPES
+from ctxpress.methods.cost_model import CostModel
 from ctxpress.methods.scored import ScoredMethod
 from ctxpress.methods.wrappers import Composed, EntryTruncation, PinRequirements, WithMemory, Trigger
 from ctxpress.methods.auto_cost import AutoCostModel
@@ -61,7 +60,7 @@ METHODS = {
     "WorkingView": ("本项目此前的方法", True, False, "原实现在 adapters/codex（Rust）里；这里是规则近似"),
     "CostModel": ("本文", False, True, "可加载 ctxpress fit 生成的固定再用曲线接入真实代理；λ、价格、找回与重新探索参数仍需明确配置，真实任务效果尚未评测"),
     "AutoCostModel": ("本文", False, True, "加载 ctxpress tune 冻结的统计、参数及留一会话选出的 λ；无合格候选时退回原生 Codex 压缩；筛选是模拟证据，真实任务约束尚未验证"),
-    "ScoredMethod": ("基类（参照 kvpress 的 ScorerPress）", False, True, "无"),
+    "ScoredMethod": ("打分方法基类", False, True, "无"),
     "Composed": ("包装器", False, True, "无"), "EntryTruncation": ("包装器", False, True, "无"),
     "PinRequirements": ("包装器", False, True, "无"), "WithMemory": ("包装器", False, True, "无"),
     "Trigger": ("包装器", False, True, "无"),

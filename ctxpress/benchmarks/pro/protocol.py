@@ -1,7 +1,6 @@
 """Pro V2 frozen tooling and mandatory fresh regrade evidence."""
 from __future__ import annotations
 import copy, json, re
-from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan
 
 SCHEMA='ctxpress.eval.pro_regrade'

@@ -1,4 +1,4 @@
-"""Wrappers that combine with any method (kvpress: ComposedPress, AdaKVPress, ...).
+"""Wrappers that combine with any method.
 
     Composed([m1, m2])          run several methods in order (each sees the result of the previous one)
     EntryTruncation(m, budget)  truncate long tool outputs when they enter the context, then run m

@@ -4,7 +4,8 @@ import copy, os, threading, uuid
 from ctxpress.core.params import DEFAULT
 from ctxpress.live.rewrite import Rewriter
 from ctxpress.live.factory import frozen_factory
-from ctxpress.methods import build, with_budget
+from ctxpress.methods import build
+from ctxpress.methods.budget import with_budget
 from ctxpress.methods.base import Method
 
 

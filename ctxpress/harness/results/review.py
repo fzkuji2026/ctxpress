@@ -169,7 +169,6 @@ def assess(detail, excluded, screened, clean, process_problems=None):
 
 
 def review(directory, reference, output, exclusion_file=None, inspect_resources=False, analysis=True):
-    from ctxpress.harness.jobs import queue as evaluation
     from ctxpress.harness.results import analysis as run_analysis
     root = Path(directory).expanduser().resolve()
     output = Path(output).expanduser().absolute()

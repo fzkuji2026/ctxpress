@@ -10,8 +10,9 @@ from __future__ import annotations
 import argparse, copy, glob, json, os, sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this repository, whatever its folder name
 DATA = os.environ.get("CTXPRESS_DATA", os.path.join(ROOT, "data"))   # originals, recorded sessions
-sys.path.insert(0, os.path.join(ROOT, "ctxpress"))
+sys.path.insert(0, REPO)
 from ctxpress.replay.loaders.codex import requests_from_rollout as requests  # noqa: E402
 
 
@@ -48,7 +49,7 @@ def main():
     ap.add_argument("--orig", default=os.path.join(DATA, "repro", "cliffcompaction", "src"))
     ap.add_argument("--thresholds", type=int, nargs="+", default=[20000, 50000, 100000])
     ap.add_argument("--sessions", default=os.path.join(DATA, "tb4-jobs", "**", "rollout-*.jsonl"))
-    ap.add_argument("--out", default=os.path.join(ROOT, "ctxpress", "runs", "repro", "cliff.jsonl"))
+    ap.add_argument("--out", default=os.path.join(REPO, "runs", "repro", "cliff.jsonl"))
     a = ap.parse_args()
     paths = sorted(glob.glob(a.sessions, recursive=True))
     os.makedirs(os.path.dirname(a.out), exist_ok=True)

@@ -14,8 +14,9 @@ from __future__ import annotations
 import argparse, ast, glob, hashlib, json, os, sys, types
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this repository, whatever its folder name
 DATA = os.environ.get("CTXPRESS_DATA", os.path.join(ROOT, "data"))
-sys.path.insert(0, os.path.join(ROOT, "ctxpress"))
+sys.path.insert(0, REPO)
 from ctxpress.live.context import LiveContext
 from ctxpress.methods import ComplexityTrapSummary, ComplexityTrapHybrid
 from ctxpress.methods.summaries import CT_SUMMARY_SYSTEM
@@ -183,7 +184,7 @@ def main():
         tot["with_two_or_more"] += r["summaries"] > 1
         if r["first_diff"] is not None:
             tot["diffs"].append((os.path.basename(p), r["first_diff"]))
-    out = a.out or os.path.join(ROOT, "ctxpress", "runs", "repro", f"complexity_trap_{a.mode}.json")
+    out = a.out or os.path.join(REPO, "runs", "repro", f"complexity_trap_{a.mode}.json")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(tot, open(out, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
     print(json.dumps(dict(tot, diffs=tot["diffs"][:3], n_diffs=len(tot["diffs"])), indent=1, ensure_ascii=False))

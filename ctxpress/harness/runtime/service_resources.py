@@ -9,7 +9,6 @@ import copy,json,os,re,threading,uuid
 from dataclasses import dataclass
 from pathlib import Path,PurePosixPath
 from urllib.parse import parse_qs,quote,unquote,urlsplit,urlencode
-from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 from ctxpress.harness.runtime.docker import identity, image_id, labels

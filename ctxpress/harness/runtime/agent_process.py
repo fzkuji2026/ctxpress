@@ -2,7 +2,6 @@
 from __future__ import annotations
 import argparse, json, os, signal, subprocess, sys, time
 from pathlib import Path
-from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 

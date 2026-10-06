@@ -1,4 +1,4 @@
-"""ScoredMethod: the analogue of kvpress's ScorerPress. Score every tool output in context; while the outputs
+"""ScoredMethod: the base class of scoring methods. Score every tool output in context; while the outputs
 in context exceed `budget` tokens, apply `op` to the lowest-scored ones (the newest `protect` are never touched).
 Many methods differ only in the score:
     recency  -> Complexity Trap-like (keep the newest)

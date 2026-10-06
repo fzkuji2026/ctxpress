@@ -8,7 +8,7 @@ given with --mcp-config and pre-allowed with --allowedTools; no Claude Code sett
 Claude Code's own compaction stays as the user configured it.
 """
 from __future__ import annotations
-import copy, json, os, shutil, subprocess, sys, tempfile, threading, time, uuid
+import copy, json, os, shutil, subprocess, sys, threading, time, uuid
 from ctxpress.live.proxy import serve
 from ctxpress.live.factory import frozen_factory
 from ctxpress.methods import build
@@ -52,7 +52,7 @@ def run(method_entry=None, claude_args=(), claude_bin=None, port=0, upstream=Non
     store_dir = os.path.join(store_dir or settings.store_dir(), run_id)
     entry = copy.deepcopy(method_entry or {"class": cfg["method"], "args": cfg.get("args") or {}})
     if budget is not None:
-        from ctxpress.methods import with_budget
+        from ctxpress.methods.budget import with_budget
         entry = with_budget(entry, budget)
     sample = build(entry)
     factory = frozen_factory(sample)

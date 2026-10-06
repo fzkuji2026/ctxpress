@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio, io, os, tarfile
 from pathlib import Path
 from types import SimpleNamespace
-from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.core import artifacts as artifact_io
 from ctxpress.core import processes
 from ctxpress.harness.runtime import codex_agent

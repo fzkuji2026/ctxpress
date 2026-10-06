@@ -13,14 +13,18 @@ Layout (each layer imports only the ones above it; settings depends on nothing)
     replay/    offline replay pre-screen on recorded sessions (results labelled simulated)
     harness/   evaluation machinery shared by every benchmark: jobs/ (plans, the background queue, control, the fixed
                protocol, frozen inputs), runtime/ (containers, the pinned Codex, model traffic, verifier services),
-               results/ (reports, review, comparisons, process analysis), checks/ (interactive, method, mechanism)
+               results/ (reports, review, comparisons, process analysis), checks/ (interactive, method, mechanism, smoke)
     benchmarks/
                one package per benchmark family (milestone, swe, pro, polybench, bigcode, harbor, deepswe) with its
                data, agent sessions and official grading; the registry and shared planners at the top.
                harbor and swe also carry the execution engines the other families plug into.
                The framework above never imports harness or benchmarks.
 """
-from ctxpress.methods import REGISTRY, METHODS, build, method_table, BudgetSpec  # noqa: F401
-from ctxpress.live.context import LiveContext                        # noqa: F401
-from ctxpress.live.rewrite import Rewriter                           # noqa: F401
-from ctxpress.live.api import ContextManager, apply                  # noqa: F401
+from ctxpress.methods import REGISTRY, METHODS, build, method_table
+from ctxpress.methods.budget import BudgetSpec
+from ctxpress.live.context import LiveContext
+from ctxpress.live.rewrite import Rewriter
+from ctxpress.live.api import ContextManager, apply
+from ctxpress.core.version import __version__
+
+__all__ = ["__version__", "REGISTRY", "METHODS", "build", "method_table", "BudgetSpec", "LiveContext", "Rewriter", "ContextManager", "apply"]

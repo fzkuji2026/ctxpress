@@ -2,7 +2,7 @@
 from __future__ import annotations
 import copy, json, os, re, signal, subprocess, time, uuid
 from pathlib import Path
-from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan, resources as task_resources, task as task_api
+from ctxpress.harness.jobs import environment as eval_environment, resources as task_resources, task as task_api
 from ctxpress.core import artifacts as artifact_io
 from ctxpress.benchmarks.milestone import protocol as milestone_protocol
 from ctxpress.live.telemetry import summary
