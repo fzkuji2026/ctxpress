@@ -6,7 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ctxpress.benchmarks import harbor_codex, harbor_driver, milestone_codex
+from ctxpress.benchmarks.harbor import codex_hook as harbor_codex, driver as harbor_driver
+from ctxpress.benchmarks.milestone import codex_hook as milestone_codex
 from ctxpress.benchmarks.method_inputs import host_entry, validate_live
 from ctxpress.core import policy
 from ctxpress.replay.tune import tune
@@ -52,7 +53,7 @@ def test_official_launcher_validates_actual_policy_and_keeps_container_path(stag
     else:
         cfg = dict(settings(), method=entry, profiles=str(directory))
         if runner == 'swe':
-            from ctxpress.harness.swe_trial import agent_class
+            from ctxpress.benchmarks.swe.trial import agent_class
             monkeypatch.setenv('CTXPRESS_CODEX_AUTH_FILE', '/synthetic-auth-not-read')
             agent = agent_class(dict(cfg, run={'max_calls': 100}, folder=str(directory.parent)), lambda _: None)()
         else:
@@ -95,7 +96,8 @@ def test_staged_policy_binding_fails_closed(staged, damage):
 
 @pytest.mark.parametrize('runner', ['legacy', 'modern', 'pier'])
 def test_file_policy_survives_official_trial_lifecycle(staged, tmp_path, monkeypatch, runner):
-    from ctxpress.harness import harbor_modern, pier_trial
+    from ctxpress.benchmarks.harbor import modern as harbor_modern
+    from ctxpress.benchmarks.deepswe import pier_trial
     entry, directory = staged
     if runner == 'legacy':
         import test_harbor_driver as fixture

@@ -8,9 +8,9 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import unquote,urlsplit
 import pytest
-from ctxpress.harness import milestone_resources as resources,milestone_transport as transport
-from ctxpress.harness import service_gateway as gateway,service_resources as services,socket_bridge
-from ctxpress.benchmarks import milestone_driver
+from ctxpress.benchmarks.milestone import resources, transport
+from ctxpress.harness.runtime import service_gateway as gateway, service_resources as services, socket_bridge
+from ctxpress.benchmarks.milestone import driver as milestone_driver
 from test_service_resources import Engine,IMAGE,PROJECT
 
 pytestmark=pytest.mark.skipif(sys.platform!='linux' or shutil.which('docker') is None,reason='existing Linux Docker CLI and Unix sockets required')

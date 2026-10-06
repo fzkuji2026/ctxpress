@@ -3,7 +3,7 @@ import hashlib, json, sqlite3
 
 import pytest
 from ctxpress.live import usage as eval_usage
-from ctxpress.harness import run_analysis
+from ctxpress.harness.results import analysis as run_analysis
 from ctxpress.__main__ import main as cli
 
 PRICES = {"models": {"m": {"input": 2.0, "cached": 0.1, "cache_write": 2.5, "output": 10.0,

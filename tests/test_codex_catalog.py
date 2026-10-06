@@ -5,7 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from ctxpress.harness import codex_catalog as catalog, eval_host_compare, eval_inputs, eval_protocol
+from ctxpress.harness.runtime import codex_catalog as catalog
+from ctxpress.harness.results import host_compare as eval_host_compare
+from ctxpress.harness.jobs import inputs as eval_inputs, protocol as eval_protocol
 from test_eval_families import NAMES
 from test_eval_protocol import inputs
 

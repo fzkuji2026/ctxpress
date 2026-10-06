@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 from ctxpress import benchmarks
-from ctxpress.harness import eval_inputs, eval_plan, eval_task_compare, eval_trees, task_resources
+from ctxpress.benchmarks.swe import adapter as swe_bench
+from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, trees as eval_trees, resources as task_resources
+from ctxpress.harness.results import task_compare as eval_task_compare
 from test_eval_families import fixture_data
 
 
@@ -29,7 +31,7 @@ def fixture(tmp_path, name='swe-bench-verified', repeats=1, tasks=1, prices=True
         dataset = root / 'instances.jsonl'
         if not dataset.exists():
             dataset = root / 'instances.json'
-        rows, _ = benchmarks.swe_bench.rows(dataset)
+        rows, _ = swe_bench.rows(dataset)
         second = copy.deepcopy(rows[0]); second['instance_id'] = 'fixture__second-2'
         rows = [rows[0], second]
         dataset.write_text('\n'.join(json.dumps(row) for row in rows) if dataset.suffix == '.jsonl' else json.dumps(rows), encoding='utf-8')
@@ -431,7 +433,7 @@ def test_stable_bigcode_reader_is_routed_through_common_accounting_and_quality(t
 def bigcode_comparison_fixture(tmp_path, statuses=('pass', 'fail'), labels=('reference', 'candidate')):
     """Complete frozen-run wrapper around the offline BigCode artifact fixture."""
     import shutil
-    from ctxpress.harness import eval_environment
+    from ctxpress.harness.jobs import environment as eval_environment
     from test_eval_code_compare import fixture as code_fixture, refresh, store_cohort
     plan, jobs, directory, paths = code_fixture(tmp_path, statuses)
     original_jobs = list(jobs)
@@ -514,7 +516,7 @@ def bigcode_comparison_fixture(tmp_path, statuses=('pass', 'fail'), labels=('ref
 @pytest.mark.linux_only
 def test_bigcode_stored_cohorts_are_exposed_per_label_without_scoring_or_writes(tmp_path, monkeypatch):
     import subprocess
-    from ctxpress.harness import code_report
+    from ctxpress.benchmarks.bigcode import report as code_report
     data = bigcode_comparison_fixture(tmp_path); plan, jobs, directory = data
     report = json.loads((directory / 'report.json').read_text(encoding='utf-8'))
     before = {p.relative_to(directory): (eval_plan.file_sha256(p), p.stat().st_mtime_ns)

@@ -19,9 +19,12 @@ def main():
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
     sys.path.insert(0,str(Path(__file__).resolve().parent))
     from milestone_mock_engine import Daemon,serving
-    from ctxpress.harness.milestone_worker import load
-    from ctxpress.harness import eval_plan, milestone_agent, milestone_containers, milestone_images
-    from ctxpress.harness import milestone_resources, milestone_runner, milestone_transport, task_resources,service_gateway
+    from ctxpress.benchmarks.milestone.worker import load
+    from ctxpress.harness.jobs import plan as eval_plan
+    from ctxpress.benchmarks.milestone import agent as milestone_agent, containers as milestone_containers, images as milestone_images
+    from ctxpress.benchmarks.milestone import resources as milestone_resources, runner as milestone_runner, transport as milestone_transport
+    from ctxpress.harness.jobs import resources as task_resources
+    from ctxpress.harness.runtime import service_gateway
     request=json.loads(args.request.read_text(encoding='utf-8'));source=load(request)
     from harness.e2e import agent_runner, container_setup, evaluator, orchestrator, run_e2e
     lock,_=task_resources.read(request['resources'],'swe-milestone',[request['original_task']])
@@ -64,7 +67,7 @@ def main():
 
     def synthetic_invocation(command):
         values=shlex.split(command)
-        assert 'ctxpress.harness.agent_process' in values
+        assert 'ctxpress.harness.runtime.agent_process' in values
         assert values[values.index('--via')+1]=='http://127.0.0.1:31234'
         with guard:
             current=native[0];runnable=current.dag.get_next_runnable();assert len(runnable)==1,runnable
@@ -89,7 +92,7 @@ def main():
             return result.value() if result.body else None
         if command[1]=='exec' and 'git' in command:
             index=command.index('git');return git(*command[index+1:],**options)
-        if command[1]=='exec' and 'ctxpress.harness.agent_process' in command[-1] and '--stop' not in command[-1]:
+        if command[1]=='exec' and 'ctxpress.harness.runtime.agent_process' in command[-1] and '--stop' not in command[-1]:
             stdout=synthetic_invocation(command[-1])
         elif command[1]=='ps':
             name=next(value.split('name=',1)[1].strip('^/$') for value in command if value.startswith('name='))

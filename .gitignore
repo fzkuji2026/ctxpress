@@ -1,7 +1,7 @@
 # local outputs, environments and private notes
 notes/
-runs/
-results/
+/runs/
+/results/
 __pycache__/
 *.pyc
 .pytest_cache/

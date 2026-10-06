@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler
 from types import SimpleNamespace
 from pathlib import Path
 import pytest
-from ctxpress.harness import service_gateway as gateway,socket_bridge
+from ctxpress.harness.runtime import service_gateway as gateway, socket_bridge
 from test_service_resources import Engine,IMAGE,PROJECT
 
 pytestmark=pytest.mark.skipif(sys.platform!='linux',reason='native Unix Docker service transport')

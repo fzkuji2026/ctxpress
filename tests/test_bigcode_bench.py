@@ -4,9 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 import pytest
 from ctxpress import benchmarks
-from ctxpress.benchmarks import code_protocol, swe_driver
-from ctxpress.harness import code_grading, code_report, code_trial, eval_inputs, eval_plan, eval_trees, evaluation, task, task_resources
-from ctxpress.harness import eval_outcomes, eval_report
+from ctxpress.benchmarks.bigcode import protocol as code_protocol
+from ctxpress.benchmarks.swe import driver as swe_driver
+from ctxpress.benchmarks.bigcode import grading as code_grading, report as code_report, trial as code_trial
+from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.harness.results import outcomes as eval_outcomes, report as eval_report
 from test_swe_runner import Client, AGENT, GRADER, request as swe_request
 
 

@@ -11,9 +11,13 @@ Layout (each layer imports only the ones above it; settings depends on nothing)
     settings   the installed configuration ($CTXPRESS_HOME)
     hosts/     agent CLIs ctxpress plugs into: codex/ (`ctxpress codex`, `ctxpress install codex`), claude/
     replay/    offline replay pre-screen on recorded sessions (results labelled simulated)
-    harness/, benchmarks/
-               evaluation: real runs in containers, benchmark adapters and official grading, comparison and
-               process evaluation. The framework above never imports them.
+    harness/   evaluation machinery shared by every benchmark: jobs/ (plans, the background queue, control, the fixed
+               protocol, frozen inputs), runtime/ (containers, the pinned Codex, model traffic, verifier services),
+               results/ (reports, review, comparisons, process analysis), checks/ (interactive, method, mechanism)
+    benchmarks/
+               one package per benchmark family (milestone, swe, pro, polybench, bigcode, harbor, deepswe) with its
+               data, agent sessions and official grading; the registry and shared planners at the top.
+               The framework above never imports harness or benchmarks.
 """
 from ctxpress.methods import REGISTRY, METHODS, build, method_table, BudgetSpec  # noqa: F401
 from ctxpress.live.context import LiveContext                        # noqa: F401

@@ -4,8 +4,8 @@ from graphlib import CycleError
 from pathlib import Path
 import pytest
 from ctxpress import benchmarks
-from ctxpress.harness import eval_plan, task
-from ctxpress.benchmarks.milestone_data import itinerary
+from ctxpress.harness.jobs import plan as eval_plan, task
+from ctxpress.benchmarks.milestone.data import itinerary
 from test_eval_inputs import inputs
 
 

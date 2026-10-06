@@ -4,10 +4,10 @@ from pathlib import Path
 from types import SimpleNamespace
 import pytest
 from ctxpress import benchmarks
-from ctxpress.benchmarks import harbor_driver, harbor_protocol
-from ctxpress.benchmarks.harbor_environment import compose_output
-from ctxpress.harness import eval_environment, eval_plan, task_resources
-from ctxpress.harness import harbor_modern
+from ctxpress.benchmarks.harbor import driver as harbor_driver, protocol as harbor_protocol
+from ctxpress.benchmarks.harbor.environment import compose_output
+from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan, resources as task_resources
+from ctxpress.benchmarks.harbor import modern as harbor_modern
 from test_harbor_driver import prepared, PROJECT, IMAGE
 from test_harbor_gpu import A, QUERY
 from test_harbor_codex import OfficialFixture, EnvironmentFixture
@@ -121,7 +121,7 @@ def test_phase_resource_capture_binds_grader_gpus_before_image_inspection(tmp_pa
 
 
 def test_scheduler_reserves_grader_only_devices_without_consuming_cpu_slots():
-    from ctxpress.harness.evaluation import _runnable
+    from ctxpress.harness.jobs.queue import _runnable
     def row(name,**resources):return dict(id=name,spec=json.dumps({'resources':resources}))
     live=[row('grading',verifier_gpu_device_ids=[A])]
     pending=[row('overlap',gpu_device_ids=[A]),row('grader-overlap',verifier_gpu_device_ids=[A]),row('cpu')]
@@ -129,7 +129,7 @@ def test_scheduler_reserves_grader_only_devices_without_consuming_cpu_slots():
 
 
 def frozen_modern(tmp_path):
-    from ctxpress.harness import eval_inputs, eval_trees, evaluation, task as task_api
+    from ctxpress.harness.jobs import inputs as eval_inputs, trees as eval_trees, queue as evaluation, task as task_api
     cfg,plan,_,_,_,job,_=prepared(tmp_path)
     root=Path(cfg['environment']['data'])
     (root/'task-one/task.toml').write_text('[environment]\ngpus=0\n[verifier]\nenvironment_mode="separate"\n[verifier.environment]\ngpus=1\ngpu_types=["H100"]\n', encoding='utf-8')
@@ -163,14 +163,14 @@ def test_prepare_dispatches_frozen_modern_api_and_separate_gpu_phase(tmp_path,mo
     assert request['grading_image']==IMAGE and not request['verifier_bundled_tests']
     assert 'auth' not in json.dumps(request)
     actual=harbor_modern.trial_config(request,lambda **kwargs:kwargs,tmp_path/'channel')
-    assert actual['agent']['import_path']=='ctxpress.harness.harbor_modern:CtxpressCodex'
+    assert actual['agent']['import_path']=='ctxpress.benchmarks.harbor.modern:CtxpressCodex'
     assert len(actual['environment']['mounts'])==4 and all(mount['read_only'] for mount in actual['environment']['mounts'])
 
 
 def test_reports_keep_grader_gpu_binding_without_agent_devices(tmp_path):
-    from ctxpress.harness import evaluation
-    from ctxpress.harness.eval_report import report, write_report
-    from ctxpress.benchmarks import harbor_gpu
+    from ctxpress.harness.jobs import queue as evaluation
+    from ctxpress.harness.results.report import report, write_report
+    from ctxpress.benchmarks.harbor import gpu as harbor_gpu
     _,directory,_,job,_=frozen_modern(tmp_path)
     evidence=harbor_gpu.observed(QUERY,[A],['H100'])
     with evaluation.database(directory) as connection:

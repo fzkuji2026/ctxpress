@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from ctxpress.harness import eval_plan
+from ctxpress.harness.jobs import plan as eval_plan
 from test_eval_task_compare import change_result, fixture, run, write
 
 

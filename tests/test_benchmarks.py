@@ -3,8 +3,8 @@ import copy, json, subprocess
 import pytest
 from ctxpress import benchmarks
 from ctxpress.__main__ import main
-from ctxpress.harness import eval_plan, evaluation
-from ctxpress.harness.eval_report import report, write_report
+from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation
+from ctxpress.harness.results.report import report, write_report
 from test_eval_inputs import inputs
 
 
@@ -96,7 +96,7 @@ def test_ambiguous_or_invalid_catalog_cannot_select_a_task(tmp_path, change):
 
 
 def test_adapter_dispatch_records_benchmark_identity(tmp_path, monkeypatch):
-    from ctxpress.harness import codex_docker
+    from ctxpress.benchmarks.milestone import checkpoint_run as codex_docker
     received = []
     def run(n, j, entry, **kwargs):
         received.append((n, j, entry, kwargs))

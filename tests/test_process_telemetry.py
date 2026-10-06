@@ -63,7 +63,7 @@ def test_model_calls_forwarded_unchanged_are_logged_billed_and_kept_distinct(tmp
     import json, threading, urllib.request
     from http.server import BaseHTTPRequestHandler, HTTPServer
     from ctxpress.live import usage as eval_usage
-    from ctxpress.harness import run_analysis
+    from ctxpress.harness.results import analysis as run_analysis
     from ctxpress.live.proxy import serve
 
     class Upstream(BaseHTTPRequestHandler):

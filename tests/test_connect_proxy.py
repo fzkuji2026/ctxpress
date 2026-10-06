@@ -2,7 +2,7 @@
 import socket, socketserver, threading
 from contextlib import contextmanager
 import pytest
-from ctxpress.harness.connect_proxy import authority, make_server
+from ctxpress.harness.runtime.connect_proxy import authority, make_server
 
 
 @contextmanager

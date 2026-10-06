@@ -3,7 +3,7 @@ import copy, json, subprocess
 from pathlib import Path
 import pytest
 from ctxpress.__main__ import main
-from ctxpress.harness import eval_environment, eval_plan, evaluation, task_resources
+from ctxpress.harness.jobs import environment as eval_environment, plan as eval_plan, queue as evaluation, resources as task_resources
 from ctxpress import benchmarks
 from test_original_benchmarks import terminal_data
 from test_task_start_plan import config

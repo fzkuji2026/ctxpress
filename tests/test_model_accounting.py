@@ -5,8 +5,8 @@ import json
 import pytest
 
 from ctxpress.live import usage as eval_usage
-from ctxpress.harness import eval_plan, evaluation
-from ctxpress.harness.eval_report import write_report
+from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation
+from ctxpress.harness.results.report import write_report
 from ctxpress.live.summarize import ResponsesSummarizer
 from ctxpress.live.proxy import find_model
 from test_evaluation import config

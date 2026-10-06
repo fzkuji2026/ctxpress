@@ -3,7 +3,7 @@ import sys,time
 from pathlib import Path
 from types import ModuleType,SimpleNamespace
 import pytest
-from ctxpress.harness import milestone_agent,milestone_budget
+from ctxpress.benchmarks.milestone import agent as milestone_agent, budget as milestone_budget
 
 
 def modules(tmp_path,monkeypatch,events):

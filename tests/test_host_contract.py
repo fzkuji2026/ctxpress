@@ -3,7 +3,7 @@ import copy
 import pytest
 
 from ctxpress.live.contract import HostContractError, validate
-from ctxpress.harness.method_check import check
+from ctxpress.harness.checks.method import check
 from ctxpress.live.rewrite import Rewriter
 from ctxpress.methods.base import Method
 
@@ -57,7 +57,7 @@ def test_proxy_blocks_contract_failure_before_upstream_and_marks_execution_inval
     import json
     import threading
     from ctxpress.live.proxy import ThreadingHTTPServer, make_handler
-    from ctxpress.harness.execution_health import observe
+    from ctxpress.harness.runtime.execution_health import observe
     class Broken(Method):
         def step(self, sim, r):
             sim.ctx.clear()

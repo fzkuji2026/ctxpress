@@ -2,7 +2,7 @@
 import builtins, copy, json, shutil, subprocess, sys
 from pathlib import Path
 import pytest
-from ctxpress.harness import eval_environment, eval_inputs, eval_plan, evaluation
+from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, queue as evaluation
 from test_eval_inputs import inputs
 
 BASE = 'sha256:' + '1'*64
@@ -139,7 +139,7 @@ def test_frozen_job_passes_copied_workspace_and_manifest_to_backend(tmp_path,mon
     Path(cfg['environment']['snapshot']).unlink()
     script = '''import sys
 from pathlib import Path
-from ctxpress.harness import codex_docker, eval_environment, evaluation
+from ctxpress.benchmarks.milestone import checkpoint_run as codex_docker; from ctxpress.harness.jobs import environment as eval_environment, queue as evaluation
 
 def run(n,j,entry,**kwargs):
     root=Path(kwargs['workspace'])
@@ -180,7 +180,7 @@ def test_report_keeps_actual_environment_evidence_and_fixed_scope(tmp_path,monke
         connection.execute("UPDATE jobs SET status='running',attempt=1 WHERE id=?",(job_id,))
     evidence = dict(manifest_sha256=lock['sha256'],workspace_frozen=True,base_image_id=BASE,boundary_image_id=BOUNDARY)
     evaluation.set_result(directory,job_id,1,dict(test_only=True,requests=0,environment=evidence))
-    from ctxpress.harness.eval_report import report,write_report
+    from ctxpress.harness.results.report import report, write_report
     result = report(directory)
     assert result['environment_manifest_sha256'] == lock['sha256']
     assert result['methods'][0]['jobs'][0]['environment'] == evidence

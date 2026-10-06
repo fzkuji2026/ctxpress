@@ -3,8 +3,8 @@ import json,sys
 from pathlib import Path
 from types import ModuleType
 import pytest
-from ctxpress.benchmarks.milestone_data import itinerary
-from ctxpress.harness import milestone_grade
+from ctxpress.benchmarks.milestone.data import itinerary
+from ctxpress.benchmarks.milestone import grade as milestone_grade
 from test_task_instances import dataset
 
 

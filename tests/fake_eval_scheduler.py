@@ -2,7 +2,7 @@
 import subprocess, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from ctxpress.harness.evaluation import schedule
+from ctxpress.harness.jobs.queue import schedule
 
 def launch(directory, job_id, attempt):
     return subprocess.Popen([sys.executable, str(Path(__file__).with_name('fake_eval_job.py')), str(directory), job_id, str(attempt), '0.4'],

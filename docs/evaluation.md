@@ -178,7 +178,7 @@ ctxpress analyze <路径> --output <新目录> [--eligibility <排除名单>] [-
 | 路径 | 读取方式 | 任务质量 |
 |---|---|---|
 | 请求日志，或 `ctxpress codex`/`claude` 的运行目录 | 直接读日志；价格用 `--prices`（协议、计划文件或价格对象） | 无 |
-| 评测目录（含 `jobs.sqlite`） | 只读打开数据库，每个已完成作业的结果里已含全部请求行；价格取自计划 | 按 `eval_outcomes` 解释官方评分 |
+| 评测目录（含 `jobs.sqlite`） | 只读打开数据库，每个已完成作业的结果里已含全部请求行；价格取自计划 | 按 `harness.results.outcomes` 解释官方评分 |
 | 严格报告 `summary.json` | 报告的作业列表、可比性与产物哈希；逐作业核对哈希后重算，费用须与报告一致 | 取自报告 |
 
 同一批作业从评测目录和严格报告两条路径分析，逐作业的质量、费用、缓存与上下文指标完全一致。
@@ -240,20 +240,20 @@ SWE-Milestone 的原生准备使用冻结的 `code` 官方源码树和 `dependen
 
 原生准备目录恢复为 `native-inputs/<repo-id>`，避免把快照目录 `task-data` 错当仓库 ID。实际作者的 resolve/freeze API 固定仓库配置和运行政策，metadata 解析器读取 source/test/exclusion 分区，配置与分类过滤器先校验，实际 DAGManager 保留依赖类型及配置语义。即使原始选择涵盖全部 CSV，也为原生 DAG 写明确的 selected IDs，保留没有边的独立节点。非评分节点仍参与依赖和作者提交流程；它们的输入/评分镜像需按 native watcher 的需要准备，不能从质量分母中排除后就丢掉其执行资源。
 
-`milestone_driver.preflight` 的独立 worker 用 `-I -S -B` 启动，只导入已冻结的框架与依赖，先校验输入树和 Python 身份，再写 `preparation.json`，保留作者配置哈希、政策模式及逐文件角色/哈希。准备过程不读取认证，不创建容器或开启模型通信，不执行 Agent 安装器。可用 `tests/check_milestone_author.py` 对已存在的本地源码、yaml/pathspec 包做显式离线检查；脚本使用合成任务与镜像 ID、删除原临时来源后调用冻结副本中的实际作者 API，保存 `test_only: true`，不是官方任务成绩。原生容器归属、总预算下的新会话/恢复、作者提交捕获、异步 PatchEvaluator 与退出组件已在 worker 内串接；准备能力及组件检查不会把完整执行标成已完成。
+`milestone.driver.preflight` 的独立 worker 用 `-I -S -B` 启动，只导入已冻结的框架与依赖，先校验输入树和 Python 身份，再写 `preparation.json`，保留作者配置哈希、政策模式及逐文件角色/哈希。准备过程不读取认证，不创建容器或开启模型通信，不执行 Agent 安装器。可用 `tests/check_milestone_author.py` 对已存在的本地源码、yaml/pathspec 包做显式离线检查；脚本使用合成任务与镜像 ID、删除原临时来源后调用冻结副本中的实际作者 API，保存 `test_only: true`，不是官方任务成绩。原生容器归属、总预算下的新会话/恢复、作者提交捕获、异步 PatchEvaluator 与退出组件已在 worker 内串接；准备能力及组件检查不会把完整执行标成已完成。
 
 `SWEMilestone.read_itinerary_grade` 已提供只读结果入口：独立 worker 调用冻结的 `harness.e2e.collect_results`，在私有临时布局中只复制所选 itinerary 的 summary、逐次 evaluation JSON 与 Agent 统计。按作者规则选择 summary 指定或最新有效 attempt，优先 filtered 结果；较新的 summary-only 重试不被旧的通过文件覆盖。作者汇总指标原样保留，non-graded 节点不进入质量分母，基础设施无效结果与零测试的编译失败分别处理。另列 `scoring_complete`、逐节点原始结果和文件路径/哈希；缺失 summary 不编造 verdict，缺失或基础设施无效的评分证据使整体 `resolved` 保持 null。该入口只读已有产物，不运行 PatchEvaluator，不把 `official_grading_supported` 或 `real_run_verified` 改为 true。
 
-连续执行的资源组件已提供：`milestone_resources` 为单个持久 Agent 与并行 verifier 分别保存 daemon、容器 ID、镜像、运行标签和进程身份；verifier 共用本次运行的内部网络。启动前写归属日志，清理检查进程、私有凭据、容器删除与网络脱离；恢复拒绝仍存活的 worker、变化的 daemon/镜像/标签及有残余容器的网络，不复用旧名称。认证通过内存 tar 上传到容器私有 home，宿主输出目录不复制认证文件。
+连续执行的资源组件已提供：`milestone.resources` 为单个持久 Agent 与并行 verifier 分别保存 daemon、容器 ID、镜像、运行标签和进程身份；verifier 共用本次运行的内部网络。启动前写归属日志，清理检查进程、私有凭据、容器删除与网络脱离；恢复拒绝仍存活的 worker、变化的 daemon/镜像/标签及有残余容器的网络，不复用旧名称。认证通过内存 tar 上传到容器私有 home，宿主输出目录不复制认证文件。
 
-`milestone_containers` 在独立 worker 内临时接管作者 ContainerSetup/Orchestrator/PatchEvaluator，调用实际启动函数并把 Docker 创建和清理转给归属组件，保留原用户/cache/Git 初始化、配置绑定、提交处理与评分函数。sudo 安装块按明确 AST 形状替换为已有工具检查；Python/sudo/git/bash/tar 必须在镜像中，不执行安装。Agent 使用无 IP 网络与模型 socket 的比较协议；普通 verifier 使用本次运行的内部网络，testcontainers verifier 则沿用作者 host 网络并使用所属 API 网关；这一网络策略属于 `ctxpress_comparison`，不冒充作者原网络协议。Agent 启动要求私有 Codex framework；testcontainers 的服务归属已由 `service_resources`/`service_gateway` 接入。
+`milestone.containers` 在独立 worker 内临时接管作者 ContainerSetup/Orchestrator/PatchEvaluator，调用实际启动函数并把 Docker 创建和清理转给归属组件，保留原用户/cache/Git 初始化、配置绑定、提交处理与评分函数。sudo 安装块按明确 AST 形状替换为已有工具检查；Python/sudo/git/bash/tar 必须在镜像中，不执行安装。Agent 使用无 IP 网络与模型 socket 的比较协议；普通 verifier 使用本次运行的内部网络，testcontainers verifier 则沿用作者 host 网络并使用所属 API 网关；这一网络策略属于 `ctxpress_comparison`，不冒充作者原网络协议。Agent 启动要求私有 Codex framework；testcontainers 的服务归属已由 `service_resources`/`service_gateway` 接入。
 
-`milestone_codex` 的私有模式已包装作者的新会话与恢复命令，固定原 compact limit、CLI 版本和进程组记录。它只挂载冻结 ctxpress 包、CLI、所属通信目录和输出，不继承宿主认证/config 或 API 环境；sessions 挂载为实际目录，保留作者的 find/stat 恢复读取。私有 home 初始化拒绝预置 auth/config，凭据由归属组件单独上传；命令必须绑定同一 loopback relay，不能在恢复时切换。所属通道与 relay 初始化现由 `milestone_transport` 提供，通过原生容器启动完成后的回调接入；完整 worker 已实现，使用合成 IO 的 native trial 组合已核对，生产资源组件组合已核对，具体任务服务的真实执行尚未验证，计划执行能力保持未完成。
+`milestone.codex_hook` 的私有模式已包装作者的新会话与恢复命令，固定原 compact limit、CLI 版本和进程组记录。它只挂载冻结 ctxpress 包、CLI、所属通信目录和输出，不继承宿主认证/config 或 API 环境；sessions 挂载为实际目录，保留作者的 find/stat 恢复读取。私有 home 初始化拒绝预置 auth/config，凭据由归属组件单独上传；命令必须绑定同一 loopback relay，不能在恢复时切换。所属通道与 relay 初始化现由 `milestone.transport` 提供，通过原生容器启动完成后的回调接入；完整 worker 已实现，使用合成 IO 的 native trial 组合已核对，生产资源组件组合已核对，具体任务服务的真实执行尚未验证，计划执行能力保持未完成。
 
 
-`milestone_transport` 在绑定 Unix socket 前写所属目录日志，仅允许 HTTPS upstream 对应的 CONNECT 目标，支持显式宿主代理。容器内 relay 通过独立进程组运行，核对 ready 的进程身份后绑定同一 loopback 地址，再单独上传认证。回收检查原 daemon 和 Agent 删除/认证清理证据，Agent 仍存在时保留通信目录，避免其 bind source 消失后无法重启清理。无认证或目标信息进入通道恢复日志。
+`milestone.transport` 在绑定 Unix socket 前写所属目录日志，仅允许 HTTPS upstream 对应的 CONNECT 目标，支持显式宿主代理。容器内 relay 通过独立进程组运行，核对 ready 的进程身份后绑定同一 loopback 地址，再单独上传认证。回收检查原 daemon 和 Agent 删除/认证清理证据，Agent 仍存在时保留通信目录，避免其 bind source 消失后无法重启清理。无认证或目标信息进入通道恢复日志。
 
-`milestone_agent` 包装实际作者 E2EAgentRunner 与 E2ETrialRunner，恢复时只刷新显式认证文件，不读取宿主默认 home/config。每次新会话/恢复退出后检查所属进程组停止，原作者超时处理仍保留。`milestone_budget` 共用一个起始时间与全 sessions 的工具调用计数，单次 native timeout 限制为剩余总时间；达到调用上限后等已记录的工具输出齐全才中断。Linux 主线程 watchdog 包住原生 recovery loop，覆盖重试等待，退出后撤掉计时器，不把最终评分/容器清理置于 Agent deadline 内。预算审计记录调用数、输出完整性与 stop reason。
+`milestone.agent` 包装实际作者 E2EAgentRunner 与 E2ETrialRunner，恢复时只刷新显式认证文件，不读取宿主默认 home/config。每次新会话/恢复退出后检查所属进程组停止，原作者超时处理仍保留。`milestone.budget` 共用一个起始时间与全 sessions 的工具调用计数，单次 native timeout 限制为剩余总时间；达到调用上限后等已记录的工具输出齐全才中断。Linux 主线程 watchdog 包住原生 recovery loop，覆盖重试等待，退出后撤掉计时器，不把最终评分/容器清理置于 Agent deadline 内。预算审计记录调用数、输出完整性与 stop reason。
 
 本轮 156 项 Linux 回归检查通过。实际本地 loopback/Unix 转发、禁止未声明目标与 relay 进程组停止已核对；冻结作者 Agent/Trial 构造、启动函数和预算 gate 也已离线检查，但 Docker、用户/runtime gate 与模型调用仍使用替身或提前失败分支。没有真实容器或模型实验，不能据此证明完整连续评分正确。
 
@@ -265,13 +265,13 @@ SWE-Milestone 的原生准备使用冻结的 `code` 官方源码树和 `dependen
 
 本轮 152 项本地检查通过，包含实际 Unix HTTP、分块 archive、实时日志并发与 exec upgrade。已有 Docker CLI 使用隔离空配置，仅连接假 API，版本/创建流程通过；作者冻结 v1.0.2 的真实 testcontainers 启动函数也已检查挂载投影和退出顺序，Docker 与启动后 gate 为替身。证据保存在 `runs/milestone-native-services-author-check.json`；没有真实容器或模型调用；随后已补 native trial 的合成 IO 组合检查。接口参考 [Docker Engine API](https://docs.docker.com/reference/api/engine/) 与 [Testcontainers runtime configuration](https://node.testcontainers.org/supported-container-runtimes/)。
 
-新增的 `check_milestone_lifecycle.py` 在冻结作者 v1.0.2 源码上调用完整 `milestone_runner.run()`：使用实际 Trial、新会话/恢复命令、watcher、DAG、Git 提交捕获、异步结果写入和 collector。本地 Git 生成的源码快照经过作者完整性检查；模拟 IO 的 M1 → M2 → M3 流程保留非评分节点分母，M3 测试失败不会被 DAG 的 early-unblock 完成状态改成评分通过。预算超时用例也完成线程退出/清理，缺失评分保持不完整。新增组合检查使用生产 Registry/Owner、模型 Channel 与服务 Gateway；Docker IO、容器 runtime gate、模型输出及测试执行仍为替身。M2 通过真实 Unix HTTP 创建模拟 Synapse、复制配置 archive 和启动服务，退出后核对所有资源 journal 已清理；超时用例也核对资源退出。结果保存到 `runs/milestone-native-resources-author-check.json`，没有真实容器或模型调用。另用现有 Docker CLI 对隔离假 Engine 检查 verifier/服务顺序、worker 恢复和 verifier 删除失败时保留服务与挂载目录；本轮相关 93 项回归全部通过。这些证据不证明真实任务环境已跑通。
+新增的 `check_milestone_lifecycle.py` 在冻结作者 v1.0.2 源码上调用完整 `milestone.runner.run()`：使用实际 Trial、新会话/恢复命令、watcher、DAG、Git 提交捕获、异步结果写入和 collector。本地 Git 生成的源码快照经过作者完整性检查；模拟 IO 的 M1 → M2 → M3 流程保留非评分节点分母，M3 测试失败不会被 DAG 的 early-unblock 完成状态改成评分通过。预算超时用例也完成线程退出/清理，缺失评分保持不完整。新增组合检查使用生产 Registry/Owner、模型 Channel 与服务 Gateway；Docker IO、容器 runtime gate、模型输出及测试执行仍为替身。M2 通过真实 Unix HTTP 创建模拟 Synapse、复制配置 archive 和启动服务，退出后核对所有资源 journal 已清理；超时用例也核对资源退出。结果保存到 `runs/milestone-native-resources-author-check.json`，没有真实容器或模型调用。另用现有 Docker CLI 对隔离假 Engine 检查 verifier/服务顺序、worker 恢复和 verifier 删除失败时保留服务与挂载目录；本轮相关 93 项回归全部通过。这些证据不证明真实任务环境已跑通。
 
 实际任务 API 形状另参照 Element Web v1.11.97 的 [Synapse wrapper](https://github.com/element-hq/element-web/blob/v1.11.97/playwright/testcontainers/synapse.ts) 与它声明的公共 fixture：Synapse/Dendrite 使用配置 archive 和 HTTP readiness，Mailpit 使用内部 alias，MAS 使用 archive/exec。服务网络 endpoint 现在核对 alias 与 link 归属，拒绝外部容器 ID、静态地址和管理配置，同时接受 Docker CLI 发送的空默认字段。这里仅核对作者源码中的 API 用法，没有下载 npm 包或镜像，也没有运行真实 Node testcontainers SDK；具体任务需先准备其声明的服务镜像。
 
 组合检查修复了两处启动兼容问题：作者镜像版本 gate 读取冻结的原始 image reference，容器仍按其不可变内容 ID 启动，不能把 Docker config ID 冒充 registry manifest digest；已有 Codex prerelease 二进制不进入作者 npm 安装版本 selector，实际 CLI 仍按完整版本字符串核对。本轮相关 52 项回归通过。
 
-评分退出组件 `milestone_trial` 在 Agent hook 之后安装，保留作者的累计预算包装。trial 注册后，资源 registry 保护其 Agent 和整体资源；cleanup 先停止 Agent/删除认证，设置 watcher 停止标记，再按显式期限 join watcher，从而等待作者线程池中的评分工作退出。超时或作者 cleanup 失败时保留保护，拒绝提前删除 Agent/整体容器。成功后保留作者的统计/工作区复制及锁释放，禁用作者未经归属核对的容器删除，再放行 registry 清理；调用方的 SIGTERM 行为和 remove_container 设置均恢复。退出证据保存到 trial 的 `ctxpress-drain.json`。该组件已在完整 worker 中接到 Agent hook 之后；本地实际线程池测试和冻结作者源码的已停止 watcher/cleanup 检查不构成真实 trial 验证。已确认 worker 死亡后的恢复不重建进程内保护，仍先核对所属 daemon/容器及凭据清理。
+评分退出组件 `milestone.trial` 在 Agent hook 之后安装，保留作者的累计预算包装。trial 注册后，资源 registry 保护其 Agent 和整体资源；cleanup 先停止 Agent/删除认证，设置 watcher 停止标记，再按显式期限 join watcher，从而等待作者线程池中的评分工作退出。超时或作者 cleanup 失败时保留保护，拒绝提前删除 Agent/整体容器。成功后保留作者的统计/工作区复制及锁释放，禁用作者未经归属核对的容器删除，再放行 registry 清理；调用方的 SIGTERM 行为和 remove_container 设置均恢复。退出证据保存到 trial 的 `ctxpress-drain.json`。该组件已在完整 worker 中接到 Agent hook 之后；本地实际线程池测试和冻结作者源码的已停止 watcher/cleanup 检查不构成真实 trial 验证。已确认 worker 死亡后的恢复不重建进程内保护，仍先核对所属 daemon/容器及凭据清理。
 
 Terminal-Bench 与 Terminal-Bench-Science 的 Harbor CPU/NVIDIA GPU 任务另有完整执行入口：冻结的独立子进程调用官方 `Trial`、Codex hook 和 verifier，分别保留各阶段的超时。需要预先声明完整 `harbor` 源码树、`dependencies` 依赖树（含真实 Harbor dist-info）、固定 Linux/Python ≥3.12 与每个服务的本地镜像 ID；启动前以 `-I -S -B` 核对官方导入，缺失依赖直接失败，不安装或读取宿主 site-packages。`CTXPRESS_CODEX_AUTH_FILE` 只在运行时传入子进程环境，凭据只上传到容器私有目录，计划和官方 Trial 配置不保存凭据内容。
 
@@ -389,7 +389,7 @@ python3 -m ctxpress eval capture-grader \
 
 ```bash
 # 地址须是本机 Docker bridge 的网关；不要直接使用示例地址代替核对。
-python3 -m ctxpress.harness.connect_proxy \
+python3 -m ctxpress.harness.runtime.connect_proxy \
   --bind 172.17.0.1 --port 0 \
   --target chatgpt.com:443 --target auth.openai.com:443 \
   --ready-file runs/network/relay.json
@@ -473,7 +473,7 @@ SWE-Milestone 的从头代码能力已开放，官方 v1.0.2 Trial/生产资源�
 M1 入口也生成这套计划，默认只写计划，边界必须显式声明：
 
 ```bash
-python -m ctxpress.harness.mechanism_check \
+python -m ctxpress.harness.checks.mechanism \
   --model MODEL --reasoning medium --bindir /path/to/current-codex-bin \
   --scripts /path/to/benchmark-scripts --boundary 0:435:198018 \
   --only CodexAutoCompact ComplexityTrap CliffCompaction \
@@ -486,7 +486,7 @@ python -m ctxpress.harness.mechanism_check \
 
 `--environment-snapshot` / `--grading-snapshot` 可分别绑定上述清单，`--via` / `--upstream` 声明传输设置，`--timeout` / `--compact-limit` 声明每次运行的超时与原生压缩阈值。方法自身的触发设置保留在计划里，不因修改原生阈值而一并改写。设置确认后加 `--run`，使用同一后台队列与结果格式。示例边界不自动创建镜像、下载历史或启动实验。
 
-连续派发由 `milestone_driver.execute` 经隔离 worker 调用 `milestone_runner`：先核对冻结输入/接口，再准备私有 itinerary、通过作者版本 gate、启动所属通信和容器，保存原生 trial metadata 后调用作者 TrialRunner。Agent 预算从首次调度开始，环境准备不消耗预算；`run.grading_timeout` 可覆盖退出时等待评分线程的期限，默认取作者配置 `evaluation_timeout`。退出后恢复 hook/信号，清理所属资源，再读官方成绩。父进程取消先请求 worker 退出，超时才终止进程组，确认终止后按 Agent、verifier、网络、通信通道顺序恢复。资源身份变化时保留日志并报错。新会话/恢复的请求日志合并到共同用量报告；离线替身验证、版本 gate 验证与旧提交的 773 项全套回归分别记录，不把它们混同为真实任务成绩。
+连续派发由 `milestone.driver.execute` 经隔离 worker 调用 `milestone.runner`：先核对冻结输入/接口，再准备私有 itinerary、通过作者版本 gate、启动所属通信和容器，保存原生 trial metadata 后调用作者 TrialRunner。Agent 预算从首次调度开始，环境准备不消耗预算；`run.grading_timeout` 可覆盖退出时等待评分线程的期限，默认取作者配置 `evaluation_timeout`。退出后恢复 hook/信号，清理所属资源，再读官方成绩。父进程取消先请求 worker 退出，超时才终止进程组，确认终止后按 Agent、verifier、网络、通信通道顺序恢复。资源身份变化时保留日志并报错。新会话/恢复的请求日志合并到共同用量报告；离线替身验证、版本 gate 验证与旧提交的 773 项全套回归分别记录，不把它们混同为真实任务成绩。
 
 
 `benchmark: swe-polybench` 使用 [PolyBench 配置](../configs/polybench.example.json) 和同一 `eval tasks/plan/run/status/report` 入口。数据目录提供 `instances.jsonl`（或 JSON）及 `dataset_manifest.json`；manifest 中 `dataset` 必须是 `AmazonScience/SWE-PolyBench`、`AmazonScience/SWE-PolyBench_500` 或 `AmazonScience/SWE-PolyBench_Verified`，`revision` 与资源 release 相同。数据使用作者字段 `F2P/P2P`、`Dockerfile`、`language`、`task_category` 和 `modified_nodes`，不转换成 SWE-bench 的 Python TestSpec。目录扫描保留 Python/Java/JavaScript/TypeScript 及 Bug Fix/Feature/Refactoring；Python 接口的 `task_instances(data, languages=[...], categories=[...])` 可筛选，CLI 计划按明确 task IDs 选择。

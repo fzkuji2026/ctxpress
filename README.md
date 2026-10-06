@@ -123,7 +123,7 @@ ctxpress claude --method DTOC -- --continue
 
 Anthropic Messages 把工具调用、工具结果和思考放在消息内的块里。代理把每个块展开成 Codex 用的同一种条目，套用同一个方法，再组装回合法的请求：角色交替、每个 `tool_use` 的结果在下一条用户消息里且排在最前、最后一轮助手消息的 thinking 原样保留；`cache_control` 取自当前请求，不参与历史比对（Claude Code 每轮移动缓存断点）。没有工具的旁路请求原样转发；子 Agent 和不同模型的对话按首条消息与模型分开。Claude Code 每轮结束后用完整历史加一句指令请求"下一句建议"，回答随后丢弃；这类一次性分叉之后，下一轮从分叉前的方法状态继续，不算历史改写（Codex 同样适用）。用量按 Anthropic 流计入：输入 = 未缓存 + 缓存读取 + 缓存写入，分别记录。
 
-常规交互验证：`python -m ctxpress.harness.interactive_check --host claude --bin <claude>`（或 `--host codex --bin <codex>`）在 tmux 里启动真实 TUI，键入两轮对话，假模型在第一轮调用 `ctxpress_status`；第二轮请求必须带着前一轮的问答、被 DTOC 改写的工具输出和方法说明，整个会话不能出现历史重置，退出后进程正常结束。Claude Code 2.1.59 与 Codex 0.159.0-alpha.12.1 在 WSL 上均通过；配置放在临时 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`，凭据为假值，不是真实模型证据。
+常规交互验证：`python -m ctxpress.harness.checks.interactive --host claude --bin <claude>`（或 `--host codex --bin <codex>`）在 tmux 里启动真实 TUI，键入两轮对话，假模型在第一轮调用 `ctxpress_status`；第二轮请求必须带着前一轮的问答、被 DTOC 改写的工具输出和方法说明，整个会话不能出现历史重置，退出后进程正常结束。Claude Code 2.1.59 与 Codex 0.159.0-alpha.12.1 在 WSL 上均通过；配置放在临时 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`，凭据为假值，不是真实模型证据。
 
 ## 代码结构
 
@@ -135,14 +135,16 @@ ctxpress/
   settings.py  已安装的配置（$CTXPRESS_HOME）
   hosts/       接入的 Agent：codex/（`ctxpress codex`、`ctxpress install codex`）、claude/（`ctxpress claude`）
   replay/      离线重放预筛（结果标为模拟）：读取轨迹、运行配置、约束指标、再用曲线
-  harness/     评测：在容器里跑真实任务、官方评分、结果比较、过程评测
-  benchmarks/  评测用的各 benchmark 适配器
+  harness/     评测的共用部分：jobs/（计划、后台队列、取消/恢复、固定协议、冻结输入）、runtime/（容器、固定版本的 Codex、
+               模型通信、评分服务）、results/（报告、验收、比较、过程评测）、checks/（交互、方法、机制检查）
+  benchmarks/  每个 benchmark 家族一个包（milestone、swe、pro、polybench、bigcode、harbor、deepswe）：数据、Agent 会话和官方评分；
+               注册表与共用的计划器在顶层
 repro/         与各论文原版代码逐条对照的脚本（见 repro/README.md）
 tests/         单元测试和对照测试
 configs/       实验配置
 ```
 
-依赖只朝一个方向：`core` → `methods` → `live` → `hosts` → 命令行，`settings` 不依赖任何模块、各层都可读取；`replay` 只用 `core`、`methods`；评测（`harness`、`benchmarks`）可以用框架的一切，框架不引用评测。`tests/test_layering.py` 检查这一点。
+依赖只朝一个方向：`core` → `methods` → `live` → `hosts` → 命令行，`settings` 不依赖任何模块、各层都可读取；`replay` 只用 `core`、`methods`；评测（`harness`、`benchmarks`）可以用框架的一切，框架不引用评测。评测内部，各 benchmark 家族和 `harness/runtime` 不引用 `results`、`checks`，`checks` 不依赖任何 benchmark。`tests/test_layering.py` 检查这些方向。
 
 同一个方法类既用于真实运行（`live/`），也用于重放预筛（`replay/`）。框架缺少某个方法需要的概念时，补进 `core/`，不在方法里另写一套。
 

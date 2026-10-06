@@ -2,7 +2,9 @@
 import hashlib, json
 from pathlib import Path
 import pytest
-from ctxpress.harness import execution_health, evaluation, eval_outcomes
+from ctxpress.harness.runtime import execution_health
+from ctxpress.harness.jobs import queue as evaluation
+from ctxpress.harness.results import outcomes as eval_outcomes
 
 ERROR='failed to spawn code-mode host /cxbin/codex-code-mode-host: No such file or directory (os error 2)'
 
@@ -138,7 +140,8 @@ def test_malformed_retained_health_is_explicitly_unknown_and_fails_closed(stored
 
 def test_report_excludes_quality_while_preserving_official_reward_and_cost_evidence(tmp_path):
     from test_task_start_plan import config
-    from ctxpress.harness import eval_plan, eval_report
+    from ctxpress.harness.jobs import plan as eval_plan
+    from ctxpress.harness.results import report as eval_report
     cfg=config(tmp_path);plan=eval_plan.compile_plan(cfg)
     directory=evaluation.prepare(plan,tmp_path/'run')
     run,_=result(tmp_path/'artifacts',transcript())

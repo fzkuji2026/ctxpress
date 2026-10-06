@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import re
 from pathlib import Path
-from ctxpress.harness import eval_plan
+from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.methods import build
 
 

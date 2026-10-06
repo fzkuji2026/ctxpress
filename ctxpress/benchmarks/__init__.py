@@ -1,12 +1,12 @@
 """Built-in benchmark adapters, independent of context-management methods."""
-from .swe_milestone import SWEMilestone
-from .swe_bench import SWEBench, SWEBenchVerified, SWEBenchLite
-from .terminal_bench import TerminalBench
-from .terminal_science import TerminalScience
-from .deep_swe import DeepSWE
-from .poly_bench import PolyBench
-from .swe_pro import SWEPro
-from .bigcode_bench import BigCodeBench
+from ctxpress.benchmarks.milestone.adapter import SWEMilestone
+from ctxpress.benchmarks.swe.adapter import SWEBench, SWEBenchVerified, SWEBenchLite
+from ctxpress.benchmarks.harbor.terminal_bench import TerminalBench
+from ctxpress.benchmarks.harbor.terminal_science import TerminalScience
+from ctxpress.benchmarks.deepswe.adapter import DeepSWE
+from ctxpress.benchmarks.polybench.adapter import PolyBench
+from ctxpress.benchmarks.pro.adapter import SWEPro
+from ctxpress.benchmarks.bigcode.adapter import BigCodeBench
 
 DEFAULT = "swe-milestone"
 REGISTRY = {DEFAULT: SWEMilestone, 'swe-bench':SWEBench, 'swe-bench-verified':SWEBenchVerified,

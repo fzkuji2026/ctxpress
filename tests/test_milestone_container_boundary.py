@@ -2,13 +2,13 @@
 import ast,sys
 from pathlib import Path
 import pytest
-from ctxpress.harness.milestone_containers import Boundary,prepared_initialization
+from ctxpress.benchmarks.milestone.containers import Boundary, prepared_initialization
 from test_milestone_resources import fixture,IMAGE
 
 
 @pytest.mark.skipif(sys.platform!='linux',reason='native Unix service socket')
 def test_author_testcontainers_socket_is_replaced_by_owned_api_and_cleaned_after_verifier(tmp_path,monkeypatch):
-    from ctxpress.harness import service_gateway,service_resources
+    from ctxpress.harness.runtime import service_gateway, service_resources
     from test_service_resources import Engine
     registry,docker=fixture(tmp_path,monkeypatch)
     registry.service_images={'database':{'id':IMAGE,'reference':'redis:7'}}

@@ -2,8 +2,8 @@
 import json
 from pathlib import Path
 import pytest
-from ctxpress.benchmarks import milestone_driver
-from ctxpress.harness import milestone_version
+from ctxpress.benchmarks.milestone import driver as milestone_driver
+from ctxpress.benchmarks.milestone import version as milestone_version
 
 
 def test_closure_check_fails_before_binary_and_authentication(tmp_path, monkeypatch):

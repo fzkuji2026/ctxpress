@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from ctxpress.benchmarks.poly_bench import PolyBench
-from ctxpress.harness import eval_inputs, eval_plan, eval_poly_compare, eval_trees, task, task_resources
+from ctxpress.benchmarks.polybench.adapter import PolyBench
+from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, trees as eval_trees, task, resources as task_resources
+from ctxpress.harness.results import poly_compare as eval_poly_compare
 
 
 def write(path, document):

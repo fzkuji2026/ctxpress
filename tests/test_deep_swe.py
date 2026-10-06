@@ -4,9 +4,10 @@ from pathlib import Path
 from types import SimpleNamespace
 import pytest
 from ctxpress import benchmarks
-from ctxpress.benchmarks import deep_swe, harbor_driver, pier_codex
-from ctxpress.harness import eval_inputs, eval_plan, eval_trees, evaluation, task, task_resources
-from ctxpress.harness.pier_trial import submission, trial_config
+from ctxpress.benchmarks.deepswe import adapter as deep_swe, pier_codex
+from ctxpress.benchmarks.harbor import driver as harbor_driver
+from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.benchmarks.deepswe.pier_trial import submission, trial_config
 from test_original_benchmarks import terminal_data
 from test_harbor_driver import IMAGE, PROJECT
 
@@ -110,7 +111,7 @@ def test_prepare_binds_separate_images_after_original_dataset_and_pier_are_remov
     cfg = trial_config(request, lambda **kw:kw, tmp_path/'channel')
     mounts = cfg['environment']['mounts']
     assert all(volume['target'] != '/logs/verifier' and '/tests' not in volume['source'] for volume in mounts)
-    assert cfg['agent']['import_path'] == 'ctxpress.harness.pier_trial:CtxpressCodex'
+    assert cfg['agent']['import_path'] == 'ctxpress.benchmarks.deepswe.pier_trial:CtxpressCodex'
 
 
 @pytest.mark.parametrize('change', ['source','metadata','linux','grading','same-image','services','release','gpu'])
@@ -159,7 +160,7 @@ def test_pier_bridge_preserves_prompt_hooks_and_raises_official_agent_failure(tm
         def render_instruction(self,instruction): return 'official-rendered: ' + instruction
     class Environment(EnvironmentFixture):
         async def exec(self,command,**kwargs):
-            if 'ctxpress.harness.agent_process' in command and '--stop' not in command:
+            if 'ctxpress.harness.runtime.agent_process' in command and '--stop' not in command:
                 self.commands.append((command,kwargs))
                 return SimpleNamespace(return_code=4)
             return await super().exec(command,**kwargs)
@@ -184,8 +185,8 @@ def test_standard_harbor_plan_rejects_new_collect_or_separate_protocol(tmp_path)
 
 @pytest.mark.parametrize('cleanup_failure', [False,True])
 def test_pier_worker_uses_fresh_grader_after_collect_and_checked_agent_stop(tmp_path,monkeypatch,cleanup_failure):
-    from ctxpress.harness import pier_trial
-    from ctxpress.harness import eval_environment
+    from ctxpress.benchmarks.deepswe import pier_trial
+    from ctxpress.harness.jobs import environment as eval_environment
     from test_harbor_codex import OfficialFixture, EnvironmentFixture
     events = []
     root = data(tmp_path)/'task-one'
@@ -289,7 +290,7 @@ def test_pier_worker_uses_fresh_grader_after_collect_and_checked_agent_stop(tmp_
 
 
 def test_report_preserves_separate_verifier_and_artifact_evidence(tmp_path):
-    from ctxpress.harness.eval_report import write_report
+    from ctxpress.harness.results.report import write_report
     _,plan,directory,_,_,job,_ = prepared(tmp_path)
     separate=dict(agent_image=IMAGE,verifier_image=GRADER,checked_cleanup=True)
     evidence={'verifier/reward.json':{'path':'fixture','sha256':'a'*64}}

@@ -14,7 +14,8 @@ from pathlib import Path
 def check(code, pilot_grade=None):
     sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(code.resolve())]
     from harness.e2e import collect_results
-    from ctxpress.harness import eval_outcomes, milestone_grade
+    from ctxpress.harness.results import outcomes as eval_outcomes
+    from ctxpress.benchmarks.milestone import grade as milestone_grade
 
     assert Path(collect_results.__file__).resolve() == code.resolve() / 'harness/e2e/collect_results.py'
     task = dict(id='fixture_repo', benchmark='swe-milestone', start_mode='task_start',

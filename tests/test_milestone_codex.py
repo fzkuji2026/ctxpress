@@ -2,7 +2,7 @@
 import ast, json, shlex
 from pathlib import Path
 import pytest
-from ctxpress.benchmarks.milestone_codex import framework
+from ctxpress.benchmarks.milestone.codex_hook import framework
 
 
 class OfficialFixture:
@@ -116,7 +116,7 @@ def test_private_framework_requires_a_stable_loopback_relay_for_new_and_resumed_
     cls.set_model_relay('http://127.0.0.1:32123')
     for command in (agent.build_run_command('fixture',None,'/prompt'),cls().build_resume_command('fixture','thread','/resume')):
         args=shlex.split(command)
-        assert 'CODEX_HOME=/home/fakeroot/.codex' in args and 'ctxpress.harness.agent_process' in args
+        assert 'CODEX_HOME=/home/fakeroot/.codex' in args and 'ctxpress.harness.runtime.agent_process' in args
         assert args[args.index('--pid-file')+1]=='/ctxpress-private/agent.json'
         assert args[args.index('--via')+1]=='http://127.0.0.1:32123'
     with pytest.raises(ValueError,match='switch'):cls.set_model_relay('http://127.0.0.1:32124')

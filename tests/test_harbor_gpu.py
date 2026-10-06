@@ -3,9 +3,9 @@ import asyncio, json
 from types import SimpleNamespace
 import pytest
 from ctxpress import benchmarks
-from ctxpress.benchmarks import harbor_driver, harbor_gpu
-from ctxpress.benchmarks.harbor_environment import framework, guarded_compose
-from ctxpress.harness import eval_environment, task_resources
+from ctxpress.benchmarks.harbor import driver as harbor_driver, gpu as harbor_gpu
+from ctxpress.benchmarks.harbor.environment import framework, guarded_compose
+from ctxpress.harness.jobs import environment as eval_environment, resources as task_resources
 from test_harbor_environment import OfficialFixture, model, settings
 from test_task_resources import capture_spec
 
@@ -150,8 +150,8 @@ def test_missing_gpu_labels_do_not_hide_retained_docker_allocations(monkeypatch,
 
 
 def test_reports_preserve_gpu_binding_and_observation_for_success_and_missing_evidence(tmp_path):
-    from ctxpress.harness import eval_plan,evaluation
-    from ctxpress.harness.eval_report import report,write_report
+    from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation
+    from ctxpress.harness.results.report import report, write_report
     from test_harbor_driver import prepared
     _,plan,_,_,_,job,_=prepared(tmp_path)
     plan={key:value for key,value in plan.items() if key!='sha256'}
@@ -183,7 +183,7 @@ def test_reports_preserve_gpu_binding_and_observation_for_success_and_missing_ev
 def test_scheduler_queues_shared_gpu_without_blocking_cpu_or_disjoint_gpu_tasks(tmp_path):
     import shutil
     from pathlib import Path
-    from ctxpress.harness import eval_plan,evaluation
+    from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation
     from test_harbor_driver import prepared
     from test_evaluation import fake_launch
     _,original,_,_,_,_,_=prepared(tmp_path)

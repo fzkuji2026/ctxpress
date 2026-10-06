@@ -3,8 +3,8 @@ import asyncio, copy, json
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
-from ctxpress.benchmarks.harbor_environment import framework, guarded_compose
-from ctxpress.harness import eval_environment
+from ctxpress.benchmarks.harbor.environment import framework, guarded_compose
+from ctxpress.harness.jobs import environment as eval_environment
 
 
 IMAGE = 'sha256:' + 'a'*64
@@ -95,7 +95,7 @@ def test_official_omitted_gpu_config_can_initialize_a_cpu_environment(tmp_path):
     assert instance._ctxpress_gpu_requirements == {'count':0,'types':None}
     # Only the typed model's omitted value is normalized; raw declarations
     # still reject invalid GPU requests before launching an environment.
-    from ctxpress.benchmarks.harbor_gpu import requirements
+    from ctxpress.benchmarks.harbor.gpu import requirements
     with pytest.raises(ValueError,match='nonnegative integer'):
         requirements({'gpus':None})
 

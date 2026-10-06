@@ -2,8 +2,8 @@
 import copy, hashlib, json, shutil, subprocess
 from pathlib import Path
 import pytest
-from ctxpress.benchmarks.milestone_data import itinerary
-from ctxpress.harness import eval_inputs, eval_plan, eval_trees, evaluation, task_resources
+from ctxpress.benchmarks.milestone.data import itinerary
+from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, resources as task_resources
 from test_task_instances import dataset, seal
 
 

@@ -1,7 +1,7 @@
 """Authentic local Git objects through a frozen version gate; no remote IO."""
 import base64, os, shutil, subprocess
 import pytest
-from ctxpress.harness import milestone_version as version
+from ctxpress.benchmarks.milestone import version
 
 
 def git(path, *args):

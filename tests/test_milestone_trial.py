@@ -3,7 +3,7 @@ import concurrent.futures, json, signal, sys, threading
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 import pytest
-from ctxpress.harness import milestone_trial
+from ctxpress.benchmarks.milestone import trial as milestone_trial
 
 
 pytestmark = pytest.mark.skipif(sys.platform != 'linux', reason='native Linux worker signal lifecycle')

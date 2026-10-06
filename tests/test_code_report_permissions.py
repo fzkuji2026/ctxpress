@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from ctxpress.harness import code_grading, eval_plan
+from ctxpress.benchmarks.bigcode import grading as code_grading
+from ctxpress.harness.jobs import plan as eval_plan
 
 
 pytestmark = pytest.mark.skipif(

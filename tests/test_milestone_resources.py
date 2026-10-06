@@ -2,7 +2,7 @@
 import io,json,tarfile
 from pathlib import Path
 import pytest
-from ctxpress.harness import milestone_resources as resources
+from ctxpress.benchmarks.milestone import resources
 
 IMAGE='sha256:'+'a'*64
 PROJECT='ctxp-ms-'+'1'*24
@@ -52,7 +52,7 @@ def fixture(tmp_path,monkeypatch):
 
 @pytest.mark.linux_only
 def test_agent_mounts_frozen_catalog_as_read_only_file(tmp_path, monkeypatch):
-    from ctxpress.harness.codex_catalog import CONTAINER_PATH
+    from ctxpress.harness.runtime.codex_catalog import CONTAINER_PATH
     registry,docker=fixture(tmp_path,monkeypatch)
     source=tmp_path/'models.json';source.write_text('{"models":[]}', encoding='utf-8')
     agent=registry.owner('agent',IMAGE)
@@ -65,7 +65,7 @@ def test_agent_mounts_frozen_catalog_as_read_only_file(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize('change',['verifier','writable','wrong-target','symlink','missing','credentials'])
 def test_catalog_mount_exception_does_not_allow_other_files(tmp_path, monkeypatch, change):
-    from ctxpress.harness.codex_catalog import CONTAINER_PATH
+    from ctxpress.harness.runtime.codex_catalog import CONTAINER_PATH
     registry,docker=fixture(tmp_path,monkeypatch)
     source=tmp_path/'models.json';source.write_text('synthetic fixture only', encoding='utf-8')
     target,mode=CONTAINER_PATH,'ro'

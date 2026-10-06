@@ -2,7 +2,7 @@
 import copy, json, subprocess, sys
 from pathlib import Path
 import pytest
-from ctxpress.harness import eval_inputs, eval_plan, evaluation
+from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, queue as evaluation
 from ctxpress.replay.calibrate import fit
 
 
@@ -147,7 +147,7 @@ def test_detached_scheduler_uses_inputs_after_sources_are_deleted(tmp_path):
         Path(source).unlink()
     # This process imports the frozen scheduler from runtime, never the workspace.
     script = '''import subprocess, sys
-from ctxpress.harness.evaluation import schedule
+from ctxpress.harness.jobs.queue import schedule
 
 def launch(directory, job_id, attempt):
     return subprocess.Popen([sys.executable, sys.argv[2], str(directory), job_id, str(attempt), '0.1'])
@@ -182,7 +182,7 @@ def test_frozen_worker_resolves_real_job_paths_after_source_removal(tmp_path, re
         Path(source).unlink()
     script = '''import sys
 from pathlib import Path
-from ctxpress.harness import codex_docker, evaluation
+from ctxpress.benchmarks.milestone import checkpoint_run as codex_docker; from ctxpress.harness.jobs import queue as evaluation
 from ctxpress.methods import build
 
 def run(n,j,entry,**kwargs):

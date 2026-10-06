@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 
 from ctxpress import benchmarks
-from ctxpress.harness import eval_inputs, eval_plan, eval_task_compare, eval_trees, task_resources
+from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, trees as eval_trees, resources as task_resources
+from ctxpress.harness.results import task_compare as eval_task_compare
 from test_eval_families import fixture_data
 from test_eval_task_compare import change_result, rates, run, write
 
@@ -329,7 +330,7 @@ def test_pro_name_is_bound_to_frozen_tooling_not_original_checkout(tmp_path):
 
 
 def test_pro_dynamic_author_name_is_explicitly_unsupported_without_executing_source(tmp_path):
-    from ctxpress.harness import eval_harbor_compare
+    from ctxpress.harness.results import harbor_compare as eval_harbor_compare
     root = tmp_path / 'official'; source = root / 'pro_tooling/locked_codex.py'
     source.parent.mkdir(parents=True)
     source.write_text(LOCKED_CODEX_SOURCE.replace('return "codex-locked"', 'return resolve_name()') +

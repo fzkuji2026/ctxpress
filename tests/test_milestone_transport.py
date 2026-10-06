@@ -3,9 +3,9 @@ import json,os,socket,socketserver,subprocess,sys,threading
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
-from ctxpress.harness import milestone_transport as transport
-from ctxpress.harness import eval_plan
-from ctxpress.harness import agent_process
+from ctxpress.benchmarks.milestone import transport
+from ctxpress.harness.jobs import plan as eval_plan
+from ctxpress.harness.runtime import agent_process
 from ctxpress.core import processes
 from test_connect_proxy import header
 

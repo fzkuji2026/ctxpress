@@ -2,7 +2,8 @@
 import json, os, socket, socketserver, subprocess, sys, tempfile, threading, time, unittest
 from pathlib import Path
 from unittest.mock import patch
-from ctxpress.harness import agent_process, connect_proxy, eval_plan, socket_bridge
+from ctxpress.harness.runtime import agent_process, connect_proxy, socket_bridge
+from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.core import processes
 
 
@@ -12,7 +13,7 @@ class ProcessChecks(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);record=root/'agent.json';child=root/'child.pid'
             source='import subprocess,time; from pathlib import Path; p=subprocess.Popen(["sleep","300"]); Path('+repr(str(child))+').write_text(str(p.pid)); time.sleep(300)'
-            wrapper=subprocess.Popen([sys.executable,'-m','ctxpress.harness.agent_process','--pid-file',str(record),
+            wrapper=subprocess.Popen([sys.executable,'-m','ctxpress.harness.runtime.agent_process','--pid-file',str(record),
                 '--',sys.executable,'-c',source],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             try:
                 deadline=time.monotonic()+5
@@ -76,19 +77,19 @@ class ProcessChecks(unittest.TestCase):
             name='ctxpress_fixture_ambient_dependency'
             (ambient/(name+'.py')).write_text('raise RuntimeError("ambient module was imported")\n', encoding='utf-8')
             (source/'__init__.py').write_text('import '+name+'\n', encoding='utf-8')
-            package=Path(eval_plan.__file__).resolve().parents[2]
+            package=Path(eval_plan.__file__).resolve().parents[3]
             request=root/'request.json';request.write_text(json.dumps(dict(schema='ctxpress.eval.harbor_trial',version=1,
                 package=str(package),official=str(official),runtime=dict(python=str(Path(sys.executable).resolve()),
                 version=sys.version,platform=sys.platform,sha256=eval_plan.file_sha256(sys.executable)))), encoding='utf-8')
-            result=subprocess.run([sys.executable,'-I','-S','-B',str(package/'ctxpress/harness/harbor_worker.py'),str(request),'--check'],
+            result=subprocess.run([sys.executable,'-I','-S','-B',str(package/'ctxpress/benchmarks/harbor/worker.py'),str(request),'--check'],
                 env=dict(os.environ,PYTHONPATH=str(ambient)),capture_output=True,text=True,timeout=10)
             self.assertNotEqual(result.returncode,0)
             self.assertIn("No module named '"+name+"'",result.stderr)
             self.assertNotIn('ambient module was imported',result.stderr)
 
     def test_failed_trial_keeps_channel_bind_until_owned_recovery(self):
-        from ctxpress.benchmarks import harbor_driver
-        from ctxpress.harness import harbor_worker
+        from ctxpress.benchmarks.harbor import driver as harbor_driver
+        from ctxpress.benchmarks.harbor import worker as harbor_worker
         project='ctxp-hb-'+'f'*24
         channel=Path(tempfile.mkdtemp(prefix=project+'-channel-'))
         with tempfile.TemporaryDirectory() as directory:

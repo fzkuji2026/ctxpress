@@ -33,13 +33,13 @@ def main(argv=None):
         sys.stdout.reconfigure(encoding="utf-8")
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments and arguments[0] == 'eval':
-        from ctxpress.harness.evaluation import main as eval_main
+        from ctxpress.harness.jobs.queue import main as eval_main
         return eval_main(arguments[1:])
     if arguments and arguments[0] == 'acm-author':
         from ctxpress.harness.author_acm import main as acm_main
         return acm_main(arguments[1:])
     if arguments and arguments[0] == 'analyze':
-        from ctxpress.harness.run_analysis import main as analyze_main
+        from ctxpress.harness.results.analysis import main as analyze_main
         return analyze_main(arguments[1:])
     ap = argparse.ArgumentParser(prog="ctxpress")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -145,8 +145,8 @@ def main(argv=None):
         from ctxpress.live.mcp import main as mcp_main
         mcp_main()
     elif x.cmd == "check-method":
-        from ctxpress.harness.method_check import check
-        from ctxpress.harness.eval_review import write
+        from ctxpress.harness.checks.method import check
+        from ctxpress.harness.results.review import write
         result = check(x.method, json.loads(x.args), x.turns, x.output_chars)
         write(x.output, result)
         print(json.dumps({k: result[k] for k in ('method', 'contract_valid', 'triggered', 'operations')}))
@@ -160,7 +160,7 @@ def main(argv=None):
         summary, md, out = run_config(x.config, workers=x.workers)
         print(md); print(f"\nwritten to {out}")
     elif x.cmd == "eval":
-        from ctxpress.harness.evaluation import main as eval_main
+        from ctxpress.harness.jobs.queue import main as eval_main
         eval_main(x.eval_args)
     elif x.cmd == "doctor":
         from ctxpress.hosts.codex.doctor import main as doctor_main

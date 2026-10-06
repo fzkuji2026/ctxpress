@@ -3,7 +3,7 @@ import copy
 import json
 import pytest
 from ctxpress.core import policy
-from ctxpress.harness import eval_protocol
+from ctxpress.harness.jobs import protocol as eval_protocol
 from test_eval_protocol import inputs, candidate
 
 

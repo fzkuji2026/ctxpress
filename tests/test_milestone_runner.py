@@ -3,8 +3,8 @@ import contextlib,json,os,signal,sys
 from pathlib import Path
 from types import ModuleType,SimpleNamespace
 import pytest
-from ctxpress.benchmarks import milestone_driver
-from ctxpress.harness import milestone_runner as runner
+from ctxpress.benchmarks.milestone import driver as milestone_driver
+from ctxpress.benchmarks.milestone import runner
 
 
 def fixture(tmp_path,monkeypatch,outcome=True,cleanup_error=False):

@@ -1,7 +1,7 @@
 """Cumulative native budgets across sessions, partial tool output and idle waits."""
 import json,signal,sys,time
 import pytest
-from ctxpress.harness import milestone_budget as budget
+from ctxpress.benchmarks.milestone import budget
 
 
 def append(path,kind,identity,complete=True):

@@ -12,10 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from ctxpress.benchmarks import code_protocol
-from ctxpress.benchmarks.bigcode_bench import BigCodeBench
-from ctxpress.harness import eval_code_compare as reader
-from ctxpress.harness import eval_plan, eval_task_compare as common, execution_health, task as task_api, task_resources
+from ctxpress.benchmarks.bigcode import protocol as code_protocol
+from ctxpress.benchmarks.bigcode.adapter import BigCodeBench
+from ctxpress.harness.results import code_compare as reader
+from ctxpress.harness.jobs import plan as eval_plan, task as task_api, resources as task_resources
+from ctxpress.harness.results import task_compare as common
+from ctxpress.harness.runtime import execution_health
 from ctxpress.live import usage as eval_usage
 
 

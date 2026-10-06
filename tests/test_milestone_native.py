@@ -4,9 +4,9 @@ from pathlib import Path
 from types import ModuleType,SimpleNamespace
 import pytest
 from ctxpress import benchmarks
-from ctxpress.benchmarks import milestone_data,milestone_protocol
-from ctxpress.harness import eval_inputs,eval_plan,evaluation,task
-from ctxpress.harness import milestone_native
+from ctxpress.benchmarks.milestone import data as milestone_data, protocol as milestone_protocol
+from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, queue as evaluation, task
+from ctxpress.benchmarks.milestone import native as milestone_native
 from test_task_instances import dataset
 from test_task_start_plan import config
 
@@ -23,7 +23,7 @@ def enriched(tmp_path):
     (root/'e2e_trial/old/evaluation').mkdir(parents=True);(root/'e2e_trial/old/evaluation/gold.json').write_text('unselected old results', encoding='utf-8')
     # Refresh binding after extending the actual selected input set.
     resource=Path(cfg['environment']['resources']);lock=json.loads(resource.read_text(encoding='utf-8'));found=milestone_data.itinerary(root)
-    from ctxpress.harness import task_resources
+    from ctxpress.harness.jobs import resources as task_resources
     lock.pop('sha256');lock['tasks'][found['id']]['task_sha256']=task_resources.task_digest(found)
     resource.write_text(json.dumps(task_resources.seal(lock)), encoding='utf-8')
     return cfg,root

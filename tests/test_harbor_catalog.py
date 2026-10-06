@@ -10,10 +10,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from ctxpress.benchmarks import harbor_codex, harbor_driver, swe_driver
+from ctxpress.benchmarks.harbor import codex_hook as harbor_codex, driver as harbor_driver
+from ctxpress.benchmarks.swe import driver as swe_driver
 from ctxpress.core import toml
-from ctxpress.harness import codex_catalog, eval_inputs, eval_plan, evaluation, task
-from ctxpress.harness import code_trial, harbor_modern, harbor_worker, pier_trial, swe_containers, swe_trial
+from ctxpress.harness.runtime import codex_catalog
+from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, queue as evaluation, task
+from ctxpress.benchmarks.bigcode import trial as code_trial
+from ctxpress.benchmarks.harbor import modern as harbor_modern, worker as harbor_worker
+from ctxpress.benchmarks.deepswe import pier_trial
+from ctxpress.benchmarks.swe import containers as swe_containers, trial as swe_trial
 from test_harbor_codex import EnvironmentFixture, OfficialFixture, settings
 from test_harbor_driver import prepared as harbor_prepared
 from test_swe_runner import Client, request as swe_request, prepared as swe_prepared
@@ -213,7 +218,7 @@ def test_container_catalog_failure_never_uploads_credentials_or_starts_model_rel
 
 @pytest.mark.parametrize('changed', [False, True])
 def test_container_probe_executes_frozen_hash_check_before_any_auth(tmp_path, monkeypatch, changed):
-    from ctxpress.harness import codex_binary
+    from ctxpress.harness.runtime import codex_binary
     cfg = dict(settings(), model_catalog=codex_catalog.CONTAINER_PATH, model_catalog_sha256='a' * 64)
     monkeypatch.setattr(codex_binary, 'preflight', lambda bindir: {})
     seen = []

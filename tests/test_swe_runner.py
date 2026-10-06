@@ -4,9 +4,9 @@ from pathlib import Path
 from types import SimpleNamespace, ModuleType
 import pytest
 from ctxpress import benchmarks
-from ctxpress.benchmarks import swe_driver, swe_protocol
-from ctxpress.harness import eval_environment, eval_inputs, eval_plan, eval_trees, evaluation, task, task_resources
-from ctxpress.harness import swe_containers, swe_trial
+from ctxpress.benchmarks.swe import driver as swe_driver, protocol as swe_protocol
+from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.benchmarks.swe import containers as swe_containers, trial as swe_trial
 
 AGENT='sha256:'+'a'*64
 GRADER='sha256:'+'c'*64
@@ -344,7 +344,7 @@ def test_recovery_deletes_credentials_before_container_and_stops_if_deletion_fai
 
 
 def test_common_json_and_html_reports_keep_swe_protocol_and_official_outcome(tmp_path):
-    from ctxpress.harness import eval_report
+    from ctxpress.harness.results import report as eval_report
     _,_,directory,_,job,_=prepared(tmp_path)
     result=dict(test_only=True,protocol='ctxpress_comparison',swe_api='prepared',grading_run_id=PROJECT,
         real_run_verified=False,separate_verifier={'agent_image':AGENT,'verifier_image':GRADER,'checked_cleanup':True},

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from ctxpress import benchmarks
 from ctxpress.__main__ import main
-from ctxpress.harness import eval_inputs, eval_plan, evaluation, task
+from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, queue as evaluation, task
 
 
 def swe_data(tmp_path, jsonl=True):

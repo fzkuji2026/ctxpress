@@ -4,9 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 import pytest
 from ctxpress import benchmarks
-from ctxpress.benchmarks import harbor_driver, pro_protocol
-from ctxpress.harness import eval_environment, eval_inputs, eval_plan, eval_trees, evaluation, task, task_resources
-from ctxpress.harness import harbor_modern, harbor_worker, pro_trial
+from ctxpress.benchmarks.harbor import driver as harbor_driver
+from ctxpress.benchmarks.pro import protocol as pro_protocol
+from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.benchmarks.harbor import modern as harbor_modern, worker as harbor_worker
+from ctxpress.benchmarks.pro import trial as pro_trial
 from test_harbor_codex import OfficialFixture, EnvironmentFixture
 from test_harbor_modern import EnvConfig
 from test_original_benchmarks import terminal_data

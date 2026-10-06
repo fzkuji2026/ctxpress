@@ -2,7 +2,7 @@
 import contextlib,copy,json,threading
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs,unquote,urlsplit
-from ctxpress.harness import service_resources as services,socket_bridge
+from ctxpress.harness.runtime import service_resources as services, socket_bridge
 
 IMAGE='sha256:'+'a'*64
 PROJECT='ctxp-ms-'+'1'*24

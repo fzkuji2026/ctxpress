@@ -2,7 +2,7 @@
 import json, shutil
 import pytest
 from ctxpress import benchmarks
-from ctxpress.harness import eval_plan, eval_inputs, evaluation, task
+from ctxpress.harness.jobs import plan as eval_plan, inputs as eval_inputs, queue as evaluation, task
 from test_original_benchmarks import terminal_data
 
 

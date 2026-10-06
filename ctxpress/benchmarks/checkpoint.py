@@ -7,8 +7,8 @@ import copy, hashlib, math, os
 from pathlib import Path
 from ctxpress.methods import build
 from ctxpress import benchmarks
-from ctxpress.harness.eval_plan import canonical, file_sha256, fingerprint, _positive
-from ctxpress.harness import task as tasks
+from ctxpress.harness.jobs.plan import canonical, file_sha256, fingerprint, _positive
+from ctxpress.harness.jobs import task as tasks
 
 
 def compile_plan(config, base_dir=None):
@@ -64,7 +64,7 @@ def compile_plan(config, base_dir=None):
     if not isinstance(points, list) or not points or not isinstance(methods, list) or not methods:
         raise ValueError("provide boundaries and methods")
     point_ids, coordinates, method_ids, artifacts, jobs = set(), set(), set(), {}, []
-    from ctxpress.harness import codex_binary
+    from ctxpress.harness.runtime import codex_binary
     binary_artifacts, missing = codex_binary.capture(env['bindir'])
     artifacts.update(binary_artifacts)
     expected = benchmark.required_files(env)
@@ -89,7 +89,7 @@ def compile_plan(config, base_dir=None):
             raise ValueError("formal boundaries require at least 128k declared context tokens")
     environment_snapshot = None
     if env.get('snapshot'):
-        from ctxpress.harness import eval_environment
+        from ctxpress.harness.jobs import environment as eval_environment
         environment_snapshot, manifest_digest = eval_environment.read(env['snapshot'], coordinates)
         artifacts[env['snapshot']] = manifest_digest
         tree = environment_snapshot['workspace']
@@ -104,7 +104,7 @@ def compile_plan(config, base_dir=None):
             artifacts[str(Path(tree['root']) / relative)] = digest
     grading_snapshot = None
     if env.get('grading'):
-        from ctxpress.harness import eval_grading
+        from ctxpress.benchmarks.milestone import checkpoint_grading as eval_grading
         grading_snapshot, manifest_digest = eval_grading.read(env['grading'], coordinates)
         artifacts[env['grading']] = manifest_digest
         for descriptor in grading_snapshot['trees'].values():

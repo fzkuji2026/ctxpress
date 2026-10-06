@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from ctxpress.harness import eval_review as review
-from ctxpress.harness import evidence_status
+from ctxpress.harness.results import review
+from ctxpress.harness.jobs import evidence as evidence_status
 
 
 def detail():
@@ -73,7 +73,7 @@ def test_docker_failure_is_unknown_not_clean(monkeypatch):
 
 
 def test_review_bundle_and_scoped_catalog_evidence(tmp_path, monkeypatch):
-    from ctxpress.harness import evaluation
+    from ctxpress.harness.jobs import queue as evaluation
     d = detail()
     monkeypatch.setattr(review.eval_plan, 'load', lambda *a, **kw: {})
     monkeypatch.setattr(evaluation, 'compare_results', lambda *a, **kw: d)

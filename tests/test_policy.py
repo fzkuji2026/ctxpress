@@ -88,8 +88,8 @@ def test_policy_rejects_tampering_constraint_changes_and_parameter_conflicts(tmp
 
 
 def test_policy_is_fingerprinted_and_mounted_for_nested_live_evaluations(tmp_path):
-    from ctxpress.harness.eval_plan import compile_plan, verify
-    from ctxpress.harness.codex_docker import _container_entry
+    from ctxpress.harness.jobs.plan import compile_plan, verify
+    from ctxpress.benchmarks.milestone.checkpoint_run import _container_entry
     path = tmp_path / 'policy.json'
     tune([history('a'), history('b')], path, [0], method_args=dict(allow_summary=False))
     entry = {'class':'WithMemory','args':{'inner':{'class':'AutoCostModel','args':{'policy':'policy.json'}}}}

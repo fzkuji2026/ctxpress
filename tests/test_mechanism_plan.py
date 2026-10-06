@@ -3,7 +3,8 @@ import copy
 import json
 import subprocess
 import pytest
-from ctxpress.harness import mechanism_check, evaluation, eval_plan
+from ctxpress.harness.checks import mechanism as mechanism_check
+from ctxpress.harness.jobs import queue as evaluation, plan as eval_plan
 from ctxpress.methods import METHODS, REGISTRY
 
 

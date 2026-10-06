@@ -4,7 +4,7 @@ import copy, hashlib, os
 from pathlib import Path
 from ctxpress import benchmarks
 from ctxpress.methods import build
-from ctxpress.harness import eval_plan, eval_trees, task_resources
+from ctxpress.harness.jobs import plan as eval_plan, trees as eval_trees, resources as task_resources
 
 
 def compile_plan(config, base_dir=None):
@@ -43,7 +43,7 @@ def compile_plan(config, base_dir=None):
             environment[key] = str((base_dir / Path(environment[key]).expanduser()).resolve())
     model_catalog = None
     if 'model_catalog' in environment:
-        from ctxpress.harness import codex_catalog
+        from ctxpress.harness.runtime import codex_catalog
         if not isinstance(environment['model_catalog'], str) or not environment['model_catalog']:
             raise ValueError('model_catalog must be an explicit local file')
         model_catalog = codex_catalog.inspect(base_dir / Path(environment['model_catalog']).expanduser(),
@@ -121,7 +121,7 @@ def compile_plan(config, base_dir=None):
                 artifacts[source] = expected
     else:
         missing.append('task resource manifest: pin official inputs, benchmark release and agent/grading images')
-    from ctxpress.harness import codex_binary
+    from ctxpress.harness.runtime import codex_binary
     binary_artifacts, binary_missing = codex_binary.capture(environment['bindir'])
     artifacts.update(binary_artifacts); missing.extend(binary_missing)
     methods = config.get('methods')

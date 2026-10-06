@@ -8,7 +8,7 @@ class FreshAdapter:
         return compile_plan(config, base_dir)
 
     def verify_bindings(self, plan):
-        from ctxpress.harness import task_resources
+        from ctxpress.harness.jobs import resources as task_resources
         if plan['config'].get('start_mode') != 'task_start':
             raise ValueError('this benchmark requires start_mode=task_start')
         task_resources.verify_plan(plan)

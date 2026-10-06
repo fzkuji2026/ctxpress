@@ -9,8 +9,9 @@ from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from ctxpress import benchmarks
-from ctxpress.benchmarks import milestone_driver
-from ctxpress.harness import eval_environment,eval_inputs,eval_plan,eval_trees,evaluation,task,task_resources,milestone_version
+from ctxpress.benchmarks.milestone import driver as milestone_driver
+from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.benchmarks.milestone import version as milestone_version
 
 
 def main():

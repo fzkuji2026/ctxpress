@@ -8,7 +8,7 @@ import pytest
 
 from ctxpress import benchmarks
 from ctxpress.__main__ import main
-from ctxpress.harness import eval_plan, eval_protocol
+from ctxpress.harness.jobs import plan as eval_plan, protocol as eval_protocol
 from ctxpress.core.params import DEFAULT
 from ctxpress.replay.tune import tune
 from test_eval_families import NAMES, fixture_data

@@ -7,10 +7,11 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--request',required=True,type=Path)
     parser.add_argument('--output',required=True,type=Path);args=parser.parse_args()
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-    from ctxpress.harness.milestone_worker import load
+    from ctxpress.benchmarks.milestone.worker import load
     request=json.loads(args.request.read_text(encoding='utf-8'));source=load(request)
     from harness.e2e import evaluator
-    from ctxpress.harness import milestone_images,eval_plan,milestone_version,task_resources
+    from ctxpress.benchmarks.milestone import images as milestone_images, version as milestone_version
+    from ctxpress.harness.jobs import plan as eval_plan, resources as task_resources
     assert Path(evaluator.__file__).resolve()==source/'harness/e2e/evaluator.py'
     calls=[];observed={};repo='fixture_repo';mid='M2';base='sha256:'+'1'*64;agent='sha256:'+'2'*64;effective='sha256:'+'3'*64
     def inspect(*command):
@@ -47,8 +48,8 @@ def main():
             except ValueError:pass
             else:raise AssertionError('native image preparation was allowed')
         cases.append('go-toolchain-clean-replacement' if go else 'cache-overlay')
-    from ctxpress.harness import milestone_containers
-    from ctxpress.benchmarks import milestone_codex
+    from ctxpress.benchmarks.milestone import containers as milestone_containers
+    from ctxpress.benchmarks.milestone import codex_hook as milestone_codex
     from harness.e2e import container_setup,orchestrator,run_e2e
     from harness.e2e.repo_config_binding import resolve_repo_config,freeze_repo_config
     from harness.e2e.runtime_policy_binding import resolve_runtime_policy,freeze_runtime_policy
@@ -137,7 +138,7 @@ def main():
         assert gates==['tools','init','user','runtime'] and initialized==[setup.ctxpress_owner]
         assert setup.ctxpress_owner.options['environment']['HOME']=='/root'
 
-        from ctxpress.harness import milestone_agent,milestone_budget
+        from ctxpress.benchmarks.milestone import agent as milestone_agent, budget as milestone_budget
         from harness.e2e import agent_runner
         budget=milestone_budget.Budget(prepared/'private-logs/sessions',30,10)
         docker_original=milestone_agent.docker;invocations=[]
@@ -169,7 +170,7 @@ def main():
                     try:trial_runner.run_agent_with_recovery(resume_session_first=True)
                     except milestone_budget.Limit:pass
                     else:raise AssertionError('native trial recovery reset its cumulative budget')
-                    from ctxpress.harness import milestone_trial
+                    from ctxpress.benchmarks.milestone import trial as milestone_trial
                     with milestone_trial.installed(source,setup.ctxpress_owner,2):
                         drained=run_e2e.E2ETrialRunner(orchestrator=native,agent_output_dir=prepared/'drain-check',
                             workdir='/testbed',repo_src_dirs=['src'],agent_name='codex',model='synthetic-model',
@@ -236,7 +237,7 @@ def main():
     assert native_agent.ctxpress_private_runtime and not any('/tmp/host-codex' in value for value in native_agent.get_container_mounts())
     for command in (native_agent.build_run_command('fixture',None,'/tmp/prompt'),native_agent.build_resume_command('fixture','thread','/tmp/message')):
         values=shlex.split(command)
-        assert 'ctxpress.harness.agent_process' in values and values[values.index('--via')+1]=='http://127.0.0.1:31234'
+        assert 'ctxpress.harness.runtime.agent_process' in values and values[values.index('--via')+1]=='http://127.0.0.1:31234'
     result=dict(test_only=True,author_prepared_overlay_verified=True,cases=['no-overlay',*cases],
         author_testcontainers_launch_projection_verified=True,
         author_frozen_data_version_verified=True,

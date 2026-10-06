@@ -3,8 +3,8 @@ import socket, socketserver, tempfile, threading
 from contextlib import contextmanager
 from pathlib import Path
 import pytest
-from ctxpress.harness import socket_bridge
-from ctxpress.harness.connect_proxy import make_server
+from ctxpress.harness.runtime import socket_bridge
+from ctxpress.harness.runtime.connect_proxy import make_server
 from test_connect_proxy import header
 
 

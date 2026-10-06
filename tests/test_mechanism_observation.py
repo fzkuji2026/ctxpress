@@ -1,5 +1,5 @@
 """Evidence distinguishes an action, a retained view, and a successful wire response."""
-from ctxpress.harness.eval_mechanism import observe
+from ctxpress.harness.results.mechanism import observe
 from ctxpress.live.rewrite import Rewriter
 from ctxpress.methods import ComplexityTrap, ReSum
 

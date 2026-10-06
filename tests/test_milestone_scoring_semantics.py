@@ -7,7 +7,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from ctxpress.harness import eval_outcomes, eval_plan, eval_report, evaluation
+from ctxpress.harness.results import outcomes as eval_outcomes, report as eval_report
+from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation
 from test_task_start_plan import config
 
 

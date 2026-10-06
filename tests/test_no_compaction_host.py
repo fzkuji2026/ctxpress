@@ -3,7 +3,7 @@ import json
 import pytest
 from ctxpress.hosts.codex.launch import codex_command
 from ctxpress.live.telemetry import summary
-from ctxpress.harness.eval_mechanism import observe
+from ctxpress.harness.results.mechanism import observe
 from ctxpress.live.usage import analyze
 from ctxpress.live.proxy import is_native_compaction
 from ctxpress.methods import NoCompaction, CodexAutoCompact

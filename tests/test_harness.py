@@ -2,7 +2,7 @@ import json, shutil, subprocess, sys
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
-from ctxpress.harness import codex_docker as harness
+from ctxpress.benchmarks.milestone import checkpoint_run as harness
 from ctxpress.hosts.codex import launch
 from ctxpress.methods import CodexAutoCompact, Composed, WithMemory
 
@@ -47,7 +47,7 @@ def test_native_compact_threshold_reaches_wrapped_codex_profile(tmp_path, monkey
 
 def test_harness_help_does_not_need_benchmark_files(tmp_path):
     import os
-    process = subprocess.run([sys.executable, "-m", "ctxpress.harness.codex_docker", "--help"], capture_output=True, text=True,
+    process = subprocess.run([sys.executable, "-m", "ctxpress.benchmarks.milestone.checkpoint_run", "--help"], capture_output=True, text=True,
                              env=dict(os.environ, CTXPRESS_DATA=str(tmp_path / "missing")))
     assert process.returncode == 0 and "--bindir" in process.stdout
 

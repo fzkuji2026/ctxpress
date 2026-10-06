@@ -1,8 +1,9 @@
 """Numeric rewards are valid measurements but do not imply a boolean solved task."""
 import json
 import pytest
-from ctxpress.harness import eval_outcomes, eval_plan, evaluation
-from ctxpress.harness.eval_report import report, write_report
+from ctxpress.harness.results import outcomes as eval_outcomes
+from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation
+from ctxpress.harness.results.report import report, write_report
 from test_task_start_plan import config
 
 

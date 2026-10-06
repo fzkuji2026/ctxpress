@@ -2,7 +2,8 @@
 import json, sys
 from pathlib import Path
 import pytest
-from ctxpress.harness import codex_binary, eval_inputs, eval_plan, evaluation
+from ctxpress.harness.runtime import codex_binary
+from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, queue as evaluation
 
 posix_fixture = pytest.mark.skipif(sys.platform == 'win32', reason='probe fixture uses POSIX shebang executables')
 

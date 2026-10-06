@@ -2,9 +2,10 @@
 import copy, json
 from pathlib import Path
 import pytest
-from ctxpress.harness import eval_compare, eval_plan, evaluation
+from ctxpress.harness.results import compare as eval_compare
+from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation
 from ctxpress.live import usage as eval_usage
-from ctxpress.harness.eval_report import report,write_report
+from ctxpress.harness.results.report import report, write_report
 from test_evaluation import config
 
 BASE='sha256:'+'1'*64

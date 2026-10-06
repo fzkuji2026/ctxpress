@@ -4,9 +4,9 @@ from pathlib import Path
 from types import SimpleNamespace
 import pytest
 from ctxpress import benchmarks
-from ctxpress.benchmarks import harbor_driver
-from ctxpress.harness import eval_environment, eval_inputs, eval_plan, eval_trees, evaluation, task, task_resources
-from ctxpress.harness.harbor_worker import run_trial, trial_config
+from ctxpress.benchmarks.harbor import driver as harbor_driver
+from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.benchmarks.harbor.worker import run_trial, trial_config
 from test_original_benchmarks import terminal_data
 
 IMAGE = 'sha256:' + 'a'*64
@@ -57,7 +57,7 @@ def test_prepare_executes_only_remapped_tasks_after_originals_are_removed(tmp_pa
     config=trial_config(request,lambda **kw:kw,tmp_path/'channel')
     assert config['task']=={'path':request['task']} and config['verifier']=={'disable':False}
     assert config['agent']['override_timeout_sec']==effective['run']['timeout']
-    assert config['agent']['import_path']=='ctxpress.harness.harbor_worker:CtxpressCodex'
+    assert config['agent']['import_path']=='ctxpress.benchmarks.harbor.worker:CtxpressCodex'
     assert all(volume['read_only'] and '/tests' not in volume['source'] for volume in config['environment']['mounts_json'])
 
 
@@ -142,7 +142,7 @@ def test_valid_official_reward_survives_agent_failure_without_claiming_resolutio
 
 @pytest.mark.parametrize('gpu',[False,True])
 def test_worker_invokes_trial_with_owned_hooks_and_verifier_after_agent(tmp_path,monkeypatch,gpu):
-    from ctxpress.harness import harbor_worker
+    from ctxpress.benchmarks.harbor import worker as harbor_worker
     from test_harbor_codex import OfficialFixture as AgentBase,EnvironmentFixture
     from test_harbor_gpu import A,QUERY
     events=[]

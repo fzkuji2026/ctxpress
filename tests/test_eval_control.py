@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 from ctxpress import benchmarks
 from ctxpress.__main__ import main
-from ctxpress.harness import eval_control, eval_plan, evaluation
+from ctxpress.harness.jobs import control as eval_control, plan as eval_plan, queue as evaluation
 from ctxpress.core import processes
-from ctxpress.harness.eval_report import report
+from ctxpress.harness.results.report import report
 from test_evaluation import config, fake_launch
 
 
@@ -80,7 +80,7 @@ from pathlib import Path
 directory, job, attempt = sys.argv[1:]
 sys.path.insert(0, str(Path(directory) / 'runtime'))
 from ctxpress import benchmarks
-from ctxpress.harness.evaluation import execute_job
+from ctxpress.harness.jobs.queue import execute_job
 def execute(self, task, entry, config, spec, *, paths, folder, label):
     folder.mkdir(parents=True, exist_ok=True)
     (folder / 'synthetic-ready').write_text('started')
@@ -96,7 +96,7 @@ execute_job(directory, job, int(attempt))
 from pathlib import Path
 directory, worker = sys.argv[1:]
 sys.path.insert(0, str(Path(directory) / 'runtime'))
-from ctxpress.harness.evaluation import schedule
+from ctxpress.harness.jobs.queue import schedule
 def launch(directory, job, attempt):
     return subprocess.Popen([sys.executable, worker, str(directory), job, str(attempt)], start_new_session=True)
 schedule(directory, launch=launch, interval=.02)

@@ -1,9 +1,9 @@
 import copy, json, os, subprocess, sys, time
 from pathlib import Path
 import pytest
-from ctxpress.harness import eval_plan, evaluation
+from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation
 from ctxpress.core import processes
-from ctxpress.harness.eval_report import report
+from ctxpress.harness.results.report import report
 
 
 def config():
@@ -129,7 +129,7 @@ def test_background_start_returns_while_jobs_continue(tmp_path, monkeypatch):
     actual = subprocess.Popen
     started = []
     def launch(command, **kwargs):
-        if command[1:4] == ['-m', 'ctxpress.harness.evaluation', 'worker']:
+        if command[1:4] == ['-m', 'ctxpress.harness.jobs.queue', 'worker']:
             directory = command[command.index('--directory') + 1]
             process = actual([sys.executable, str(Path(__file__).with_name('fake_eval_scheduler.py')), directory], **kwargs)
             started.append(process)

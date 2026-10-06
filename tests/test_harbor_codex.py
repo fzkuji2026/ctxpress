@@ -2,7 +2,7 @@
 import asyncio, json, shlex
 from types import SimpleNamespace
 import pytest
-from ctxpress.benchmarks.harbor_codex import CallProgress, framework, HOME
+from ctxpress.benchmarks.harbor.codex_hook import CallProgress, framework, HOME
 
 
 class OfficialFixture:
@@ -80,7 +80,7 @@ def test_official_rendering_and_context_are_preserved_through_the_wrapper():
     commands = instance.commands
     assert [item.command for item in commands[:-1]] == ['register fixture skills', 'register fixture MCP']
     args = shlex.split(commands[-1].command)
-    assert args[:3] == ['python3','-m','ctxpress.harness.agent_process']
+    assert args[:3] == ['python3','-m','ctxpress.harness.runtime.agent_process']
     assert ['python3','-m','ctxpress','codex','--codex-bin'] == args[6:11]
     assert args[args.index('--via')+1] == 'http://127.0.0.1:3456'
     assert 'official-rendered: repair $(literal) `text`' in args

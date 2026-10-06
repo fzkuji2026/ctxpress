@@ -3,7 +3,7 @@ import copy,json,threading
 from types import SimpleNamespace
 from urllib.parse import parse_qs,unquote,urlsplit
 import pytest
-from ctxpress.harness import service_resources as services
+from ctxpress.harness.runtime import service_resources as services
 
 IMAGE='sha256:'+'a'*64
 PROJECT='ctxp-ms-'+'1'*24

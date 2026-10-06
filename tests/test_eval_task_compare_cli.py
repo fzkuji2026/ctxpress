@@ -4,7 +4,8 @@ import sqlite3
 
 import pytest
 
-from ctxpress.harness import eval_plan, eval_task_compare, evaluation
+from ctxpress.harness.jobs import plan as eval_plan, queue as evaluation
+from ctxpress.harness.results import task_compare as eval_task_compare
 from test_task_start_plan import config
 
 

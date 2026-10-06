@@ -4,9 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 import pytest
 from ctxpress import benchmarks
-from ctxpress.benchmarks import pro_v1, swe_driver
-from ctxpress.harness import eval_inputs, eval_plan, eval_trees, evaluation, task, task_resources
-from ctxpress.harness import pro_v1_grading, swe_containers
+from ctxpress.benchmarks.pro import v1 as pro_v1
+from ctxpress.benchmarks.swe import driver as swe_driver
+from ctxpress.harness.jobs import inputs as eval_inputs, plan as eval_plan, trees as eval_trees, queue as evaluation, task, resources as task_resources
+from ctxpress.benchmarks.pro import v1_grading as pro_v1_grading
+from ctxpress.benchmarks.swe import containers as swe_containers
 from test_swe_runner import Client, COMMIT, AGENT, GRADER, request as swe_request
 
 ID='instance_owner__repo-'+'f'*40

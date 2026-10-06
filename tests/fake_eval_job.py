@@ -2,7 +2,7 @@
 import json, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from ctxpress.harness.evaluation import database, set_result
+from ctxpress.harness.jobs.queue import database, set_result
 
 directory, job_id, attempt, delay = sys.argv[1:5]
 if len(sys.argv) > 5:

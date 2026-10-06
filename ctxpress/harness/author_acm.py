@@ -13,9 +13,9 @@ import subprocess
 import sys
 from urllib.parse import urlsplit
 
-from ctxpress.harness import eval_plan
+from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.core import processes
-from ctxpress.harness.eval_review import write
+from ctxpress.harness.results.review import write
 
 REVISION = 'f06f90e728af8580a4515812425c1620144145a2'
 REPOSITORY = 'https://github.com/lixiaochuan2020/agentic-context-management'

@@ -3,7 +3,8 @@ import copy, io, json, shutil, subprocess, sys, tarfile
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
-from ctxpress.harness import eval_environment, eval_grading, eval_inputs, eval_plan, evaluation
+from ctxpress.harness.jobs import environment as eval_environment, inputs as eval_inputs, plan as eval_plan, queue as evaluation
+from ctxpress.benchmarks.milestone import checkpoint_grading as eval_grading
 from test_eval_inputs import inputs
 
 IMAGE = 'sha256:'+'1'*64
@@ -61,12 +62,12 @@ def fixture_children(monkeypatch):
     """Only image metadata is synthetic; worker imports/packaging/arguments are real."""
     actual=subprocess.run
     def run(command,**kwargs):
-        if len(command)>4 and Path(command[4]).name=='grading_worker.py':
+        if len(command)>4 and Path(command[4]).name=='checkpoint_worker.py':
             assert command[1:4]==['-I','-S','-B']
             worker=Path(command[4])
             bootstrap=("import runpy,sys\n"
-                +"sys.path.insert(0,"+repr(str(worker.parents[2]))+")\n"
-                +"from ctxpress.harness import eval_environment\n"
+                +"sys.path.insert(0,"+repr(str(worker.parents[3]))+")\n"
+                +"from ctxpress.harness.jobs import environment as eval_environment\n"
                 +"eval_environment.image=lambda ref: dict(id="+repr(IMAGE)+")\n"
                 +"sys.argv=["+repr(str(worker))+",*sys.argv[1:]]\n"
                 +"runpy.run_path("+repr(str(worker))+",run_name='__main__')\n")
@@ -143,7 +144,7 @@ def test_detached_task_resolves_grader_copies_and_keeps_synthetic_evidence(tmp_p
     Path(cfg['environment']['grading']).unlink()
     script='''import sys
 from pathlib import Path
-from ctxpress.harness import codex_docker,eval_grading,evaluation
+from ctxpress.benchmarks.milestone import checkpoint_run as codex_docker, checkpoint_grading as eval_grading; from ctxpress.harness.jobs import queue as evaluation
 
 def run(n,j,entry,**kwargs):
     lock=eval_grading.load(kwargs['grading'],[(n,j)])
@@ -157,7 +158,7 @@ evaluation.execute_job(sys.argv[1],sys.argv[2],1)
     result=subprocess.run([sys.executable,'-c',script,str(directory),job_id],cwd=directory/'runtime',
                           env=evaluation._runtime_env(directory),capture_output=True,text=True,timeout=15)
     assert result.returncode==0,result.stderr
-    from ctxpress.harness.eval_report import report,write_report
+    from ctxpress.harness.results.report import report, write_report
     evidence=report(directory)
     assert evidence['grading_manifest_sha256']==lock['sha256']
     assert evidence['grading_scope']==lock['scope']
@@ -168,7 +169,7 @@ evaluation.execute_job(sys.argv[1],sys.argv[2],1)
 
 
 def test_backend_captured_snapshot_uses_declared_grader_not_live_scripts(tmp_path,monkeypatch):
-    from ctxpress.harness import codex_docker
+    from ctxpress.benchmarks.milestone import checkpoint_run as codex_docker
     env=SimpleNamespace(src_dirs=['core/'],root_files=['go.mod'],grading='frozen-manifest',grading_root='frozen-grading-root',
                         scripts=tmp_path/'absent-scripts',e2e=tmp_path/'absent-trials')
     def docker(command,**kwargs):

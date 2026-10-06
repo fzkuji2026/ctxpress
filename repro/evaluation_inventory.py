@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ctxpress import benchmarks
-from ctxpress.harness import eval_plan, task_resources
+from ctxpress.harness.jobs import plan as eval_plan, resources as task_resources
 
 # the SWE-Milestone authors' code checkout
 AUTHOR_CODE = Path(os.environ.get('CTXPRESS_MILESTONE_AUTHOR_CODE', '~/swe/SWE-Milestone')).expanduser()
@@ -70,7 +70,7 @@ def inventory(protocol, project):
                 if not family['pilot_tasks']:
                     raise ValueError('freeze exact pilot task IDs before compiling a plan; no implicit all-task selection')
                 if name == 'swe-milestone':
-                    from ctxpress.benchmarks import milestone_protocol
+                    from ctxpress.benchmarks.milestone import protocol as milestone_protocol
                     image_refs = {image['Repository'] + ':' + image['Tag'] for image in result['existing_milestone_images']}
                     row['milestone_images'] = {}
                     for task_id in family['pilot_tasks'] or []:

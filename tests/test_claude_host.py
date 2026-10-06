@@ -33,6 +33,6 @@ def test_ordinary_interactive_session(host, variable, tmp_path):
     binary = os.environ.get(variable)
     if not binary:
         pytest.skip(f"set {variable} to a real CLI to run the interactive session check")
-    from ctxpress.harness import interactive_check
+    from ctxpress.harness.checks import interactive as interactive_check
     result = interactive_check.check(host, binary, str(tmp_path))
     assert result["passed"], json.dumps({k: result[k] for k in ("checks", "problems", "requests")}, indent=1)

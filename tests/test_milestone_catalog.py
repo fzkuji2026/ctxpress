@@ -6,8 +6,10 @@ import shlex
 from types import SimpleNamespace
 
 import pytest
-from ctxpress.benchmarks import harbor_driver, milestone_codex, milestone_driver
-from ctxpress.harness import codex_binary, codex_catalog, milestone_runner as runner, milestone_version
+from ctxpress.benchmarks.harbor import driver as harbor_driver
+from ctxpress.benchmarks.milestone import codex_hook as milestone_codex, driver as milestone_driver
+from ctxpress.harness.runtime import codex_binary, codex_catalog
+from ctxpress.benchmarks.milestone import runner, version as milestone_version
 from test_milestone_codex import OfficialFixture, private_settings, settings
 from test_milestone_runner import fixture as runner_fixture
 
@@ -347,7 +349,7 @@ def test_parent_result_retains_optional_native_catalog_identity(tmp_path, monkey
     monkeypatch.setattr(milestone_driver.subprocess, 'Popen', Process)
     monkeypatch.setattr(milestone_driver, 'recover_attempt', lambda *args: None)
     monkeypatch.setattr(milestone_driver, 'summary', lambda *args: {'requests': 0})
-    from ctxpress.harness import execution_health
+    from ctxpress.harness.runtime import execution_health
     monkeypatch.setattr(execution_health, 'retain', lambda result: result)
     adapter = SimpleNamespace(task_start_description=lambda: {'name': 'swe-milestone'})
     result = milestone_driver.execute(adapter, {'id': 'repo'}, {'class': 'NoCompaction'},

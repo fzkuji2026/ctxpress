@@ -10,7 +10,7 @@ import pytest
 
 from ctxpress import benchmarks
 from ctxpress.__main__ import main
-from ctxpress.harness import evaluation, eval_plan
+from ctxpress.harness.jobs import queue as evaluation, plan as eval_plan
 from test_evaluation import fake_launch
 from test_model_accounting import rates
 
