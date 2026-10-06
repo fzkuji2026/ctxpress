@@ -1,0 +1,26 @@
+[project]
+name = "ctxpress"
+version = "0.1.0"
+description = "Context management for LLM coding agents: one engine, every method as a rule, evaluated on real agent traces"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+readme = "README.md"
+dependencies = []          # the proxy / plug-and-play path uses the standard library only
+
+[project.optional-dependencies]
+sim = ["pyyaml", "numpy"]   # replay pre-screen and experiment configs
+itemmodel = ["scikit-learn", "numpy"]
+test = ["pytest"]
+
+[project.scripts]
+ctxpress = "ctxpress.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["ctxpress*"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-data]
+"ctxpress._vendor.tomllib" = ["LICENSE"]

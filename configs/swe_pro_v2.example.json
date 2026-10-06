@@ -1,0 +1,21 @@
+{
+  "schema": "ctxpress.eval",
+  "version": 1,
+  "name": "pro-v2-codex-comparison",
+  "benchmark": "swe-bench-pro",
+  "start_mode": "task_start",
+  "scope": "benchmark",
+  "backend": "codex_docker",
+  "model": "MODEL",
+  "reasoning": "medium",
+  "tasks": ["instance_OWNER__REPO-ffffffffffffffffffffffffffffffffffffffff"],
+  "methods": [{"class": "NoCompaction"}],
+  "repeats": 1,
+  "workers": 1,
+  "run": {"max_calls": 100, "timeout": 3000, "grade": true},
+  "environment": {
+    "data": "/prepared/pro-v2",
+    "bindir": "/prepared/codex-bin",
+    "resources": "/prepared/pro-v2-resources.json"
+  }
+}

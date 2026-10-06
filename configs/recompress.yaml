@@ -1,0 +1,24 @@
+name: recompress
+description: >
+  Re-compression loss (content that passed through k summaries is re-fetched with q * r^(k-1)). The recall probe
+  (data/tb4-jobs/recompaction-20261003) measured r ≈ 0.9 per extra Codex compaction (recall of requirement
+  identifiers 0.37 -> 0.33 -> 0.30). Which methods still satisfy the constraint at each r?
+manifest: sessions.yaml
+reference: {class: CodexAutoCompact, args: {t: 230000}, label: "Codex 默认 auto-compact（230k，标准）"}
+baselines:
+  - {class: CodexAutoCompact, args: {t: 64000}}
+  - {class: CodexAutoCompact, args: {t: 128000}}
+  - {class: ReSum, args: {k: 40}}
+x-lams: &lams [1e5, 1e6, 5e6, 2e7, 1e8, 1e9]
+x-allops: &allops {spec: [placeholder], read_code: [placeholder, truncate, structure], read_other: [placeholder, truncate, structure], search: [placeholder, truncate, structure], run: [placeholder, truncate, structure], patch: [placeholder], call: [placeholder]}
+ours:
+  - {label: "本文（§8.7）", class: CostModel, args: {lookahead: 8, harm: harm}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "本文 + 专用记忆（带编号）", class: CostModel, args: {lookahead: 8, harm: harm, memory: id}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "本文：全部打开", class: CostModel, args: {lookahead: 8, harm: harm, ops: *allops, segments: true, memory: label, hint: true}, lambdas: *lams, kinds: [harm, measured]}
+kinds: [harm, measured]
+sweep:
+  - {name: "r = 1.0（不损失）", params: {recompress_retention: 1.0}}
+  - {name: "r = 0.975（续跑实测：压缩 3 次后重读需求文档 19/20）", params: {recompress_retention: 0.975}}
+  - {name: "r = 0.95", params: {recompress_retention: 0.95}}
+  - {name: "r = 0.9（召回探针实测）", params: {recompress_retention: 0.9}}
+  - {name: "r = 0.85", params: {recompress_retention: 0.85}}

@@ -1,0 +1,31 @@
+{
+  "schema": "ctxpress.eval",
+  "version": 1,
+  "name": "terminal-bench-codex-comparison",
+  "benchmark": "terminal-bench",
+  "start_mode": "task_start",
+  "scope": "benchmark",
+  "backend": "codex_docker",
+  "model": "MODEL",
+  "reasoning": "medium",
+  "tasks": [
+    "TASK_ID"
+  ],
+  "methods": [
+    {
+      "class": "NoCompaction"
+    }
+  ],
+  "repeats": 1,
+  "workers": 1,
+  "run": {
+    "max_calls": 100,
+    "timeout": 1800,
+    "grade": true
+  },
+  "environment": {
+    "data": "/prepared/terminal-bench/tasks",
+    "bindir": "/prepared/codex-bin",
+    "resources": "/prepared/terminal-bench-resources.json"
+  }
+}

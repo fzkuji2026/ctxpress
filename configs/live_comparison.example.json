@@ -1,0 +1,37 @@
+{
+  "schema": "ctxpress.eval",
+  "version": 1,
+  "name": "cost-policy-vs-native-example",
+  "scope": "formal",
+  "backend": "codex_docker",
+  "benchmark": "swe-milestone",
+  "model": "YOUR_CODEX_MODEL",
+  "reasoning": "low",
+  "environment": {
+    "bindir": "/absolute/path/to/current-codex-bin",
+    "scripts": "../../data/tb4-jobs/recompaction-20261003/scripts",
+    "snapshot": "../runs/environment.json",
+    "grading": "../runs/grading.json"
+  },
+  "boundaries": [
+    {"id": "n0-j368", "n": 0, "j": 368, "context_tokens": 141400},
+    {"id": "n2-j197", "n": 2, "j": 197, "context_tokens": 187005}
+  ],
+  "methods": [
+    {"class": "CodexAutoCompact", "args": {"t": 230000}, "label": "native-230k"},
+    {"class": "AutoCostModel", "args": {"policy": "../runs/cost-policy.json"}, "label": "auto-cost"}
+  ],
+  "comparison": {
+    "reference": "native-230k",
+    "quality": "per_boundary_no_regression"
+  },
+  "repeats": 3,
+  "workers": 2,
+  "run": {
+    "max_calls": 100,
+    "timeout": 1800,
+    "compact_limit": 230000,
+    "installed": true,
+    "submit": true
+  }
+}

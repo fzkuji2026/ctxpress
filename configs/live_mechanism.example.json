@@ -1,0 +1,31 @@
+{
+  "schema": "ctxpress.eval",
+  "version": 1,
+  "name": "codex-mechanism-example",
+  "scope": "mechanism",
+  "backend": "codex_docker",
+  "benchmark": "swe-milestone",
+  "model": "YOUR_CODEX_MODEL",
+  "reasoning": "low",
+  "environment": {
+    "bindir": "/absolute/path/to/current-codex-bin",
+    "scripts": "../../data/tb4-jobs/recompaction-20261003/scripts"
+  },
+  "boundaries": [
+    {"id": "n0-j435", "n": 0, "j": 435, "context_tokens": 198018}
+  ],
+  "methods": [
+    {"class": "CodexAutoCompact", "args": {"t": 230000}, "label": "native-230k"},
+    {"class": "ComplexityTrap", "args": {"budget": 10}, "label": "mask-10"},
+    {"class": "CliffCompaction", "args": {"t": 230000}, "label": "cliff-230k"}
+  ],
+  "repeats": 1,
+  "workers": 2,
+  "run": {
+    "max_calls": 6,
+    "timeout": 900,
+    "compact_limit": 230000,
+    "installed": true,
+    "submit": false
+  }
+}

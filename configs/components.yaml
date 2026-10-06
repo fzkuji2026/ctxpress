@@ -1,0 +1,42 @@
+name: components
+description: >
+  Each switch of the framework (preliminary study §9) added to the cost model one at a time, on top of the
+  §8.7 best variant (lookahead + harm-weighted). Same hard constraint: not worse than the standard compaction
+  on any session. Values of the new parameters that were not measured are the defaults in ctxpress.params
+  (source = assumed); see configs/sensitivity.yaml for how much the results depend on them.
+  New baselines from the literature are included with their paper mechanisms (memory on where the paper has it).
+manifest: sessions.yaml
+preset: openai
+reference: {class: CodexAutoCompact, args: {t: 230000}, label: "Codex 默认 auto-compact（230k，标准）"}
+baselines:
+  - {class: CodexAutoCompact, args: {t: 64000}}
+  - {class: CodexAutoCompact, args: {t: 128000}}
+  - {class: ClaudeCode, args: {t: 64000}}
+  - {class: ClearThenSummarize, args: {t: 64000}}
+  - {class: ComplexityTrap, args: {n: 10}}
+  - {class: PichayApprox, args: {a: 5}}
+  - {class: ClawVMApprox, args: {n: 5}}
+  - {class: TokenPilot, args: {}}
+  - {class: SWEPruner, args: {}}
+  - {class: ARC, args: {n: 5}}
+  - {class: ARC, args: {n: 5, label: true}}
+  - {class: AgentFold, args: {}}
+  - {class: ACON, args: {}}
+  - {class: ReSum, args: {k: 40}}
+  - {class: WorkingView, args: {}}
+x-lams: &lams [1e5, 1e6, 5e6, 2e7, 1e8, 1e9]
+x-trunc: &trunc {spec: [placeholder], read_code: [placeholder], read_other: [placeholder, truncate], search: [placeholder, truncate], run: [placeholder, truncate], patch: [placeholder], call: [placeholder]}
+x-struct: &struct {spec: [placeholder], read_code: [placeholder, structure], read_other: [placeholder], search: [placeholder, structure], run: [placeholder, structure], patch: [placeholder], call: [placeholder]}
+x-allops: &allops {spec: [placeholder], read_code: [placeholder, truncate, structure], read_other: [placeholder, truncate, structure], search: [placeholder, truncate, structure], run: [placeholder, truncate, structure], patch: [placeholder], call: [placeholder]}
+ours:
+  - {label: "本文（§8.7 最好的一版）", class: CostModel, args: {lookahead: 8, harm: harm}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "+ 截断", class: CostModel, args: {lookahead: 8, harm: harm, ops: *trunc}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "+ 结构化压缩", class: CostModel, args: {lookahead: 8, harm: harm, ops: *struct}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "+ 截断和结构化压缩", class: CostModel, args: {lookahead: 8, harm: harm, ops: *allops}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "+ 截断和结构化压缩（截断预算 500）", class: CostModel, args: {lookahead: 8, harm: harm, ops: *allops, truncate_budget: 500}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "+ 第 2 层段总结", class: CostModel, args: {lookahead: 8, harm: harm, segments: true}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "+ 专用记忆（带编号）", class: CostModel, args: {lookahead: 8, harm: harm, memory: id}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "+ 专用记忆（编号和标签）", class: CostModel, args: {lookahead: 8, harm: harm, memory: label}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "+ 压缩时提示重读", class: CostModel, args: {lookahead: 8, harm: harm, hint: true}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "全部打开", class: CostModel, args: {lookahead: 8, harm: harm, ops: *allops, segments: true, memory: label, hint: true}, lambdas: *lams, kinds: [harm, measured]}
+kinds: [strict, harm, measured]

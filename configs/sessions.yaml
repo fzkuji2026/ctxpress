@@ -1,0 +1,28 @@
+# Sessions of the cost-model experiments (Codex, before any compaction); preliminary study §8.
+# alpha: fit on official sessions (their real input is the full context); 1.17 otherwise.
+root: ../data/tb4-jobs   # relative roots are resolved against the repository root
+sessions:
+  - name: navidrome-a
+    harness: codex
+    pattern: "milestone-official-002-evidence/sessions/2026/09/22/rollout-2026-09-22T05-22-24-*.jsonl"
+    alpha: fit
+  - name: navidrome-b
+    harness: codex
+    pattern: "milestone-invalid-evidence/sessions/2026/09/22/rollout-2026-09-22T04-14-44-*.jsonl"
+    alpha: fit
+  - name: navidrome-c
+    harness: codex
+    pattern: "milestone-ours-002-evidence/sessions/2026/09/22/rollout-2026-09-22T06-50-27-*.jsonl"
+    alpha: 1.17
+  - name: navidrome-d
+    harness: codex
+    pattern: "checkpoint003-soft120-run-20260926/on/sessions/2026/09/22/rollout-2026-09-22T10-19-5*.jsonl"
+    alpha: 1.17
+  - name: retro
+    harness: codex
+    pattern: "official-astra-low-retro-20260922/retro-console-soc__DR8FM4h/agent/sessions/2026/09/*/rollout*.jsonl"
+    alpha: fit
+  - name: payments
+    harness: codex
+    pattern: "ours-costgate-payments-20260921/payments-pipeline-fix__fvGn5Hr/agent/sessions/2026/09/*/rollout*.jsonl"
+    alpha: 1.17

@@ -1,0 +1,21 @@
+{
+  "schema": "ctxpress.eval",
+  "version": 1,
+  "name": "deep-swe-codex-comparison",
+  "benchmark": "deep-swe",
+  "start_mode": "task_start",
+  "scope": "benchmark",
+  "backend": "codex_docker",
+  "model": "MODEL",
+  "reasoning": "medium",
+  "tasks": ["clack-async-autocomplete-options"],
+  "methods": [{"class": "NoCompaction"}],
+  "repeats": 1,
+  "workers": 1,
+  "run": {"max_calls": 100, "timeout": 1800, "grade": true},
+  "environment": {
+    "data": "/prepared/deep-swe/tasks",
+    "bindir": "/prepared/codex-bin",
+    "resources": "/prepared/deep-swe-resources.json"
+  }
+}

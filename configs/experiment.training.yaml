@@ -1,0 +1,12 @@
+# `root` is relative to the repository root. Existing recorded histories only; no model calls.
+# Exclude every Navidrome history and exclude these two task IDs from evaluation.
+root: ../data/tb4-jobs
+sessions:
+  - name: retro
+    harness: codex
+    pattern: official-astra-low-retro-20260922/retro-console-soc__DR8FM4h/agent/sessions/2026/09/*/rollout*.jsonl
+    alpha: fit
+  - name: payments
+    harness: codex
+    pattern: ours-costgate-payments-20260921/payments-pipeline-fix__fvGn5Hr/agent/sessions/2026/09/*/rollout*.jsonl
+    alpha: 1.17

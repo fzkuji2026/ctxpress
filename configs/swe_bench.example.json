@@ -1,0 +1,21 @@
+{
+  "schema": "ctxpress.eval",
+  "version": 1,
+  "name": "swe-bench-verified-codex-comparison",
+  "benchmark": "swe-bench-verified",
+  "start_mode": "task_start",
+  "scope": "benchmark",
+  "backend": "codex_docker",
+  "model": "MODEL",
+  "reasoning": "medium",
+  "tasks": ["OWNER__REPO-1"],
+  "methods": [{"class": "NoCompaction"}],
+  "repeats": 1,
+  "workers": 1,
+  "run": {"max_calls": 100, "timeout": 1800, "grading_timeout": 1800, "grade": true},
+  "environment": {
+    "data": "/prepared/swe-bench-verified",
+    "bindir": "/prepared/codex-bin",
+    "resources": "/prepared/swe-bench-resources.json"
+  }
+}

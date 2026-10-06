@@ -1,0 +1,16 @@
+# local outputs, environments and private notes
+notes/
+runs/
+results/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+.env
+.env.*
+# never commit credentials
+auth.json
+credentials.json

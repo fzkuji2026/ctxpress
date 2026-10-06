@@ -1,0 +1,396 @@
+{
+  "schema": "ctxpress.experiment.protocol",
+  "version": 1,
+  "artifact_root": "..",
+  "status": "method_pilot_and_formal_preparation",
+  "family_count": 8,
+  "protocol": "ctxpress_comparison",
+  "start_mode": "task_start",
+  "scope": "benchmark",
+  "analysis": {
+    "research_question": "Quality and cost of published context management methods under one real Codex host, task start, budget and pricing protocol",
+    "primary_families": ["swe-bench", "swe-milestone"],
+    "allocation": {
+      "frozen_before_formal_runs": true,
+      "verified": "All original ten tasks, one repeat per method; short-task control based on the completed exploratory exposure screen, with no outcome-based task removal",
+      "navidrome": "One complete original itinerary, three repeats per method; long-task behavior and cost, with quality reported descriptively",
+      "total_jobs": 169,
+      "interpretation": "Repeats on one itinerary do not establish cross-task generalization or quality noninferiority; pilot results are not pooled into formal method differences"
+    },
+    "candidate_role": "exploratory; current short-history training does not establish effectiveness"
+  },
+  "models": {
+    "agent": "gpt-6.1-sol",
+    "agent_reasoning": "medium",
+    "agentdiet_reflection": "gpt-6-luna",
+    "reflection_reasoning": "provider default, no explicit effort override; returned model ID must be recorded",
+    "summaries": "same agent model and reasoning"
+  },
+  "model_sources": [
+    "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+    "https://developers.openai.com/api/docs/models/gpt-6-luna"
+  ],
+  "selection": {
+    "seed": 20261004,
+    "comparison_tasks_per_family": 10,
+    "pilot_tasks_per_family": 1,
+    "exclude_task_ids": [
+      "retro-console-soc",
+      "payments-pipeline-fix"
+    ],
+    "rule": "freeze exact task IDs and input hashes once original dataset resources are present; never substitute recorded jobs"
+  },
+  "pilot": {
+    "methods": [
+      {
+        "class": "NoCompaction",
+        "args": {}
+      }
+    ],
+    "repeats": 1,
+    "workers": 1
+  },
+  "method_pilot": {
+    "method_classes": [
+      "NoCompaction",
+      "CodexAutoCompact",
+      "ComplexityTrap",
+      "ComplexityTrapHybrid",
+      "AgentDiet",
+      "CWL",
+      "DTOC"
+    ],
+    "repeats": 1,
+    "workers": 1
+  },
+  "comparison": {
+    "repeats": 3,
+    "workers": 1,
+    "methods": [
+      {
+        "class": "NoCompaction",
+        "args": {},
+        "label": "no-compaction"
+      },
+      {
+        "class": "CodexAutoCompact",
+        "args": {
+          "t": 230000
+        },
+        "label": "native-230k"
+      },
+      {
+        "class": "ComplexityTrap",
+        "args": {
+          "n": 10
+        }
+      },
+      {
+        "class": "ComplexityTrapSummary",
+        "args": {
+          "n": 21,
+          "m": 10
+        }
+      },
+      {
+        "class": "ComplexityTrapHybrid",
+        "args": {
+          "n": 43,
+          "m": 10,
+          "w": 10
+        }
+      },
+      {
+        "class": "KeepLastTokens",
+        "args": {
+          "budget": 32000
+        }
+      },
+      {
+        "class": "Pichay",
+        "args": {
+          "age": 4,
+          "min_size": 500
+        }
+      },
+      {
+        "class": "ClawVM",
+        "args": {
+          "budget": 32000,
+          "policy": "clawvm"
+        }
+      },
+      {
+        "class": "ARC",
+        "args": {
+          "n": 5
+        }
+      },
+      {
+        "class": "AgentDiet",
+        "args": {
+          "a": 2,
+          "b": 1,
+          "threshold": 500,
+          "reflect_model": "gpt-6-luna",
+          "bypass_filter": false,
+          "min_saving": 400,
+          "max_ratio": 0.8
+        }
+      },
+      {
+        "class": "CWL",
+        "args": {
+          "budget": 80000
+        }
+      },
+      {
+        "class": "DTOC",
+        "args": {
+          "strategy": true
+        }
+      }
+    ],
+    "required_candidate": {
+      "class": "AutoCostModel",
+      "provenance": "runs/prepared/cost-policy.provenance.json",
+      "args": {
+        "policy": "runs/prepared/cost-policy.json"
+      },
+      "gate": "freeze a non-synthetic policy trained without evaluation sessions before comparison plans are compiled"
+    },
+    "candidate_training": {
+      "sessions": [
+        "retro",
+        "payments"
+      ],
+      "excluded_task_ids": [
+        "retro-console-soc",
+        "payments-pipeline-fix"
+      ],
+      "exclude_all_navidrome_histories": true,
+      "lambda_grid": [
+        0,
+        100000,
+        1000000,
+        5000000
+      ],
+      "constraint": "strict simulated proxy",
+      "reference_limit": 230000,
+      "args": {
+        "lookahead": 8,
+        "segments": true,
+        "memory": "label",
+        "hint": true
+      },
+      "params": {
+        "cached": 0.05,
+        "write": 1.25,
+        "out": 5
+      },
+      "price_scope": "normalized standard main-model token rates; replay assumptions, not provider billing or task-quality proof"
+    }
+  },
+  "run": {
+    "max_calls": 100,
+    "timeout": 1800,
+    "compact_limit": 230000,
+    "grade": true
+  },
+  "pricing": {
+    "status": "declared_per_run",
+    "reference_file": "prices.gpt6.standard.json",
+    "rule": "tokens recorded per model; no USD total until applicable rates for all observed models are supplied",
+    "scope": "declared-rate estimates; provider cache writes, long-context multipliers, tiers and host compute require applicable rate declarations"
+  },
+  "gates": [
+    "complete offline code and CLI checks",
+    "original task dataset and exact task IDs",
+    "frozen official source and complete dependencies",
+    "prepared immutable agent and verifier images",
+    "resource ownership and cleanup verified",
+    "model access and experiment spending approval",
+    "one task-start pilot with official grading per prepared family",
+    "frozen complete comparison cohort and candidate policy"
+  ],
+  "families": [
+    {
+      "family": "swe-milestone",
+      "benchmark": "swe-milestone",
+      "release": "v1.0.2",
+      "comparison_task_count": 1,
+      "comparison_repeats": 3,
+      "template": "swe_milestone.example.json",
+      "pilot_tasks": [
+        "navidrome_navidrome_v0.57.0_v0.58.0"
+      ],
+      "comparison_tasks": [
+        "navidrome_navidrome_v0.57.0_v0.58.0"
+      ],
+      "task_freeze_status": "complete Navidrome itinerary and hashes frozen in local plans; official resources prepared and task-start scoring verified"
+    },
+    {
+      "family": "swe-bench",
+      "benchmark": "swe-bench-verified",
+      "release": "Verified",
+      "template": "swe_bench.example.json",
+      "comparison_repeats": 1,
+      "pilot_tasks": [
+        "django__django-10999"
+      ],
+      "comparison_tasks": [
+        "django__django-10999",
+        "django__django-12774",
+        "django__django-13109",
+        "django__django-14034",
+        "django__django-14434",
+        "django__django-15629",
+        "matplotlib__matplotlib-24026",
+        "scikit-learn__scikit-learn-9288",
+        "sphinx-doc__sphinx-10673",
+        "sphinx-doc__sphinx-9698"
+      ],
+      "task_freeze_status": "exact IDs frozen from pinned original publisher data; input hashes recorded by local plans",
+      "dataset_revision": "78f471bf655a3137b2e8a75af1501690ec009ec3"
+    },
+    {
+      "family": "terminal-bench",
+      "benchmark": "terminal-bench",
+      "release": "4.0",
+      "template": "terminal_bench.example.json",
+      "pilot_tasks": [
+        "heat-pump-warranty"
+      ],
+      "comparison_tasks": [
+        "heat-pump-warranty",
+        "coq-block-bound",
+        "music-harmony",
+        "interleaved-vigenere",
+        "freecad-platform-drawing",
+        "legacy-utility-triage",
+        "fin-saccr-rwa",
+        "satb-audio-transcription",
+        "react-lead-form",
+        "production-planning"
+      ],
+      "task_freeze_status": "exact IDs frozen from pinned original data; complete input hashes and runtime resources recorded by local plans",
+      "dataset_revision": "v4.0.0@452bf305c6daa62fc59061d22133a7cbc7c1572e"
+    },
+    {
+      "family": "terminal-bench-science",
+      "benchmark": "terminal-bench-science",
+      "release": "0.1",
+      "template": "terminal_science.example.json",
+      "pilot_tasks": [
+        "genomic-model-ranking"
+      ],
+      "comparison_tasks": [
+        "genomic-model-ranking",
+        "supraglacial-lake-classification",
+        "koopman-mfg-id",
+        "highdim-mediation-debiasing",
+        "qsm-reconstruction",
+        "protein-active-learning",
+        "virtual-baseline-localization",
+        "spatial-cell-annotation",
+        "rolling-shutter-oma",
+        "rdkit-ic-constraints"
+      ],
+      "task_freeze_status": "exact IDs frozen from pinned original data; complete input hashes and runtime resources recorded by local plans",
+      "dataset_revision": "v0.1.0@f81afac4f11048e77a15dfc8fb1dbfb897fea0ce"
+    },
+    {
+      "family": "deep-swe",
+      "benchmark": "deep-swe",
+      "release": "1.1",
+      "template": "deep_swe.example.json",
+      "pilot_tasks": [
+        "dynamodb-toolbox-conditional-attribute-requirements"
+      ],
+      "comparison_tasks": [
+        "dynamodb-toolbox-conditional-attribute-requirements",
+        "anko-typed-variable-bindings",
+        "termenv-preserve-ansi-resets",
+        "happy-dom-deterministic-intersectionobserver",
+        "kgateway-consistent-hash-policy",
+        "goreleaser-retry-publish-auditing",
+        "obsidian-linter-auto-table-of-contents",
+        "effect-sse-httpapi-streaming",
+        "valibot-recursive-schema-composition",
+        "tengo-destructuring-bindings"
+      ],
+      "task_freeze_status": "exact IDs frozen from pinned original data; complete input hashes and runtime resources recorded by local plans",
+      "dataset_revision": "v1.1@0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea",
+      "release_evidence": "v1.1 in pinned author README and task image references; repository has no v1.1 Git tag"
+    },
+    {
+      "family": "swe-bench-pro",
+      "benchmark": "swe-bench-pro",
+      "release": "V2 public; V1 remains supported",
+      "template": "swe_pro_v2.example.json",
+      "pilot_tasks": [
+        "instance_flipt-io__flipt-1dceb5edf3fa8f39495b939ef9cc0c3dd38fa17d"
+      ],
+      "comparison_tasks": [
+        "instance_flipt-io__flipt-1dceb5edf3fa8f39495b939ef9cc0c3dd38fa17d",
+        "instance_ansible__ansible-3b823d908e8a5d17674f8c26d337d3114b7493b1-v0f01c69f1e2528b935359cfe578530722bca2c59",
+        "instance_gravitational__teleport-02d1efb8560a1aa1c72cfb1c08edd8b84a9511b4-vce94f93ad1030e3136852817f2423c1b3ac37bc4",
+        "instance_internetarchive__openlibrary-4b7ea2977be2747496ba792a678940baa985f7ea-v0f5aece3601a5b4419f7ccec1dbda2071be28ee4",
+        "instance_future-architect__vuls-a76302c11174ca081f656c63a000ffa746e350af",
+        "instance_protonmail__webclients-7b833df125859e5eb98a826e5b83efe0f93a347b",
+        "instance_flipt-io__flipt-5af0757e96dec4962a076376d1bedc79de0d4249",
+        "instance_element-hq__element-web-459df4583e01e4744a52d45446e34183385442d6-vnan",
+        "instance_navidrome__navidrome-812dc2090f20ac4f8ac271b6ed95be5889d1a3ca",
+        "instance_element-hq__element-web-8f3c8b35153d2227af45f32e46bd1e15bd60b71f-vnan"
+      ],
+      "task_freeze_status": "exact IDs frozen from pinned original data; complete input hashes and runtime resources recorded by local plans",
+      "dataset_revision": "v2.0.0@66f92766bba642462d4bbe5479e83f91f9211862"
+    },
+    {
+      "family": "swe-polybench",
+      "benchmark": "swe-polybench",
+      "release": "Verified",
+      "template": "polybench.example.json",
+      "pilot_tasks": [
+        "huggingface__transformers-23223"
+      ],
+      "comparison_tasks": [
+        "huggingface__transformers-23223",
+        "apache__rocketmq-7426",
+        "keras-team__keras-20002",
+        "mui__material-ui-12303",
+        "keras-team__keras-19459",
+        "prettier__prettier-11000",
+        "huggingface__transformers-26752",
+        "yt-dlp__yt-dlp-5933",
+        "sveltejs__svelte-906",
+        "sveltejs__svelte-4558"
+      ],
+      "task_freeze_status": "exact IDs frozen from pinned original data; complete input hashes and runtime resources recorded by local plans",
+      "dataset_revision": "b3fca77b637379f0c01ad86d18753a7ac1998b53"
+    },
+    {
+      "family": "bigcodebench",
+      "benchmark": "bigcodebench",
+      "release": "Complete Full; Instruct/Hard remain supported",
+      "template": "bigcodebench.example.json",
+      "pilot_tasks": [
+        "BigCodeBench/294"
+      ],
+      "comparison_tasks": [
+        "BigCodeBench/294",
+        "BigCodeBench/1097",
+        "BigCodeBench/530",
+        "BigCodeBench/697",
+        "BigCodeBench/479",
+        "BigCodeBench/937",
+        "BigCodeBench/323",
+        "BigCodeBench/205",
+        "BigCodeBench/85",
+        "BigCodeBench/239"
+      ],
+      "task_freeze_status": "exact IDs frozen from pinned original data; complete input hashes and runtime resources recorded by local plans",
+      "dataset_revision": "b74c0d0bf70d2c0bc459be537895cca163007f1a"
+    }
+  ]
+}

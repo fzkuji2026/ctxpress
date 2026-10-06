@@ -1,0 +1,34 @@
+{
+  "schema": "ctxpress.eval",
+  "version": 1,
+  "name": "bigcodebench-codex-comparison",
+  "benchmark": "bigcodebench",
+  "start_mode": "task_start",
+  "scope": "benchmark",
+  "backend": "codex_docker",
+  "model": "MODEL",
+  "reasoning": "medium",
+  "tasks": ["BigCodeBench/0"],
+  "methods": [{"class": "NoCompaction"}],
+  "repeats": 5,
+  "workers": 1,
+  "run": {
+    "max_calls": 20,
+    "timeout": 600,
+    "grading_timeout": 1800,
+    "grade": true,
+    "code": {
+      "pass_k": [1, 5, 10],
+      "calibrated": true,
+      "min_time_limit": 1,
+      "max_as_limit": 30720,
+      "max_data_limit": 30720,
+      "max_stack_limit": 10
+    }
+  },
+  "environment": {
+    "data": "/prepared/bigcodebench-complete-full",
+    "bindir": "/prepared/codex-bin",
+    "resources": "/prepared/bigcodebench-resources.json"
+  }
+}

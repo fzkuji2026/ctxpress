@@ -1,0 +1,32 @@
+{
+  "schema": "ctxpress.eval",
+  "version": 1,
+  "name": "swe-milestone-codex-comparison",
+  "benchmark": "swe-milestone",
+  "start_mode": "task_start",
+  "scope": "benchmark",
+  "backend": "codex_docker",
+  "model": "MODEL",
+  "reasoning": "medium",
+  "tasks": [
+    "REPOSITORY_ID"
+  ],
+  "methods": [
+    {
+      "class": "NoCompaction"
+    }
+  ],
+  "repeats": 1,
+  "workers": 1,
+  "run": {
+    "max_calls": 100,
+    "timeout": 1800,
+    "grading_timeout": 1800,
+    "grade": true
+  },
+  "environment": {
+    "data": "/prepared/swe-milestone/tasks",
+    "bindir": "/prepared/codex-bin",
+    "resources": "/prepared/swe-milestone-resources.json"
+  }
+}

@@ -1,0 +1,29 @@
+name: sensitivity
+description: >
+  How much the conclusions depend on parameters that are not measured yet (source = assumed in
+  ctxpress.params) and on the provider's billing rules. The whole experiment is repeated per setting.
+manifest: sessions.yaml
+reference: {class: CodexAutoCompact, args: {t: 230000}, label: "Codex 默认 auto-compact（230k，标准）"}
+baselines:
+  - {class: CodexAutoCompact, args: {t: 64000}}
+  - {class: ClaudeCode, args: {t: 64000}}
+  - {class: ClawVMApprox, args: {n: 5}}
+  - {class: TokenPilot, args: {}}
+  - {class: ARC, args: {n: 5, label: true}}
+  - {class: AgentFold, args: {}}
+x-lams: &lams [1e5, 1e6, 5e6, 2e7, 1e8, 1e9]
+x-allops: &allops {spec: [placeholder], read_code: [placeholder, truncate, structure], read_other: [placeholder, truncate, structure], search: [placeholder, truncate, structure], run: [placeholder, truncate, structure], patch: [placeholder], call: [placeholder]}
+ours:
+  - {label: "本文（§8.7）", class: CostModel, args: {lookahead: 8, harm: harm}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "本文 + 截断和结构化压缩", class: CostModel, args: {lookahead: 8, harm: harm, ops: *allops}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "本文 + 专用记忆（编号和标签）", class: CostModel, args: {lookahead: 8, harm: harm, memory: label}, lambdas: *lams, kinds: [harm, measured]}
+  - {label: "本文：全部打开", class: CostModel, args: {lookahead: 8, harm: harm, ops: *allops, segments: true, memory: label, hint: true}, lambdas: *lams, kinds: [harm, measured]}
+kinds: [harm, measured]
+sweep:
+  - {name: "默认参数"}
+  - {name: "带标签也不会去取需求文档（q 记忆标签·需求 = 1/8）", params: {q/memlabel/spec: 0.125}}
+  - {name: "截断 / 结构化后更少重读（q = 0.5）", params: {q/truncated/*: 0.5, q/structured/*: 0.5}}
+  - {name: "摘要再压缩每轮保留 0.85（Compaction Cliff）", params: {recompress_retention: 0.85}}
+  - {name: "只命中完整请求的末尾（checkpoint 缓存）", params: {cache_mode: checkpoint}}
+  - {name: "Anthropic 计费，缓存 5 分钟", preset: anthropic-5m}
+  - {name: "Anthropic 计费，缓存 1 小时", preset: anthropic-1h}

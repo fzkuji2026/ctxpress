@@ -1,0 +1,28 @@
+name: constraint
+description: >
+  Reproduces preliminary study §8.7 (table 22): every method must not be worse than the standard compaction
+  (Codex default auto-compact, 230k) on any session. Memory and the new layer-1 operations are off here, so
+  Pichay and ClawVM use the §8 versions.
+manifest: sessions.yaml
+preset: openai
+params: {spec_recovery: false, recompress_retention: 1.0, dedupe_recovery: false}   # the §8 accounting, to reproduce table 22
+reference: {class: CodexAutoCompact, args: {t: 230000}, label: "Codex 默认 auto-compact（230k，标准）"}
+baselines:
+  - {class: CodexAutoCompact, args: {t: 64000}}
+  - {class: CodexAutoCompact, args: {t: 128000}}
+  - {class: ClaudeCode, args: {t: 64000}}
+  - {class: ClearThenSummarize, args: {t: 64000}}
+  - {class: SlidingWindow, args: {t: 64000}}
+  - {class: ComplexityTrap, args: {n: 5}}
+  - {class: ComplexityTrap, args: {n: 10}}
+  - {class: KeepLastTokens, args: {b: 16000}}
+  - {class: PichayApprox, args: {a: 5, memory: null}}
+  - {class: PichayApprox, args: {a: 20, memory: null}}
+  - {class: ClawVMApprox, args: {n: 5, simplified: true}}
+ours:
+  - {label: "本文：基础", class: CostModel, args: {}, lambdas: [1e5, 1e6, 5e6, 2e7, 1e8, 1e9]}
+  - {label: "本文：往前看", class: CostModel, args: {lookahead: 8}, lambdas: [1e5, 1e6, 5e6, 2e7, 1e8, 1e9]}
+  - {label: "本文：往前看 + 单独预测", class: CostModel, args: {lookahead: 8, item_model: true}, lambdas: [1e5, 1e6, 5e6, 2e7, 1e8, 1e9]}
+  - {label: "本文：往前看 + 按危害加权", class: CostModel, args: {lookahead: 8, harm: harm}, lambdas: [1e5, 1e6, 5e6, 2e7, 1e8, 1e9], kinds: [harm, measured]}
+  - {label: "本文：往前看 + 按实测危害", class: CostModel, args: {lookahead: 8, harm: measured}, lambdas: [1e5, 1e6, 5e6, 2e7, 1e8, 1e9], kinds: [measured]}
+kinds: [strict, harm, measured]

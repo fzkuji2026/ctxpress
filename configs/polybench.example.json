@@ -1,0 +1,21 @@
+{
+  "schema": "ctxpress.eval",
+  "version": 1,
+  "name": "polybench-codex-comparison",
+  "benchmark": "swe-polybench",
+  "start_mode": "task_start",
+  "scope": "benchmark",
+  "backend": "codex_docker",
+  "model": "MODEL",
+  "reasoning": "medium",
+  "tasks": ["OWNER__REPO-1"],
+  "methods": [{"class": "NoCompaction"}],
+  "repeats": 1,
+  "workers": 1,
+  "run": {"max_calls": 100, "timeout": 1800, "grade": true},
+  "environment": {
+    "data": "/prepared/polybench",
+    "bindir": "/prepared/codex-bin",
+    "resources": "/prepared/polybench-resources.json"
+  }
+}
