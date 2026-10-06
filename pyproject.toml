@@ -1,12 +1,12 @@
 [project]
 name = "ctxpress"
 version = "1.0.0"
-description = "Context management for LLM coding agents: plug-and-play methods for Codex and Claude Code, evaluated on official benchmarks"
+description = "Context management for LLM agents: plug-and-play methods for Codex, Claude Code and other agents, evaluated on official benchmarks"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 readme = "README.md"
 authors = [{name = "Fzkuji"}]
-keywords = ["llm", "coding-agents", "context-management", "codex", "claude-code", "compaction", "benchmark"]
+keywords = ["llm", "llm-agents", "ai-agents", "context-management", "codex", "claude-code", "compaction", "benchmark"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",

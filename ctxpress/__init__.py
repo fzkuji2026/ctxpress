@@ -1,4 +1,4 @@
-"""ctxpress: context management methods for coding agents, behind one interface.
+"""ctxpress: context management methods for LLM agents, behind one interface.
 
     from ctxpress import build, LiveContext, Rewriter
     method = build({"class": "ComplexityTrap", "args": {"n": 10}})

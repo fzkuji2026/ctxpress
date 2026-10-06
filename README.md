@@ -1,6 +1,6 @@
 # ctxpress
 
-**Context management for LLM coding agents.** ctxpress puts a context-management method between an agent and its
+**Context management for LLM agents.** ctxpress puts a context-management method between an agent and its
 model: before every request, the method rewrites the history the agent sends — replacing old tool outputs with
 placeholders, truncating, keeping only structure, deleting, moving originals to a retrievable store, or summarizing.
 The same method runs in your own Codex or Claude Code session, through a Python API, in an offline replay
