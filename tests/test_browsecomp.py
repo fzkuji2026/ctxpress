@@ -36,7 +36,11 @@ messages = [{"role": "system", "content": "Research agent."}, {"role": "user", "
 turns = 0
 while True:
     turns += 1
-    reply = post(a.agent_api_base, {"model": served, "messages": messages, "tools": tools, "max_tokens": 100})
+    sent = [dict(m) for m in messages]                 # the author marks only the newest tool result
+    tool = [m for m in sent if m["role"] == "tool"]
+    if tool:
+        tool[-1]["content"] += "\n\n[CURRENT CONTEXT TOKEN: %d]" % (1000 * turns)
+    reply = post(a.agent_api_base, {"model": served, "messages": sent, "tools": tools, "max_tokens": 100})
     message = reply["choices"][0]["message"]
     messages.append({k: v for k, v in message.items() if v is not None})
     if not message.get("tool_calls"):
@@ -180,12 +184,15 @@ def test_a_job_runs_the_author_loop_through_the_method_and_grades_it(prepared, m
     agent = [row for row in result["rewrites"] if "request" in row]
     assert all(row["dialect"] == "chat" and row["status"] == 200 for row in agent)
     assert agent[-1]["usage"]["cached_tokens"] == 80 and agent[-1]["operations"]
+    assert {row["session"] for row in agent} == {"browsecomp:" + job["id"]}       # one conversation per job
+    assert not any(row["history_rebased"] for row in agent)                         # the moving marker is not a revision
     sent = [body for path, _, body in Upstream.seen if body.get("tools")]
     last = [m["content"] for m in sent[-1]["messages"] if m["role"] == "tool"]
     assert [text.startswith("Old environment output") for text in last] == [True, True, False]     # the method acted
-    keys = {(path.rsplit("/", 1)[-1], auth) for path, auth, body in Upstream.seen}
-    assert ("completions", "Bearer secret-agent") in keys and ("completions", "Bearer secret-summary") in keys
-    assert ("responses", "Bearer secret-judge") in keys
+    assert last[-1].endswith("[CURRENT CONTEXT TOKEN: 4000]")
+    keys = {(path, auth) for path, auth, body in Upstream.seen}                    # exact upstream paths
+    assert ("/v1/chat/completions", "Bearer secret-agent") in keys and ("/v1/chat/completions", "Bearer secret-summary") in keys
+    assert ("/v1/responses", "Bearer secret-judge") in keys
     author = json.loads(next((tmp / "job" / "author-results").rglob("run_101.json")).read_text())
     assert author["key_seen"] == "ctxpress-proxy-holds-the-key"                # the author process never held a key
     summarizer = [row for row in result["rewrites"] if row.get("host_role") == "summarizer"]

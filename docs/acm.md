@@ -59,7 +59,7 @@ CTXPRESS_SUMMARIZER_API_KEY=... CTXPRESS_GRADER_API_KEY=... ctxpress eval run ac
 
 每个作业启动三个本地代理：Agent（应用计划里的方法）、摘要和评分（原样转发），各写一份日志。作者进程只拿到占位密钥，真实密钥由代理从运行环境取得（本地 vLLM 一般不需要 `CTXPRESS_AGENT_API_KEY`），不进入计划、日志或结果。作者进程在独立进程组中运行，超时或取消时整组终止。评分调用作者的 `evaluate_browsecomp_plus`，评判模型的用量单独记录，不计入方法费用。
 
-`ctxpress acm-author` 仍只做固定源码与输入的核对，不启动作者进程；运行作者模型请用上面的评测家族。目前只用本地替身检查过（替身仓库、假模型服务和假评判，见 `tests/test_browsecomp.py`），还没有部署权重、准备索引或取得真实成绩。
+`ctxpress acm-author` 仍只做固定源码与输入的核对，不启动作者进程；运行作者模型请用上面的评测家族。本机验证（2026-10-07，RTX 3080 16 GB）：作者代码 + ACM iter3 权重经 vLLM 0.31 以 FP8 部署（与作者相同的 `--tool-call-parser qwen3_xml`，32k 窗口），在自造的小语料和接口相同的替代 BM25 检索上跑通统一评测：模型会检索、读文档、在上下文接近上限时调用 `manage_context`；ctxpress 记下每次请求的用量、vLLM 前缀缓存命中和摘要旁路调用，作者评分正常读回。FP8、较小窗口和替代语料下的结果不是论文复现，官方 BrowseComp-Plus 数据需要先在 Hugging Face 接受条款。替身测试见 `tests/test_browsecomp.py`。
 
 ## 离线源码对照
 

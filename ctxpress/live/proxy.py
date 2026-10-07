@@ -77,7 +77,8 @@ def is_native_compaction(body, turn_metadata=None, compact_prompt=None):
 
 
 def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_retries=0,
-                 allow_native_compaction=True, compact_prompt=None, method_tools=None, upstream_key=None):
+                 allow_native_compaction=True, compact_prompt=None, method_tools=None, upstream_key=None,
+                 chat_session=None, chat_volatile=None):
     up = urllib.parse.urlsplit(upstream)
     vp = urllib.parse.urlsplit(via) if via else None
     lock = threading.Lock()
@@ -161,12 +162,12 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                     from ctxpress.live import chat
                     j = json.loads(body)
                     original = j
-                    key = chat.session_key(j)
+                    key = chat_session or chat.session_key(j)     # a dedicated proxy serves one conversation
                     if summaries and chat.rewritable(j):
                         summary_headers = outgoing(self.headers)
                         summarizer = chat.ChatSummarizer(connect, path, summary_headers, j,
                             lambda row: record(dict(row, session=key)))
-                    j, info = chat.rewrite_chat(rewriter, j, key, summarizer=summarizer)
+                    j, info = chat.rewrite_chat(rewriter, j, key, summarizer=summarizer, volatile=chat_volatile)
                     if info is not None:
                         info.update(model=j.get('model'), dialect=dialect)
                         body = json.dumps(j, ensure_ascii=False).encode("utf-8")
@@ -446,7 +447,8 @@ def find_usage(raw):
 
 
 def serve(method_factory, port, upstream, via=None, log=None, params=DEFAULT, host="0.0.0.0", store_dir=None, store_prefix=None,
-          retrieve_tool=None, summarizer=None, codex_method_tools=False, control_receipts=None, upstream_key=None):
+          retrieve_tool=None, summarizer=None, codex_method_tools=False, control_receipts=None, upstream_key=None,
+          chat_session=None, chat_volatile=None):
     def live_factory():
         method = method_factory()
         method.validate_live()
@@ -462,6 +464,7 @@ def serve(method_factory, port, upstream, via=None, log=None, params=DEFAULT, ho
                                   method_tools=adapter,
                                   summaries=sample.requires_summary and summarizer is None,
                                   max_overflow_retries=sample.max_overflow_retries, upstream_key=upstream_key,
+                                  chat_session=chat_session, chat_volatile=chat_volatile,
                                   allow_native_compaction=sample.allow_native_compaction,
                                   compact_prompt=sample.codex_config.get('compact_prompt') if not sample.allow_native_compaction else None))
     return srv, rw

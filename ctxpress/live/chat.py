@@ -11,6 +11,11 @@ assembled back into a valid Chat Completions body:
   - method instructions are appended to the first system message (many chat templates accept system text only
     at the start), or become a leading system message when the request has none.
 Messages the method did not touch are copied byte-for-byte from the request.
+
+Some hosts annotate the newest tool result with a changing signal (the ACM agent appends
+"[CURRENT CONTEXT TOKEN: N]" to the last tool message and drops it from the previous one). A `volatile` regex
+names such a suffix: it is left out of the item the method sees, so moving it is not a history revision, and it is
+put back when the method rewrites that output.
 """
 from __future__ import annotations
 import copy, hashlib, json, re, time
@@ -34,7 +39,16 @@ def _media(content):
             for p in content if isinstance(p, dict) and p.get("type") in MEDIA_PARTS]
 
 
-def flatten(body):
+def volatile_split(text, volatile):
+    """(text without the host's volatile suffix, the suffix) for a tool result."""
+    if volatile and isinstance(text, str):
+        match = re.search(volatile, text)
+        if match and match.end() == len(text):
+            return text[:match.start()], text[match.start():]
+    return text, ""
+
+
+def flatten(body, volatile=None):
     """Flat items for the shared Rewriter, and for each the (message index, part) it came from.
 
     A part is "message" (the whole message), "text", "reasoning" or ("call", j) for an assistant's j-th tool call.
@@ -59,7 +73,8 @@ def flatten(body):
                               "arguments": arguments if isinstance(arguments, str) else json.dumps(arguments or {})})
                 refs.append((i, ("call", j)))
         elif role == "tool":
-            item = {"type": "function_call_output", "call_id": message.get("tool_call_id"), "output": _text(content)}
+            item = {"type": "function_call_output", "call_id": message.get("tool_call_id"),
+                    "output": volatile_split(_text(content), volatile)[0]}
             if _media(content):
                 item["media"] = _media(content)
             items.append(item); refs.append((i, "message"))
@@ -86,7 +101,7 @@ def rewritable(body):
     return isinstance(body.get("messages"), list) and bool(body.get("tools"))
 
 
-def unflatten(body, refs, flat, out):
+def unflatten(body, refs, flat, out, volatile=None):
     """Assemble the rewritten flat items `out` (from `flat` + method summaries / instructions) into a chat body."""
     index = {id(item): k for k, item in enumerate(flat)}
     original = body.get("messages") or []
@@ -144,7 +159,7 @@ def unflatten(body, refs, flat, out):
         message = copy.deepcopy(src)
         if src.get("role") == "tool":
             if item is not flat[k]:
-                text = item.get("output", "")
+                text = item.get("output", "") + volatile_split(_text(src.get("content")), volatile)[1]
                 media = [m["chat"] for m in flat[k].get("media") or []]
                 message["content"] = [{"type": "text", "text": text}, *media] if media else text
             open_calls.discard(src.get("tool_call_id"))
@@ -176,15 +191,15 @@ def unflatten(body, refs, flat, out):
     return dict(body, messages=messages)
 
 
-def rewrite_chat(rewriter, body, key=None, summarizer=None):
+def rewrite_chat(rewriter, body, key=None, summarizer=None, volatile=None):
     """(new body, info) with the method applied, or (body, None) when the request is not an agent turn."""
     if not rewritable(body):
         return body, None
-    flat, refs = flatten(body)
+    flat, refs = flatten(body, volatile)
     rewritten, info = rewriter.rewrite_body({"input": flat}, key or session_key(body), summarizer=summarizer)
     if info is None:
         return body, None
-    return unflatten(body, refs, flat, rewritten["input"]), info
+    return unflatten(body, refs, flat, rewritten["input"], volatile), info
 
 
 def _events(text):

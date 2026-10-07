@@ -215,3 +215,36 @@ def test_summaries_use_the_same_upstream_and_strip_thinking(tmp_path):
     assert text == "A short summary."
     assert Upstream.received[0][1]["model"] == "acm-9b" and Upstream.received[0][1]["messages"][0]["role"] == "system"
     assert rows[0]["type"] == "summary" and rows[0]["completed"] and rows[0]["usage"]["output_tokens"] == 7
+
+
+MARKER = r"\n\n\[CURRENT CONTEXT TOKEN: \d+\]"
+
+
+def with_marker(body, n):
+    """The ACM author loop's habit: a token-count marker on the newest tool result only."""
+    body = copy.deepcopy(body)
+    last = max(k for k, m in enumerate(body["messages"]) if m["role"] == "tool")
+    body["messages"][last]["content"] += f"\n\n[CURRENT CONTEXT TOKEN: {n}]"
+    return body
+
+
+def test_a_moving_volatile_marker_is_not_a_history_revision():
+    rw = Rewriter(lambda: build({"class": "ComplexityTrap", "args": {"n": 1}}))
+    chat.rewrite_chat(rw, with_marker(conversation(3), 9000), key="job", volatile=MARKER)
+    out, info = chat.rewrite_chat(rw, with_marker(conversation(4), 12000), key="job", volatile=MARKER)
+    assert info["history_rebased"] is False and info["request"] == 2
+    tools = [m["content"] for m in out["messages"] if m["role"] == "tool"]
+    assert tools[-1].endswith("[CURRENT CONTEXT TOKEN: 12000]") and not tools[-1].startswith("Old environment output")
+    _, plain = chat.rewrite_chat(Rewriter(lambda: build({"class": "NoCompaction"})), with_marker(conversation(3), 1), key="a")
+    assert plain is not None                                       # without the option nothing is stripped
+
+
+def test_a_rewritten_output_keeps_its_volatile_marker():
+    body = with_marker(conversation(2), 5000)
+    flat, refs = chat.flatten(body, MARKER)
+    last = max(n for n, x in enumerate(flat) if x["type"] == "function_call_output")
+    assert "CURRENT CONTEXT TOKEN" not in flat[last]["output"]
+    out = list(flat)
+    out[last] = dict(flat[last], output="shortened")
+    assembled = chat.unflatten(body, refs, flat, out, MARKER)
+    assert [m for m in assembled["messages"] if m["role"] == "tool"][-1]["content"] == "shortened\n\n[CURRENT CONTEXT TOKEN: 5000]"

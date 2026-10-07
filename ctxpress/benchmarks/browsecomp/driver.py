@@ -25,12 +25,17 @@ evaluate_browsecomp_plus(input_dir=spec['input_dir'], ground_truth=spec['ground_
 """
 
 
-def start_proxy(entry, upstream, log, store_dir=None, key=None):
+# The author agent appends this to its newest tool result and drops it from the previous one each turn.
+TOKEN_HINT = r"\n\n\[CURRENT CONTEXT TOKEN: \d+\]"
+
+
+def start_proxy(entry, upstream, log, store_dir=None, key=None, session=None):
     from ctxpress.live.proxy import serve
     from ctxpress.live.factory import frozen_factory
     from ctxpress.methods import build
     server, _ = serve(frozen_factory(build(entry)), 0, upstream, log=str(log), host='127.0.0.1', store_dir=store_dir,
-                      upstream_key=os.environ.get(key) if key else None)
+                      upstream_key=os.environ.get(key) if key else None,
+                      chat_session=session, chat_volatile=TOKEN_HINT if session else None)
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
     return server, worker
@@ -97,10 +102,11 @@ def execute(adapter, task, entry, config, job, *, folder, label):
     logs = dict(agent=folder / 'ctxpress-requests.jsonl', summarizer=folder / 'summarizer-requests.jsonl',
                 grader=folder / 'grader-requests.jsonl')
     servers = [start_proxy(entry, environment['agent_upstream'], logs['agent'], store_dir=str(folder / 'store'),
-                           key='CTXPRESS_AGENT_API_KEY'),
+                           key='CTXPRESS_AGENT_API_KEY', session='browsecomp:' + job['id']),
                start_proxy({'class': 'NoCompaction'}, environment['summarizer']['upstream'], logs['summarizer'],
                            key='CTXPRESS_SUMMARIZER_API_KEY')]
-    base = lambda server: f'http://127.0.0.1:{server.server_port}/v1'
+    # The upstream URL carries the API prefix (e.g. /v1); clients append only the endpoint path.
+    base = lambda server: f'http://127.0.0.1:{server.server_port}'
     agent_base, summarizer_base = base(servers[0][0]), base(servers[1][0])
     results = folder / 'author-results'
     command = [environment['python'], '-m', 'src.run', '--mode', 'run', '--client', 'litellm', '--benchmark', 'browsecomp-plus',
@@ -154,7 +160,7 @@ def grade_question(adapter, task, config, folder, results, model, run_id, output
                                        ground_truth=environment['ground_truth'], eval_dir=str(folder / 'author-eval'),
                                        model=environment['grader']['model'], qrels=environment.get('qrels')))
     keys = dict(OPENAI_API_KEY=PLACEHOLDER,
-                OPENAI_BASE_URL=f'http://127.0.0.1:{server[0].server_port}/v1')
+                OPENAI_BASE_URL=f'http://127.0.0.1:{server[0].server_port}')
     try:
         status = run_owned([environment['python'], '-c', GRADE, str(spec)], cwd=environment['checkout'], env=child_env(keys),
                            log=folder / 'grader.log', timeout=1800, journal=folder / 'process-grader.json')
