@@ -1,0 +1,29 @@
+{
+  "acon": {
+    "repository": "https://github.com/microsoft/acon",
+    "revision": "d63f9ae18959dc7215ff62899c94c5e8c56847ae",
+    "sha256_lf": {
+      "src/productive_agents/ctxopt/base.py": "d6b52a26288760c18b60152be6e95ee8147b965d1293744734a706ac86de3fdb",
+      "src/productive_agents/ctxopt/history_optimizer.py": "343089f43f8235889303eea73cd323686a649f1dc3b8d374a988c9d243b44306",
+      "src/productive_agents/ctxopt/obs_optimizer.py": "ed21a897c90f6ae06b2d21ce563423dea30014a8df4db4b4896c439ba4915f9e",
+      "experiments/appworld/prompts/context_opt/system_prompt.jinja": "f9a0a5188d643d0990a422e94557e781e9e4f9c00a6506f699c4956b7096a392",
+      "experiments/appworld/prompts/context_opt/prompt_user.jinja": "f500677dfd6609aef26fe2dbb3f9c928d2bd7ea8c0e432114feeed0636c7b385",
+      "experiments/appworld/prompts/context_opt/prompt_history_v2.jinja": "0508caa837c50403be2c8545646359a0fb72009fb14df3a8acf85aedaf649834"
+    }
+  },
+  "tokenpilot": {
+    "repository": "https://github.com/zjunlp/LightRSI",
+    "revision": "9f0f19308a30445438779efbf3108a7d965a55c7",
+    "sha256_lf": {
+      "components/packages/features/eviction/src/planning/analyzer.ts": "a119622db91352101c849780e739d0d6598c70d1772d364b4260c2d0393f2e32"
+    }
+  },
+  "acm": {
+    "repository": "https://github.com/lixiaochuan2020/agentic-context-management",
+    "revision": "f06f90e728af8580a4515812425c1620144145a2",
+    "sha256_lf": {
+      "src/history.py": "40c7687413bbec16d041ec516dbfc31183b0f0efcd909161979d54c9b6a9ceec",
+      "src/runner.py": "4514b4cb65b31d1eeaa954fe1b7e0690563507dbdf9faba6d89095fb0fe42a00"
+    }
+  }
+}

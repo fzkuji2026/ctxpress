@@ -32,6 +32,8 @@ class AgentFold(Method):
     budget_spec = BudgetSpec("keep_segments", "segments", "recent completed work segments", 2)
 
     def __init__(self, keep_segments=None, deep=6, *, budget=None, summary_guidance=None):
+        if type(deep) is not int or deep < 1:
+            raise ValueError("deep must be a positive integer")
         keep_segments = self.budget_spec.resolve(budget, keep_segments)
         self.budget = keep_segments
         self.summary_guidance = validate_guidance(summary_guidance)
@@ -58,6 +60,8 @@ class ACON(Method):
     requires_summary = True
 
     def __init__(self, t_hist=64 * K, t_obs=2 * K, *, history_guidance=None, observation_guidance=None):
+        if any(type(t) is not int or t < 1 for t in (t_hist, t_obs)):
+            raise ValueError("t_hist and t_obs must be positive integers")
         self.t_hist, self.t_obs = t_hist, t_obs
         self.history_guidance = validate_guidance(history_guidance)
         self.observation_guidance = validate_guidance(observation_guidance)
@@ -222,6 +226,8 @@ class ReSum(Method):
     requires_summary = True
 
     def __init__(self, k=40, *, summary_guidance=RESUM_GUIDANCE):
+        if type(k) is not int or k < 1:
+            raise ValueError("k must be a positive integer")
         self.k = k
         self.summary_guidance = validate_guidance(summary_guidance)
         self.name = f"ReSum（每 {k} 次请求）"

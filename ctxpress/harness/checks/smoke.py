@@ -29,6 +29,7 @@ def smoke_args(name, inputs):
         "SWEPruner": {"url": inputs["pruner"]}, "ComplexityTrapSummary": {"n": 8, "m": 4},
         "ComplexityTrapHybrid": {"n": 12, "m": 4, "w": 4}, "CWL": {"budget": 10000}, "AgentFold": {"budget": 2, "deep": 4},
         "ACON": {"t_hist": 20000, "t_obs": 1000}, "ReSum": {"k": 10}, "WorkingView": {"trigger": 20000, "target": 12000},
+        "ACONSource": {"t_hist": 2000, "t_obs": 500}, "TokenPilotLifecycle": {"batch_turns": 4, "budget": 800},
         "CostModel": {"profile": inputs["profile"]}, "ScoredMethod": {"budget": 8000},
         "Composed": {"methods": [{"class": "EntryTruncation", "args": {"inner": inner, "budget": 1200}},
                                  {"class": "Pichay"}]},
@@ -101,7 +102,9 @@ class FakeAPI:
                     shared += 1
                 self.previous = text
             self.calls.append(dict(main=main, chars=len(text)))
-            turn = sum(1 for item in body.get("input", []) if isinstance(item, dict) and item.get("type") == "function_call_output")
+            # History compression removes visible outputs. IDs must still be
+            # unique, especially for authoritative method-control receipts.
+            turn = sum(c["main"] for c in self.calls) - 1 if main else len(self.calls)
         usage = dict(input_tokens=len(text) // 4, output_tokens=40, total_tokens=len(text) // 4 + 40,
                      input_tokens_details=dict(cached_tokens=shared // 4))
         namespace = next((t for t in body.get("tools") or [] if isinstance(t, dict) and t.get("type") == "namespace"
@@ -114,9 +117,26 @@ class FakeAPI:
             item = dict(type="function_call", id=f"fc_{turn}", call_id=f"call_{turn}", name="shell", status="completed",
                         arguments=json.dumps(dict(command=["bash", "-lc", command(turn)])))
         else:                                              # a summary, reflection or other side call
+            reply = "Synthetic summary: the task, the files read so far and the next step."
+            # Exercise real lifecycle dispatch/accounting with deterministic fake judgments.
+            for message in body.get("input", []):
+                if message.get("role") != "user":
+                    continue
+                content = message.get("content", "")
+                if isinstance(content, list):
+                    content = "\n".join(b.get("text", "") for b in content if isinstance(b, dict))
+                try:
+                    data = json.loads(content)
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(data, dict) and "baseVersion" in data and "delta" in data:
+                    reply = json.dumps(dict(baseVersion=data["baseVersion"], taskUpdates=[dict(
+                        taskId="synthetic-task", objective="fixture", lifecycle="evictable",
+                        coveredTurnAbsIds=list(dict.fromkeys(s["turn"] for s in data["delta"])),
+                        completionEvidence=["synthetic completion"], unresolvedQuestions=[])]))
             item = dict(type="message", id=f"msg_{turn}", role="assistant", status="completed",
                         content=[dict(type="output_text", annotations=[],
-                                      text="Synthetic summary: the task, the files read so far and the next step.")])
+                                      text=reply)])
         response = dict(id=f"resp_{len(self.calls)}", object="response", created_at=1, status="completed", model=body.get("model"),
                         output=[item], usage=usage)
         if body.get("stream"):
@@ -137,7 +157,11 @@ class FakeAPI:
 def method_call(step, names, text, disabled):
     """The scripted agent also uses a method's own tools, as the method's instructions ask: CWL marks exploration and
     action chunks, DTOC hides older outputs by tool key, ACM folds the history and later queries the folded memory."""
-    if "delimiter" in names:                                       # CWL
+    if "fold_context" in names and step and step % 6 == 0:
+        steps = [int(x) for x in re.findall(r"AgentFold step (\d+)", text)]
+        if steps:
+            return "fold_context", dict(start_step=min(steps), end_step=max(steps), summary="Synthetic findings retained.")
+    elif "delimiter" in names:                                       # CWL
         part = step // 9
         act = part % 3 == 2                                        # two exploration chunks, then an action on both
         if step % 9 == 0:

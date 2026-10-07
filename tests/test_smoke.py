@@ -29,9 +29,11 @@ def test_every_method_runs_and_reports_statistics(tmp_path):
 
 
 def test_method_tools_run_in_the_real_tool_server(tmp_path):
-    report = smoke(tmp_path / "tools", methods=["CWL", "DTOC", "ACM"], turns=30, chars=6000)
+    report = smoke(tmp_path / "tools", methods=["CWL", "DTOC", "ACM", "AgentFoldTools"], turns=30, chars=6000)
     rows = {row["method"]: row for row in report["methods"]}
     assert all(row["ok"] for row in rows.values()), rows
     assert rows["CWL"]["operations"].get("delete")                           # completed chunks evicted
     assert rows["DTOC"]["operations"].get("placeholder")                     # outputs hidden by tool key
     assert rows["ACM"]["operations"].get("segment_summary")                  # history folded into memory
+    assert rows["AgentFoldTools"]["operations"].get("segment_summary", 0) >= 2
+    assert rows["AgentFoldTools"]["model_side_calls"] == 0  # host writes summaries in tool args

@@ -87,12 +87,12 @@ the original implementation.
 | DTOC | `DTOC` | [arXiv:2609.26121](https://arxiv.org/abs/2609.26121) |
 | Pichay | `Pichay` | [arXiv:2603.09023](https://arxiv.org/abs/2603.09023) |
 | ClawVM | `ClawVM` | [arXiv:2604.10352](https://arxiv.org/abs/2604.10352) |
-| TokenPilot | `TokenPilot` | [arXiv:2606.17016](https://arxiv.org/abs/2606.17016) |
+| TokenPilot: idle-age approximation / model-driven lifecycle adaptation | `TokenPilot`, `TokenPilotLifecycle` | [arXiv:2606.17016](https://arxiv.org/abs/2606.17016) |
 | SWE-Pruner | `SWEPruner` | [arXiv:2601.16746](https://arxiv.org/abs/2601.16746) |
 | ARC | `ARC` | [arXiv:2607.25066](https://arxiv.org/abs/2607.25066) |
 | ACM | `ACM` | [arXiv:2607.23809](https://arxiv.org/abs/2607.23809) |
-| AgentFold | `AgentFold` | [arXiv:2510.24699](https://arxiv.org/abs/2510.24699) |
-| ACON | `ACON` | [arXiv:2510.00615](https://arxiv.org/abs/2510.00615) |
+| AgentFold: segment approximation / agent-selected folding tool | `AgentFold`, `AgentFoldTools` | [arXiv:2510.24699](https://arxiv.org/abs/2510.24699) |
+| ACON: generic guidelines / public AppWorld templates | `ACON`, `ACONSource` | [arXiv:2510.00615](https://arxiv.org/abs/2510.00615) |
 | ReSum | `ReSum` | [arXiv:2509.13313](https://arxiv.org/abs/2509.13313) |
 | Cost model (fixed or offline-tuned policy) | `CostModel`, `AutoCostModel` | this project |
 | Scored method base class | `ScoredMethod` | this project |
@@ -100,6 +100,11 @@ the original implementation.
 Wrappers compose methods: `Composed`, `EntryTruncation`, `PinRequirements`, `WithMemory`, `Trigger`. Details,
 budgets and the differences from each original are in [docs/methods.md](docs/methods.md); adding a method usually
 takes one scoring function ([docs/new_method.md](docs/new_method.md)).
+
+All variants use the same `ctxpress codex`, `ctxpress claude`, Python API and `ctxpress eval` interfaces;
+author-source comparisons in `repro/` are test oracles, not standalone baseline runners.
+The three new adaptations have offline integration tests, not real-model benchmark results. Their precise
+reproduction scope and pinned sources are documented in [the method guide](docs/methods.md#新增源码适配与统一入口).
 
 ## Results
 

@@ -1,6 +1,7 @@
 """Synthetic method checks. No model/network calls; not benchmark evidence."""
 from collections import Counter
 import copy
+import json
 from tempfile import TemporaryDirectory
 
 from ctxpress.live.rewrite import Rewriter
@@ -9,11 +10,18 @@ from ctxpress.methods import build
 # Only implementations whose IO is supplied by the harness, never remote pruners.
 SUPPORTED = {'NoCompaction', 'CodexAutoCompact', 'ComplexityTrap', 'ComplexityTrapSummary',
              'ComplexityTrapHybrid', 'KeepLastTokens', 'Pichay', 'ClawVM', 'ARC',
-             'AgentDiet', 'CWL', 'DTOC', 'SlidingWindow', 'CliffCompaction', 'ACM'}
+             'AgentDiet', 'CWL', 'DTOC', 'SlidingWindow', 'CliffCompaction', 'ACM',
+             'AgentFoldTools', 'TokenPilotLifecycle', 'ACONSource'}
 
 
 class FakeSummary:
     def summarize_prompt(self, system, user, purpose='history', **kwargs):
+        if purpose == 'lifecycle':
+            data = json.loads(user)
+            return json.dumps(dict(baseVersion=data['baseVersion'], taskUpdates=[dict(
+                taskId='synthetic-task', objective='synthetic fixture', lifecycle='evictable',
+                coveredTurnAbsIds=list(dict.fromkeys(s['turn'] for s in data['delta'])),
+                completionEvidence=['synthetic completion'], unresolvedQuestions=[])]))
         return 'Synthetic summary: preserve the task, earlier findings, and continue using workspace tools.'
 
     def summarize(self, items, **kwargs):
@@ -45,6 +53,9 @@ def check(name, args=None, turns=60, output_chars=4096):
             return output
         for index in range(turns):
             call_name, arguments = 'read', '{}'
+            if name == 'AgentFoldTools' and index == turns - 2:
+                call_name = 'fold_context'
+                arguments = json.dumps(dict(start_step=1, end_step=index, summary='Synthetic completed steps.'))
             if name == 'ACM' and index in (turns // 2, turns - 2):
                 call_name = 'manage_context'
             if name == 'ACM' and index == turns - 1:

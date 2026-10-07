@@ -1,20 +1,16 @@
-"""Bounded bridge to ACM's pinned author runner; distinct from Codex ACM tools.
+"""Read-only preparation of ACM author references for unified integration.
 
 No installation, download, training, server startup, or model call during prepare.
-Execution is opt-in and requires an already serving checkpoint and retrieval stack.
+Standalone execution is disabled. Baselines run through the shared method/evaluation interfaces.
 """
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
-import signal
 import subprocess
-import sys
 from urllib.parse import urlsplit
 
 from ctxpress.harness.jobs import plan as eval_plan
-from ctxpress.core import processes
 from ctxpress.harness.results.review import write
 
 REVISION = 'f06f90e728af8580a4515812425c1620144145a2'
@@ -69,10 +65,11 @@ def prepare(checkout, python, model, api_base, data, config, index, output, limi
         cwd=str(root), command=command, timeout=timeout, source_files=sources,
         inputs=[dict(path=str(p), sha256=eval_plan.file_sha256(p)) for p in (python, data, config)],
         index=str(index), model=model, checkpoint_identity_verified=False,
-        execution_verified=False, official_grade_verified=False,
+        execution_verified=False, official_grade_verified=False, execution_supported=False,
+        unified_method={'class': 'ACM'},
         limits=['The serving endpoint must actually host the declared author checkpoint; its model name is not proof.',
                 'Dependencies, BM25 corpus/index, summarizer/grader configuration and a served checkpoint must already exist.',
-                'This bridge preserves the author runner; it does not add a ninth benchmark family or pool its outcomes with Codex.',
+                'This is a reference manifest only. Standalone author execution is disabled; it does not register a benchmark.',
                 'An exit code is execution status, not official grade acceptance; index/dependency trees are not fully frozen.'])
     output.mkdir(parents=True, exist_ok=False)
     write(output/'launch.json', document)
@@ -80,51 +77,9 @@ def prepare(checkout, python, model, api_base, data, config, index, output, limi
 
 
 def execute(document, output):
-    """Linux process ownership, including cleanup on timeout/cancellation."""
-    if not sys.platform.startswith('linux'):
-        raise ValueError('author execution currently requires Linux; preparation is portable')
-    _, sources = verify_checkout(document['cwd'])
-    if sources != document['source_files']:
-        raise ValueError('author source changed since preparation')
-    for item in document['inputs']:
-        if eval_plan.file_sha256(regular(item['path'])) != item['sha256']:
-            raise ValueError('author launch input changed')
-    output = Path(output)
-    if (output/'execution.json').exists() or (output/'author.log').exists():
-        raise ValueError('author launch output already used; no implicit retry')
-    status = 'failed'
-    process = None
-    birth = None
-    def cancelled(signum, frame):
-        raise KeyboardInterrupt('author execution cancelled')
-    old = signal.signal(signal.SIGTERM, cancelled)
-    try:
-        with (output/'author.log').open('xb') as log:
-            process = subprocess.Popen(document['command'], cwd=document['cwd'], stdin=subprocess.DEVNULL,
-                                       stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-            birth = processes.identity(process.pid)
-            try:
-                code = process.wait(timeout=document['timeout'])
-                status = 'exited' if code == 0 else 'failed'
-            except subprocess.TimeoutExpired:
-                status = 'timed_out'
-    except KeyboardInterrupt:
-        status = 'cancelled'
-        raise
-    finally:
-        try:
-            if process is not None:
-                # Own the fresh process group even if its leader has already exited.
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                process.wait(timeout=10)
-                write(output/'execution.json', dict(status=status, returncode=process.returncode,
-                    pid=process.pid, identity=birth, official_grade_verified=False))
-        finally:
-            signal.signal(signal.SIGTERM, old)
-    return status
+    """Compatibility guard: author processes must not bypass the shared evaluator."""
+    raise ValueError('standalone ACM execution is disabled; use the registered ACM method through '
+                     'ctxpress codex/claude or ctxpress eval. The trained author policy is not yet integrated.')
 
 
 def main(argv=None):
@@ -133,13 +88,11 @@ def main(argv=None):
         parser.add_argument('--'+flag, required=True)
     parser.add_argument('--limit', type=int, default=1)
     parser.add_argument('--timeout', type=int, default=1800)
-    parser.add_argument('--execute', action='store_true', help='explicitly invoke the prepared author runner')
+    parser.add_argument('--execute', action='store_true', help='retired: standalone execution is disabled; use unified methods/eval')
     args = parser.parse_args(argv)
-    document = prepare(args.checkout, args.python, args.model, args.api_base, args.data, args.config,
+    if args.execute:
+        parser.error('standalone author execution is disabled; use the registered ACM method through ctxpress eval/codex/claude')
+    prepare(args.checkout, args.python, args.model, args.api_base, args.data, args.config,
                        args.index, args.output, args.limit, args.timeout)
     print(Path(args.output)/'launch.json')
-    if args.execute:
-        status = execute(document, args.output)
-        print(status)
-        return 0 if status == 'exited' else 1
     return 0

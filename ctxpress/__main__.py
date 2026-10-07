@@ -75,7 +75,7 @@ def main(argv=None):
     sub.add_parser("status")
     a = sub.add_parser("run"); a.add_argument("config"); a.add_argument("--workers", type=int)
     a = sub.add_parser("eval", help="plan, run, inspect or report real execution jobs")
-    sub.add_parser("acm-author", help="prepare or explicitly run the pinned ACM author agent")
+    sub.add_parser("acm-author", help="inspect pinned ACM author inputs; execution uses unified methods/eval")
     sub.add_parser("analyze", help="process evaluation of a request log, evaluation directory or strict report")
     sub.add_parser("smoke", help="run every method through the real proxy against a fake model; synthetic")
     a.add_argument("eval_args", nargs=argparse.REMAINDER)

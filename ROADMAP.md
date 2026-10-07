@@ -18,9 +18,17 @@ ctxpress 是 Agent 上下文管理工具箱：所有方法复用同一个改写�
 | 方法机制预检查 | `ctxpress check-method` | 合成历史和假摘要；不代表真实 CLI 执行或方法质量 |
 | 全方法冒烟测试 | `ctxpress smoke`：每个方法经真实代理、假模型和真实 `ctxpress mcp` 跑通并输出统一统计 | 合成用量；不代表质量或费用 |
 | 代码结构（v1.0.0） | 框架分层 core → methods → live → hosts；评测按职责（jobs / runtime / results / checks）和 benchmark 家族分组 | `tests/test_layering.py` 检查依赖方向 |
-| ACM | 工具机制适配及作者运行桥接 | 作者 9B 权重未部署，未开始真实评测 |
+| ACM | 统一方法接口与作者机制对照；独立作者执行已停用 | 作者 9B 权重未部署，训练策略尚未接入统一评测 |
 | 正式比较 v7 | SWE-bench Verified 130 个、SWE-Milestone 39 个作业跑完，经统一验收：169 个作业的资源清理全部核验，缺陷排除与缺用量分别记录 | 每家族 1–3 次重复，结果是描述性的；长任务受 100 次调用预算截断 |
 | 持续集成 | GitHub Actions：Linux / macOS / Windows × Python 3.10 / 3.12，跑全部测试和全方法冒烟测试 | 评测用例只在 Linux 上运行 |
+
+## 本轮框架完善（2026-10-06）
+
+- 新增 `AgentFoldTools`、`TokenPilotLifecycle`、`ACONSource`，统一注册与配置，共用 Codex / Claude Code 代理、模型服务、工具、记账与固定八家族规划。旧近似保留，新实现不替换冻结实验。
+- 新增固定源码对照：TokenPilot 选择核心、ACON 模板/协议、ACM 归档边界。合成对照结果和真实成绩分开记录，见 [方法文档](docs/methods.md)。
+- SWE-Pruner 检查默认严格要求发表文本和 token 数匹配；旧结果仍不通过，新增离线诊断不覆盖原证据。非法方法参数在启动前拒绝。
+- `eval review` 加入按任务聚类的配对 bootstrap 与 sign-flip 检验；缺失/排除的配对不填零，单任务重复不作跨任务推断。
+- 作者独立执行不作为 baseline 入口。训练策略、真实摘要对照、长上下文和多宿主正式比较仍待完成；不自动恢复已停止的实验。
 
 ## 进行中
 
@@ -41,6 +49,6 @@ ctxpress 是 Agent 上下文管理工具箱：所有方法复用同一个改写�
 - 官方评测：`ctxpress eval configure / plan / run / status / cancel / recover / resume`。
 - 只读验收：`ctxpress eval review --directory <run> --reference <label> --output <new-dir>`。
 - 过程分析：`ctxpress analyze <log-or-report> --output <new-dir>`。
-- ACM 作者运行：`ctxpress acm-author --help`；默认只准备，显式 `--execute` 才启动。
+- ACM：通过统一方法入口运行；`ctxpress acm-author` 仅核对作者参考输入，独立执行已停用。
 
 接口说明见 [评测文档](docs/evaluation.md)、[Benchmark 适配器](docs/benchmarks.md)、[ACM 接入](docs/acm.md) 和 [添加方法](docs/new_method.md)。

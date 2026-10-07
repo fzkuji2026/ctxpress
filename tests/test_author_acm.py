@@ -37,22 +37,23 @@ def test_inline_credentials_and_missing_index_refused(tmp_path, monkeypatch):
         bridge.prepare(**dict(args, index=tmp_path/'missing'))
 
 
-@pytest.mark.linux_only
-def test_author_bridge_timeout_stops_owned_process_without_grade_claim(tmp_path, monkeypatch):
+def test_author_bridge_cannot_launch_outside_shared_evaluator(tmp_path, monkeypatch):
     args = prepared(tmp_path, monkeypatch)
     plan = bridge.prepare(**args, timeout=1)
-    plan['command'] = [sys.executable, '-c', 'import time; time.sleep(30)']
-    assert bridge.execute(plan, args['output']) == 'timed_out'
-    receipt = json.loads((args['output']/'execution.json').read_text())
-    assert receipt['returncode'] != 0 and not receipt['official_grade_verified']
-    with pytest.raises(ValueError, match='already used'):
+    monkeypatch.setattr(bridge.subprocess, 'Popen', lambda *a, **kw: pytest.fail('standalone execution launched'))
+    assert plan['execution_supported'] is False
+    assert plan['unified_method'] == {'class': 'ACM'}
+    with pytest.raises(ValueError, match='standalone ACM execution is disabled'):
         bridge.execute(plan, args['output'])
+    assert not (args['output']/'author.log').exists()
 
 
-def test_changed_launch_inputs_rejected(tmp_path, monkeypatch):
+def test_retired_execute_cli_rejected_before_preparing_inputs(tmp_path, monkeypatch):
     args = prepared(tmp_path, monkeypatch)
-    plan = bridge.prepare(**args)
-    args['data'].write_text('[1]')
-    if sys.platform.startswith('linux'):
-        with pytest.raises(ValueError, match='input changed'):
-            bridge.execute(plan, args['output'])
+    monkeypatch.setattr(bridge, 'prepare', lambda *a, **kw: pytest.fail('retired entry prepared inputs'))
+    argv = ['--execute']
+    for key, value in args.items():
+        argv += ['--' + key.replace('_', '-'), str(value)]
+    with pytest.raises(SystemExit) as exc:
+        bridge.main(argv)
+    assert exc.value.code == 2

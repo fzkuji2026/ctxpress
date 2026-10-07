@@ -17,6 +17,14 @@ sys.path.insert(0, str(ROOT / "repro"))
 from swe_pruner_compare import author_functions, compare_case
 
 
+def comparison_passed(counts, scope="published"):
+    """Adapter agreement alone cannot certify a published-model reproduction."""
+    n = counts.get("cases", 0)
+    keys = ("adapter_same",) if scope == "adapter" else (
+        "adapter_same", "text_same", "source_tokens_same", "kept_tokens_same", "model_input_tokens_same")
+    return n > 0 and not counts.get("model_errors", 0) and all(counts.get(k) == n for k in keys)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--original", type=Path, default=ROOT.parent / "data/repro/swe-pruner")
@@ -27,6 +35,8 @@ def main(argv=None):
     ap.add_argument("--attention", choices=("native", "sdpa"), default="native",
                     help="sdpa omits the fusion layer's unused attention weights; record this numerical backend change")
     ap.add_argument("--token-scores", action="store_true", help="include all per-token scores (large artifacts)")
+    ap.add_argument("--acceptance", choices=("published", "adapter"), default="published",
+                    help="default fails on any published text/count mismatch; adapter checks only integration")
     a = ap.parse_args(argv)
     # Both the weights and their backbone/tokenizer have already been downloaded.
     os.environ["HF_HUB_OFFLINE"] = "1"
@@ -101,11 +111,13 @@ def main(argv=None):
                 counts[key] += result[key]
             counts["model_errors"] += bool(response.get("error_msg"))
             print(json.dumps(dict(index=index + 1, **{k: result[k] for k in ("instance_id", "text_same", "counts_same", "seconds")})), flush=True)
+    accepted = comparison_passed(counts, a.acceptance)
     report = dict(scope="published initial simple reads; excludes later modified files and unsupported shell commands",
+                  acceptance=a.acceptance, accepted=accepted,
                   counts=counts, **metadata)
     a.output.with_suffix(".summary.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2), flush=True)
-    return int(counts["model_errors"] > 0 or counts["adapter_same"] != counts["cases"])
+    return int(not accepted)
 
 
 if __name__ == "__main__":

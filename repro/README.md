@@ -85,3 +85,38 @@ and `runs/repro/swe_pruner_model_native100.summary.json`; each records input, so
 
 These scripts do not rerun SWE-bench tasks or reproduce aggregate solve rates. The adapter script also
 accepts `--records` JSONL containing `text`, `query`, and `response` to check another set of real service outputs.
+
+`swe_pruner_model.py` now defaults to `--acceptance published`: any published-text or token-count mismatch
+returns a failing exit status. `--acceptance adapter` explicitly tests only integration. An empty run never
+passes. Existing evidence files are unchanged. Inspect them without loading a model using:
+
+```bash
+python repro/swe_pruner_diagnose.py --inputs /prepared/inputs.jsonl --results /recorded/model.jsonl --output runs/repro/new-diagnosis.json
+```
+
+The offline diagnostic joins by trajectory/message, verifies source identity, rejects duplicate rows,
+recomputes equality instead of trusting flags and records file hashes. The existing 405-case data still
+has 271 text matches and a -1 model-input-token offset in every case; neither discrepancy is fixed or
+explained by that audit. Tokenizer/model reruns require the already prepared dependencies.
+
+## New shared-interface adaptations
+
+Runtime methods remain in `ctxpress.methods` and use the same Codex/Claude/Python/evaluation interfaces.
+These scripts only execute author code as independent test oracles; no new baseline runner is introduced.
+Source files must match the pinned LF-normalized hashes in `reference_sources.json` before execution.
+Raw file hashes are also recorded in each report; scripts never download source or install dependencies.
+
+```bash
+python repro/acon_compare.py --original /prepared/acon --output runs/repro/acon.json
+python repro/tokenpilot_compare.py --original /prepared/LightRSI --node node --output runs/repro/tokenpilot.json
+python repro/acm_compare.py --original /prepared/agentic-context-management --output runs/repro/acm.json
+```
+
+| Comparison | Observed checks | Limits |
+|---|---|---|
+| ACONSource vs Microsoft ACON `d63f9ae` | 117/117 template, rendered-prompt, argument, parsing and threshold checks | Requires existing Jinja2 for independent template rendering; same substituted token counter; no real compression model, optimized guideline search or distillation |
+| TokenPilotLifecycle vs LightRSI `9f0f193` | 300/300 seeded selection cases; unmodified TypeScript analyzer under Node 24 | Requires local Node >=22.7; only candidate selection, not LLM judgments, ingestion or the entire runtime. On WSL with Windows Node, place output on a Windows-accessible filesystem |
+| ACM vs author `f06f90e` | 500/500 normalized active histories; 127/127 normalized archives | Identical fake summaries; exact, documented empty-range error normalization; no real model, query-memory, restart or parallel-call comparison |
+
+AgentFoldTools implements autonomous granular/deep folding through the shared method tool protocol. It is
+a paper-mechanism adaptation with host-contract tests, not an author-code or trained-model reproduction.

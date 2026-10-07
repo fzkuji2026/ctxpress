@@ -95,6 +95,20 @@ def test_family_scope_stays_fixed():
     assert {benchmarks.get(name).task_start_description()['name'] for name in NAMES} == set(NAMES)
 
 
+@pytest.mark.parametrize('name', NAMES)
+def test_new_baselines_compile_through_all_shared_family_adapters(tmp_path, name):
+    root = fixture_data(tmp_path, name)
+    binary = tmp_path/'bin'; binary.mkdir(); (binary/'codex').write_bytes(b'synthetic fixture')
+    methods = [{'class': method, 'args': {}} for method in ('AgentFoldTools', 'ACONSource', 'TokenPilotLifecycle')]
+    cfg = dict(schema='ctxpress.eval', version=1, benchmark=name, start_mode='task_start', scope='benchmark',
+        model='main', tasks=[benchmarks.get(name).task_instances(root)[0]['id']], backend='codex_docker',
+        methods=methods, repeats=1, workers=1, prices={'models': {'main': rates()}},
+        environment={'data': str(root), 'bindir': str(binary)})
+    plan = eval_plan.compile_plan(cfg)
+    assert plan['run_count'] == 3 and plan['config']['methods'] == methods
+    assert plan['benchmark']['name'] == name
+
+
 @pytest.mark.parametrize('name,template', list(zip(NAMES, [
     'swe_milestone', 'swe_bench', 'terminal_bench', 'terminal_science',
     'deep_swe', 'swe_pro_v2', 'polybench', 'bigcodebench'])))

@@ -207,6 +207,9 @@ def review(directory, reference, output, exclusion_file=None, inspect_resources=
         exclude_from_method_effect_comparison=not j['comparison_eligible']) for j in jobs])
     write(output / 'comparison-eligibility.json', final_eligibility)
     evidence = [read(output / name)[1] for name in ('comparison.json', 'cleanup.json', 'summary.json', 'defect-eligibility.json', 'comparison-eligibility.json')]
+    from ctxpress.harness.results.paired_statistics import candidate_statistics
+    for candidate in candidates:
+        candidate['statistics'] = candidate_statistics(candidate)
     result = dict(schema='ctxpress.eval.review', version=1, checked_at=datetime.now(timezone.utc).isoformat(),
         directory=str(root), benchmark=detail['benchmark'], plan_sha256=detail['plan_sha256'],
         code_sha256=detail['code_sha256'], analysis_code_sha256=eval_plan.fingerprint(),
@@ -226,5 +229,16 @@ def review(directory, reference, output, exclusion_file=None, inspect_resources=
     lines += [f'| {k} | {v} |' for k, v in result['counts'].items() if k != 'status']
     lines += ['', 'Unknown or unreviewed evidence is not a pass. See review.json for job-level reasons.',
               'Process analysis: analysis/report.md.' if analysis else 'Process analysis was not requested.']
+    lines += ['', '## Exploratory paired statistics', '',
+              'Repeats are averaged within each task before resampling. Incomplete task blocks are excluded.',
+              'Intervals and unadjusted tests do not establish quality non-inferiority.', '',
+              '| Method | Complete tasks | Mean cost delta (USD/task) | 95% task bootstrap interval |',
+              '|---|---:|---:|---|']
+    for candidate in candidates:
+        stats = candidate['statistics']['cost']
+        interval = stats['confidence_interval']
+        band = f"[{interval['lower']:.6g}, {interval['upper']:.6g}]" if interval else 'unavailable'
+        mean = f"{stats['mean_delta']:.6g}" if stats['mean_delta'] is not None else 'unknown'
+        lines.append(f"| {candidate['method']} | {stats['complete_tasks']} | {mean} | {band} |")
     (output / 'report.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
     return result

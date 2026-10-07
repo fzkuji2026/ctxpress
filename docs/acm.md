@@ -1,4 +1,4 @@
-# ACM 的两种接入
+# ACM 的统一接入与作者参考核对
 
 来源为 [ACM: Agentic Context Management for Long-Horizon Tasks](https://github.com/lixiaochuan2020/agentic-context-management)，参考提交 `f06f90e728af8580a4515812425c1620144145a2`。作者公开了 Qwen3.5-9B 的训练后权重，使用权重不要求重新训练教师模型。
 
@@ -17,24 +17,16 @@ Agent 独立调用 `manage_context()`：将自上个成功边界以来、当前�
 
 **这不是训练后的 ACM Agent。** 这是在 Codex/Responses 上的机制适配，宿主模型仍由使用者选择。提示词经过改写；分段以独立控制调用边界表示；不复现作者 token 提示、摘要解析重试及原始模型的训练策略。宿主修订历史时可能重新生成摘要。组合方法提前改写的历史不承诺与作者原始消息相同。单元测试使用确定性的假摘要，不声称论文数值复现。
 
-## 使用作者训练后的 Agent
+## 作者训练后的 Agent：尚未接入正式评测
 
-`ctxpress acm-author` 为固定版本的作者 `src.run` 生成独立启动记录，保留作者 Agent 循环、工具和任务协议，支持连接预先部署的 OpenAI 兼容模型服务。它不通过 Codex 运行，也不在现有 8 类 benchmark 注册表增加 BrowseComp-Plus。
+作者的 Qwen3.5-9B 策略还没有通过 ctxpress 的统一执行、记账、取消/恢复和评分链路验证。不能把机制适配的通过当成训练模型的通过，也不通过启动另一个作者进程补一个孤立的“baseline”。
 
-需提前准备：干净的固定版本作者仓库、装好作者依赖的 Python、作者配置、BrowseComp-Plus 题目与 BM25 索引/检索依赖、已服务的 ACM checkpoint，以及作者配置要求的摘要与评分服务。模型服务名称不是权重身份的证明，输出里始终单独说明这一限制。
+历史 `ctxpress acm-author` 现在仅保留固定源码与输入的参考清单核对；`--execute` 和直接执行函数均明确拒绝独立运行。准备清单中的作者命令用于接口核对，`execution_supported` 为 false，不能作为评测计划使用。正常 baseline 入口仍为 `ctxpress codex/claude --method ACM` 和 `ctxpress eval`。将来运行作者训练模型时，需要先接入共享运行和评分链路，另行准备权重、依赖与数据。
+
+## 离线源码对照
 
 ```bash
-ctxpress acm-author \
-  --checkout /prepared/agentic-context-management \
-  --python /prepared/acm-env/bin/python3.12 \
-  --model openai/acm-qwen3.5-9b-opd-iter3 \
-  --api-base http://127.0.0.1:8000/v1 \
-  --data /prepared/bcp_eval_150.json \
-  --config /prepared/acm-eval.yaml \
-  --index /prepared/bm25-index \
-  --limit 1 --timeout 1800 --output runs/acm-author-prepare
+python repro/acm_compare.py --original /prepared/agentic-context-management --output runs/repro/acm.json
 ```
 
-默认只准备 `launch.json`：核对源码版本与输入哈希，不安装依赖、不下载、不启动模型或训练。实际执行需另选一个新输出目录，并在同一命令上加 `--execute`。执行目前要求 Linux，超时或取消会终止所属进程组，不隐式重试。保留作者日志和结果；退出码 0 仅表示作者进程正常退出，不自动认定官方成绩有效，也不计入现有 Codex 正式结果。
-
-本次已核对实际作者提交及入口参数，并用本地替身验证启动准备、输入变化拒绝和超时清理。尚未部署 9B 权重、下载检索索引或运行真实 ACM 成绩。运行环境和索引内容尚未整体冻结。
+这只是测试 oracle，运行 ACM 的路径仍是框架的 `Rewriter` 和注册方法。脚本先校验作者文件哈希，再以相同假摘要比较分段边界、保留的上下文及归档。已核对 500 次规范化上下文和 127 份归档；工具信封与两种明确的空范围错误文本进行了归一化，不声称逐字节等同整个宿主请求。真实摘要、query_memory、并行调用、重启、token 提示和 9B 策略不在这份对照的覆盖范围。

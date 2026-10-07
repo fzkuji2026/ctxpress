@@ -18,6 +18,9 @@ from ctxpress.methods.agentdiet import AgentDiet
 from ctxpress.methods.cwl import CWL
 from ctxpress.methods.dtoc import DTOC
 from ctxpress.methods.acm import ACM
+from ctxpress.methods.agentfold_tools import AgentFoldTools
+from ctxpress.methods.acon_source import ACONSource
+from ctxpress.methods.tokenpilot_lifecycle import TokenPilotLifecycle
 from ctxpress.methods.workingview import WorkingView
 from ctxpress.methods.legacy import ClearThenSummarize, PichayApprox, ClawVMApprox
 from ctxpress.methods.cost_model import CostModel
@@ -28,11 +31,15 @@ from ctxpress.methods.auto_cost import AutoCostModel
 REGISTRY = {c.__name__: c for c in [NoCompaction, CodexAutoCompact, ClaudeCode, CliffCompaction, ClearThenSummarize, SlidingWindow,
                                     ComplexityTrap, KeepLastTokens, Pichay, PichayApprox, ClawVM, ClawVMApprox, TokenPilot, SWEPruner, ARC,
                                     ComplexityTrapSummary, ComplexityTrapHybrid, AgentDiet, CWL, DTOC, ACM, AgentFold, ACON, ReSum, WorkingView, CostModel, ScoredMethod,
-                                    Composed, EntryTruncation, PinRequirements, WithMemory, Trigger, AutoCostModel]}
+                                    Composed, EntryTruncation, PinRequirements, WithMemory, Trigger, AutoCostModel,
+                                    AgentFoldTools, ACONSource, TokenPilotLifecycle]}
 NEEDS_TRAINING = {"CostModel"}
 
 # name: (paper / source, needs a model of its own, runs for real through the proxy, differences from the original)
 METHODS = {
+    "ACONSource": ("arXiv 2510.00615", True, True, "移植公开 AppWorld 指南、提示词参数、输出标记解析和阈值语义；共用实际模型调用与记账；宿主历史序列化、token 计数和保留规则有适配，未复现指南优化、蒸馏或训练权重"),
+    "TokenPilotLifecycle": ("arXiv 2606.17016", True, True, "模型批量更新任务生命周期；选择核心按 LightRSI 源码移植；使用自定义估计提示词、按请求批次调度、输出块和入口截断；额外保留最新输出及混合活动任务块，未复现完整 LightRSI 运行时"),
+    "AgentFoldTools": ("arXiv 2510.24699", False, True, "自主折叠工具适配：宿主 Agent 写摘要并选择完整步骤范围，可合并之前的折叠；固定指令、媒体、用户消息和调用配对受保护；工具协议替代原文四块响应协议，未加载作者训练策略，未与作者运行代码对照"),
     "ACM": ("arXiv 2607.23809", True, True, "工具机制适配：Agent 主动分段摘要、磁盘归档和模型检索；须 store_dir；自定义提示词与 Responses 边界；未加载作者 9B 训练策略、未复现 BrowseComp-Plus；宿主修订历史会重建状态"),
     "NoCompaction": ("对照", False, True, "无"),
     "CodexAutoCompact": ("Codex CLI", True, True, "真实运行时就是 Codex 自带的压缩（--compact-limit），摘要由 Codex 的模型写；重放中摘要长度取 8k"),
@@ -51,9 +58,9 @@ METHODS = {
     "PichayApprox": ("本研究此前的近似", False, True, "按闲置步数换出（§8 用）"),
     "ClawVM": ("arXiv 2604.10352", False, True, "选择核心（两阶段选表示、效用公式、新近度）逐行移植，放进作者的 Tier-2 模拟器后 144 行结果完全一致（repro/clawvm_compare.py）；原文只在抽象页上评测，真实输出的页大小、需求由本项目定义；生命周期写回未实现"),
     "ClawVMApprox": ("本研究此前的近似", False, True, "按类型最低保真度的规则近似（§8 用）"),
-    "TokenPilot": ("arXiv 2606.17016", True, True, "无公开代码，未与原实现比对；入口截断和按闲置步数清理可真实运行；原文用 LLM 估计剩余价值，这里用闲置步数代替"),
+    "TokenPilot": ("arXiv 2606.17016", False, True, "保留的闲置步数近似，不调用模型打分；额外费用只在重放中假设；作者代码在 zjunlp/LightRSI，新增 TokenPilotLifecycle 提供模型判断的机制适配"),
     "SWEPruner": ("arXiv 2601.16746", True, True, "接作者的剪枝服务（0.6B 模型）后与原版流程一致：Agent 给命令附关注问题，输出超过 500 字符时剪枝，回写格式相同；Codex 没有放问题的字段，改由方法说明要求在命令末尾加注释；无模型（重放）时用定义行近似"),
-    "ARC": ("arXiv 2607.25066", False, True, "无公开代码，未与原实现比对；原文按编号取回；这里原文写进挂载目录，占位符给出路径，Agent 用普通读文件取回"),
+    "ARC": ("arXiv 2607.25066", False, True, "尚未找到作者公开实现，未与原实现比对；按最近 N 条输出替换为引用是机制近似；原文写进挂载目录，占位符给出路径，Agent 用普通读文件取回"),
     "AgentFold": ("arXiv 2510.24699", True, True, "可调用当前 Agent 的模型写段摘要和深度摘要；按规则分段触发，可配置摘要指南，未复现原文训练或模型自主折叠决策"),
     "ACON": ("arXiv 2510.00615", True, True, "可调用当前 Agent 的模型压缩观察和历史；两种操作可分别配置指南，默认通用续接提示词，未复现原文优化流程、指南或效果"),
     "ReSum": ("arXiv 2509.13313", True, True, "可按周期调用当前 Agent 的模型摘要；提示词依据 v3 附录 C 改写，只整理有依据的信息，不强制计划或缺口清单；保留周期触发近似，未复现原文提示词全文、续接模板、训练或效果"),
