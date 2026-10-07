@@ -16,7 +16,7 @@ Codex / Claude Code 会话里运行，也可以通过 Python 接口调用、在�
   作者公开了代码的方法，`repro/` 下的脚本逐请求与原实现对照。
 - **方法需要时提供 Agent 工具。** 让 Agent 自己管理上下文的方法（CWL、DTOC、ACM）通过内置 MCP 服务提供工具。
 - **如实记账。** 每次请求记录方法改了什么、API 报告的用量；摘要、反思、宿主原生压缩和旁路调用分别计费，缺失的用量保持未知。
-- **可复现的评测。** 8 个 benchmark 家族从原始任务在容器中执行、由官方评分器打分；计划冻结、可恢复，提供配对比较和统一的过程评测。
+- **可复现的评测。** 9 个 benchmark 家族从原始任务执行、由官方评分器打分；计划冻结、可恢复，提供配对比较和统一的过程评测。
 - **运行时只依赖 Python 标准库**（3.10+），支持 Linux、macOS 和 Windows。
 
 ## 安装
@@ -59,7 +59,7 @@ request = manager.apply({"model": model, "input": history}, session="task-1")
 response = client.responses.create(**request)
 ```
 
-**其他兼容 Responses API 的宿主：**用 `ctxpress serve` 启动代理，把宿主的 API 地址指向它。
+**其他宿主**（Responses、Anthropic Messages 或 Chat Completions 接口，如 vLLM、LiteLLM 写的 Agent）：用 `ctxpress serve` 启动代理，把宿主的 API 地址指向它。
 
 `ctxpress list` 列出每个方法的来源、是否需要额外模型，以及与原实现的差别。
 
@@ -172,7 +172,8 @@ ctxpress 代理 ── 方法改写历史（共用操作、专用存档、经同
 ## 评测
 
 `ctxpress eval` 在容器里用原始 benchmark 任务运行方法，并用官方评分器打分：SWE-bench（完整集、Verified、Lite）、SWE-Milestone、
-Terminal-Bench、Terminal-Bench-Science、DeepSWE、SWE-bench Pro、SWE-PolyBench 和 BigCodeBench。
+Terminal-Bench、Terminal-Bench-Science、DeepSWE、SWE-bench Pro、SWE-PolyBench 和 BigCodeBench。BrowseComp-Plus 在代理后面原样运行
+ACM 作者的检索 Agent，作者训练的模型因此也走同一套评测流程（[docs/acm.md](docs/acm.md)）。
 
 ```bash
 ctxpress eval configure configs/experiment.protocol.json --family swe-bench --phase pilot ... --output plan-config.json

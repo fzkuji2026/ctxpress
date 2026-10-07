@@ -398,7 +398,7 @@ def test_analysis_is_read_only_and_contains_no_original_prompts(tmp_path):
 def test_fixed_eight_families_have_comparison_readers_without_pending_routes():
     from test_eval_families import NAMES
     assert set(eval_task_compare.SUPPORTED) == set(NAMES)
-    assert not eval_task_compare.UNSUPPORTED
+    assert set(eval_task_compare.UNSUPPORTED) == {'browsecomp-plus'}         # author-agent family, reader pending
 
 
 @pytest.mark.parametrize('artifact', ['plan.json', 'inputs/manifest.json', 'runtime/ctxpress/fixture.py'])

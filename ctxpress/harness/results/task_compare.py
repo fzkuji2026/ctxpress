@@ -23,7 +23,7 @@ from ctxpress.harness.results import code_compare as eval_code_compare, harbor_c
 
 SUPPORTED = ('swe-bench-verified', 'swe-milestone', 'bigcodebench', 'swe-polybench', *eval_harbor_compare.BENCHMARKS)
 MILESTONE_SCORES = ('score_1000', 'score_full', 'score_reliable', 'precision', 'recall', 'resolve_pct')
-UNSUPPORTED = {}
+UNSUPPORTED = {'browsecomp-plus': 'audited reader for the author judge files pending; use report/analyze'}
 
 
 def _object(value):

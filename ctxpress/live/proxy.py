@@ -8,7 +8,8 @@ Codex: point the built-in OpenAI provider at the proxy and turn off request comp
     openai_base_url = "http://172.17.0.1:8899"
     [features]
     enable_request_compression = false
-(WebSocket upgrades are refused, so Codex falls back to HTTP.) Only `POST .../responses` bodies are rewritten;
+(WebSocket upgrades are refused, so Codex falls back to HTTP.) `POST .../responses`, `.../v1/messages` (Anthropic)
+and `.../chat/completions` bodies with tools are rewritten;
 native compaction requests are forwarded unchanged unless the method forbids them.
 Codex identifies both local and v2 remote compaction on /responses with turn metadata.
 Responses are streamed back as they
@@ -76,10 +77,18 @@ def is_native_compaction(body, turn_metadata=None, compact_prompt=None):
 
 
 def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_retries=0,
-                 allow_native_compaction=True, compact_prompt=None, method_tools=None):
+                 allow_native_compaction=True, compact_prompt=None, method_tools=None, upstream_key=None):
     up = urllib.parse.urlsplit(upstream)
     vp = urllib.parse.urlsplit(via) if via else None
     lock = threading.Lock()
+
+    def outgoing(headers):
+        """Request headers for the upstream; with upstream_key the proxy, not the client, holds the credential."""
+        kept = {k: v for k, v in headers.items() if k.lower() not in HOP}
+        if upstream_key:
+            kept = {k: v for k, v in kept.items() if k.lower() not in ("authorization", "api-key", "x-api-key")}
+            kept["Authorization"] = "Bearer " + upstream_key
+        return kept
 
     def connect():
         if up.scheme == "https":
@@ -143,7 +152,32 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                 except (ValueError, AttributeError):
                     info['model'] = None
             original, j, summarizer, dialect, key = None, None, None, "responses", None
-            if method == "POST" and incoming.path.rstrip("/").endswith("/v1/messages") and body:
+            if method == "POST" and incoming.path.rstrip("/").endswith("/chat/completions") and body:
+                # Chat Completions (vLLM / LiteLLM agents): same method on flattened messages (ctxpress.live.chat)
+                dialect = "chat"
+                if (self.headers.get("Content-Encoding") or "").lower() not in ("", "identity"):
+                    self.send_error(415, "request compression must be off"); return
+                try:
+                    from ctxpress.live import chat
+                    j = json.loads(body)
+                    original = j
+                    key = chat.session_key(j)
+                    if summaries and chat.rewritable(j):
+                        summary_headers = outgoing(self.headers)
+                        summarizer = chat.ChatSummarizer(connect, path, summary_headers, j,
+                            lambda row: record(dict(row, session=key)))
+                    j, info = chat.rewrite_chat(rewriter, j, key, summarizer=summarizer)
+                    if info is not None:
+                        info.update(model=j.get('model'), dialect=dialect)
+                        body = json.dumps(j, ensure_ascii=False).encode("utf-8")
+                except HostContractError as e:
+                    record(dict(type='host_contract_failed', t=time.time(), status=422,
+                                reason=str(e), upstream_sent=False))
+                    self.send_error(422, 'ctxpress host contract failed'); return
+                except Exception as e:
+                    info = None
+                    record(dict(t=time.time(), error=f"rewrite failed: {e!r}"))
+            elif method == "POST" and incoming.path.rstrip("/").endswith("/v1/messages") and body:
                 # Anthropic Messages (Claude Code): same method, flattened blocks (ctxpress.live.anthropic)
                 dialect = "anthropic"
                 try:
@@ -152,7 +186,7 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                     original = j
                     key = anthropic.session_key(j)
                     if summaries and anthropic.rewritable(j):
-                        summary_headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
+                        summary_headers = outgoing(self.headers)
                         summarizer = anthropic.MessagesSummarizer(connect, path, summary_headers, j,
                             lambda row: record(dict(row, session=key)))
                     j, info = anthropic.rewrite_messages(rewriter, j, key, summarizer=summarizer)
@@ -179,12 +213,13 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                     summarizer = None
                     if summaries:
                         from ctxpress.live.summarize import ResponsesSummarizer
-                        summary_headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
+                        summary_headers = outgoing(self.headers)
                         summarizer = ResponsesSummarizer(connect, path, summary_headers, j,
                             lambda row: record(dict(row, session=key)))
                     j, info = rewriter.rewrite_body(j, key, summarizer=summarizer)
-                    info.update(route_observation)
-                    info['model'] = j.get('model')
+                    if info is not None:                     # a string `input` (one-shot call) is not a history
+                        info.update(route_observation)
+                        info['model'] = j.get('model')
                     body = json.dumps(j, ensure_ascii=False).encode("utf-8")
                 except HostContractError as e:
                     record(dict(type='host_contract_failed', t=time.time(), status=422,
@@ -205,7 +240,7 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
             if info is not None:
                 info['native_compaction_detection'] = 'endpoint_and_turn_metadata_v1'
             passthrough = None
-            if info is None and body and (dialect == "anthropic" or responses):
+            if info is None and body and (dialect in ("anthropic", "chat") or responses):
                 # A model call forwarded unchanged (side calls, bodies the method does not rewrite): logged and billed
                 # as its own role ("passthrough") so cost covers every model call the proxy carried.
                 try:
@@ -213,7 +248,7 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                 except (ValueError, UnicodeError, AttributeError):
                     model = None
                 passthrough = dict(type="passthrough", t=time.time(), dialect=dialect, model=model, session=key)
-            headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
+            headers = outgoing(self.headers)
             headers["Content-Length"] = str(len(body))
             headers["Accept-Encoding"] = "identity"
             t0 = time.time()
@@ -309,6 +344,9 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                 if dialect == "anthropic":
                     from ctxpress.live import anthropic
                     usage = None if info.get('stream_error') else anthropic.find_usage(tail.decode("utf-8", "ignore"))
+                elif dialect == "chat":
+                    from ctxpress.live import chat
+                    usage = None if info.get('stream_error') else chat.find_usage(tail.decode("utf-8", "ignore"))
                 else:
                     usage = None if info.get('stream_error') else find_usage(tail)
                 info.update(status=r.status, seconds=round(time.time() - t0, 2), usage=usage, http_attempt=attempt)
@@ -316,6 +354,9 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                 if dialect == "anthropic" and not info.get('stream_error'):
                     from ctxpress.live import anthropic
                     info['response_model'] = anthropic.find_model(tail.decode("utf-8", "ignore"))
+                elif dialect == "chat" and not info.get('stream_error'):
+                    from ctxpress.live import chat
+                    info['response_model'] = chat.find_model(tail.decode("utf-8", "ignore"))
                 if compact:
                     info['completed'] = 200 <= r.status < 300 and not info.get('stream_error')
                 record(info)
@@ -324,6 +365,9 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                 if dialect == "anthropic":
                     from ctxpress.live import anthropic
                     usage, returned = anthropic.find_usage(text), anthropic.find_model(text)
+                elif dialect == "chat":
+                    from ctxpress.live import chat
+                    usage, returned = chat.find_usage(text), chat.find_model(text)
                 else:
                     usage, returned = find_usage(tail), find_model(tail)
                 stream_error = passthrough.get('stream_error')
@@ -402,7 +446,7 @@ def find_usage(raw):
 
 
 def serve(method_factory, port, upstream, via=None, log=None, params=DEFAULT, host="0.0.0.0", store_dir=None, store_prefix=None,
-          retrieve_tool=None, summarizer=None, codex_method_tools=False, control_receipts=None):
+          retrieve_tool=None, summarizer=None, codex_method_tools=False, control_receipts=None, upstream_key=None):
     def live_factory():
         method = method_factory()
         method.validate_live()
@@ -417,7 +461,7 @@ def serve(method_factory, port, upstream, via=None, log=None, params=DEFAULT, ho
     srv = ThreadingHTTPServer((host, port), make_handler(rw, upstream, via, log,
                                   method_tools=adapter,
                                   summaries=sample.requires_summary and summarizer is None,
-                                  max_overflow_retries=sample.max_overflow_retries,
+                                  max_overflow_retries=sample.max_overflow_retries, upstream_key=upstream_key,
                                   allow_native_compaction=sample.allow_native_compaction,
                                   compact_prompt=sample.codex_config.get('compact_prompt') if not sample.allow_native_compaction else None))
     return srv, rw

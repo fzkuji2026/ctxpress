@@ -21,8 +21,8 @@ simulator, and in container-based evaluation on official benchmarks.
   their tools through a built-in MCP server.
 - **Honest accounting.** Every request logs what the method changed and the usage the API reported; summaries,
   reflections, native compaction and side calls are billed separately, and unknown usage stays unknown.
-- **Reproducible evaluation.** Eight benchmark families run from the original tasks in containers and are scored
-  by the official graders, with frozen plans, recovery, paired comparison and a unified process analysis.
+- **Reproducible evaluation.** Nine benchmark families run from the original tasks and are scored by the official
+  graders, with frozen plans, recovery, paired comparison and a unified process analysis.
 - **Standard library only** at runtime (Python 3.10+), on Linux, macOS and Windows.
 
 ## Installation
@@ -66,7 +66,8 @@ request = manager.apply({"model": model, "input": history}, session="task-1")
 response = client.responses.create(**request)
 ```
 
-**Any Responses-compatible host:** `ctxpress serve` starts the proxy; point the host's API base URL at it.
+**Any other host** speaking the Responses, Anthropic Messages or Chat Completions API (vLLM, LiteLLM agents):
+`ctxpress serve` starts the proxy; point the host's API base URL at it.
 
 `ctxpress list` shows every method with its source, whether it needs a model of its own, and how it differs from
 the original implementation.
@@ -194,7 +195,8 @@ The package is layered so that each layer imports only the ones above it:
 
 `ctxpress eval` runs methods on original benchmark tasks inside containers and scores them with the official
 graders: SWE-bench (full, Verified, Lite), SWE-Milestone, Terminal-Bench, Terminal-Bench-Science, DeepSWE,
-SWE-bench Pro, SWE-PolyBench and BigCodeBench.
+SWE-bench Pro, SWE-PolyBench and BigCodeBench. BrowseComp-Plus runs the ACM authors' own research agent behind
+the proxy, so their trained checkpoint can be evaluated in the same pipeline ([docs/acm.md](docs/acm.md)).
 
 ```bash
 ctxpress eval configure configs/experiment.protocol.json --family swe-bench --phase pilot ... --output plan-config.json

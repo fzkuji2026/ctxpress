@@ -1,6 +1,6 @@
 # Benchmark 适配器
 
-8 个 benchmark 家族共用 `ctxpress eval` 的计划、执行、恢复和报告入口；本页说明各适配器怎样读取任务、执行 Agent、调用官方评分以及需要准备哪些资源。命令与配置见 [评测文档](evaluation.md)。各家族目前各有一个原始任务的真实执行与官方评分证据，下文逐项写明验证边界。
+9 个 benchmark 家族共用 `ctxpress eval` 的计划、执行、恢复和报告入口；本页说明各适配器怎样读取任务、执行 Agent、调用官方评分以及需要准备哪些资源。命令与配置见 [评测文档](evaluation.md)。各家族目前各有一个原始任务的真实执行与官方评分证据，下文逐项写明验证边界。
 
 `ctxpress eval tasks --start-mode task_start --data /path/to/SWE-Milestone-data` 读取完整仓库 itinerary、里程碑、依赖与评分输入。native worker 已接入作者 Trial、新会话/恢复、watcher、DAG、Git 提交捕获、异步评分、collector 和所属 testcontainers 服务管理；实际作者代码已与生产资源组件在合成 IO 下组合核对。`execution_supported` 与 `official_grading_supported` 为 true，范围为已准备的 Linux CPU itinerary；完整 Navidrome 已取得真实官方评分。静态目录标志的含义见下文。启动要求 `run.grade=true`、真实 Git 版本证据 `native_data_version=true`、每个活动里程碑的准备评分镜像及明确的 `service_images`；缺项计划拒绝启动。服务 API 不支持的挂载/网络请求返回明确错误，具体任务的真实执行另行验证。
 
@@ -42,6 +42,8 @@ Terminal-Bench/Science 现在按冻结源码选择旧 `Trial` 或新版 `SingleS
 
 `bigcodebench` 接入 Complete/Instruct、Full/Hard；数据 manifest 声明 split、subset、数据源与 revision。每个 `repeats` 是新的 Codex 会话，Agent 仅取得所选提示与代码起点，输出 `solution.py` 并导出官方 `task_id/solution` JSONL。独立 verifier 调用冻结作者的参考答案检查、代码检查和 pass@k 估计器；参考答案未通过使评分无效，代码失败/超时保留作者语义。报告单列代码样本和 pass@k，缺少计划样本、评分证据或样本数不足时保持未知。示例见 [BigCodeBench 配置](../configs/bigcodebench.example.json)；Codex 的服务端解码未声明温度/top-p，属于 `ctxpress_comparison`。一个原始任务已取得真实通过样本，不代表完整 benchmark 的 pass@k。
 
-接入范围固定为 Terminal-Bench 4.0、Terminal-Bench-Science 0.1、DeepSWE v1.1、SWE-Milestone、SWE-bench（Verified/Lite/完整集）、SWE-bench Pro、SWE-PolyBench 和 BigCodeBench 这 8 个家族，不追加其他 benchmark。各适配器已接通任务选择、输入冻结、Agent 派发、产物导出、官方评分和报告，并各有一个原始任务的真实接入证据。 `ctxpress eval benchmarks` 中的 `real_run_verified` 是静态目录标志，仍保持 false；它不读取本地运行记录，不能据此判断某次实际作业是否验收通过。单次运行以绑定原始产物的 `compare` 报告和独立清理核验为准。首题证据不代表全部版本、题型或资源环境均已真实验证；具体支持边界、来源、协议与验收见 [ROADMAP](../ROADMAP.md) 和上文各适配器说明。
+接入范围为 Terminal-Bench 4.0、Terminal-Bench-Science 0.1、DeepSWE v1.1、SWE-Milestone、SWE-bench（Verified/Lite/完整集）、SWE-bench Pro、SWE-PolyBench、BigCodeBench 这 8 个编码家族，以及为运行 ACM 作者模型加入的 BrowseComp-Plus（见下）。各适配器已接通任务选择、输入冻结、Agent 派发、产物导出、官方评分和报告，并各有一个原始任务的真实接入证据。 `ctxpress eval benchmarks` 中的 `real_run_verified` 是静态目录标志，仍保持 false；它不读取本地运行记录，不能据此判断某次实际作业是否验收通过。单次运行以绑定原始产物的 `compare` 报告和独立清理核验为准。首题证据不代表全部版本、题型或资源环境均已真实验证；具体支持边界、来源、协议与验收见 [ROADMAP](../ROADMAP.md) 和上文各适配器说明。
+
+`browsecomp-plus` 运行固定版本的 ACM 作者 Agent（`lixiaochuan2020/agentic-context-management@f06f90e`）：作者自己的检索循环（本地 BM25 上的 `search` / `get_document`，可选 `manage_context` / `query_memory`）原样执行，训练过的检查点看到的提示词、工具和 token 提示与训练时相同。它通过 ctxpress 代理调用模型，计划里的方法改写它的 Chat Completions 请求，用量、费用和方法动作与其他家族一样记录。`backend` 为 `acm_author`；`model` 写 LiteLLM 名称 `openai/<服务名>`；`environment` 声明作者仓库、作者 Python、题目集（作者格式的 JSON 列表）、解密后的标准答案、可选 qrels、BM25 索引目录、Agent 模型上游，以及摘要模型和评分模型的 `{model, upstream}`。计划对作者源码、题目、答案文件和索引的每个文件计算哈希。每个作业启动三个本地代理（Agent、摘要、评分各一个，分别写日志），作者进程只拿到占位密钥，真实密钥由代理从运行环境 `CTXPRESS_AGENT_API_KEY`、`CTXPRESS_SUMMARIZER_API_KEY`、`CTXPRESS_GRADER_API_KEY` 取得。评分调用作者的 `evaluate_browsecomp_plus`（LLM 评判）；评判缺失或无法解析计为评分错误，作者进程没有产出结果计为基础设施无效。带自有 Agent 工具的方法（DTOC、CWL、ACM 等）不能用于这个家族，因为作者循环只提供它自己的工具。目前只用本地替身检查过（替身仓库、假模型服务和假评判），没有真实权重、索引或评分。
 
 模型发布成绩不能直接按模型品牌推断 Agent：[DeepSWE 官方榜单](https://deepswe.datacurve.ai/run)使用 Pier + mini-swe-agent；[Science 0.1 官方评测](https://www.tbench.ai/news/terminal-bench-science-0-1)列出 GPT 配 Codex、Claude 配 Claude Code。我们分别准备原协议复刻与固定 Codex 的上下文方法比较，保留版本、宿主、提示、资源、重复数与评分设置；改用另一 Agent 的结果不冒充原发布成绩。

@@ -82,7 +82,9 @@ ctxpress codex --method ARC --budget 10 -- --profile research exec "fix the fail
 
 
 - 用 `ctxpress serve` 单独启动代理，把宿主的 API 地址指向它即可。
-- 目前支持 OpenAI Responses API 和 Anthropic Messages（Claude Code，见下文）；Chat Completions 在[路线图](../ROADMAP.md)中。
+- 支持 OpenAI Responses API、Anthropic Messages（Claude Code，见下文）和 Chat Completions（vLLM、LiteLLM 等 OpenAI 兼容服务）。
+- Chat Completions：带 `tools` 的 Agent 请求按方法改写，没有工具的单次调用（摘要、评分）原样转发并单独计费。同一条助手消息的文本、`reasoning_content` 和工具调用组装回一条消息；每个工具调用的结果紧跟在它后面，方法写的摘要不会插进未答完的工具调用之间；方法说明追加到第一条 system 消息（很多模型的聊天模板只接受开头的 system）。用量读取 `prompt_tokens`、`prompt_tokens_details.cached_tokens` 和 `completion_tokens`，流式响应需要 `stream_options.include_usage`。
+- 代理可以代管上游凭据：`serve(..., upstream_key=...)` 会替换客户端的 `Authorization`，客户端只拿到占位符。BrowseComp-Plus 家族用这种方式运行作者的 Agent（见 [ACM 接入](acm.md)）。
 
 **方法可以组合：**
 
