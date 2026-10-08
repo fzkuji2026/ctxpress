@@ -173,7 +173,9 @@ ctxpress 代理 ── 方法改写历史（共用操作、专用存档、经同
 ## 评测
 
 `ctxpress eval` 在容器里用原始 benchmark 任务运行方法，并用官方评分器打分：SWE-bench（完整集、Verified、Lite）、SWE-Milestone、
-Terminal-Bench、Terminal-Bench-Science、DeepSWE、SWE-bench Pro、SWE-PolyBench 和 BigCodeBench。BrowseComp-Plus 在代理后面原样运行
+Terminal-Bench、Terminal-Bench-Science、DeepSWE、SWE-bench Pro、SWE-PolyBench 和 BigCodeBench。另有 Multi-SWE-bench、SWE-bench Multilingual、
+AppWorld、KernelBench、OfficeBench、Recovery-Bench、SWE-QA 和 LongBench v2 等 Harbor 任务家族，来自官方适配器，或用
+`python -m ctxpress.benchmarks.convert` 转换官方发布（[docs/benchmarks.md](docs/benchmarks.md)）。BrowseComp-Plus 在代理后面原样运行
 ACM 作者的检索 Agent，作者训练的模型因此也走同一套评测流程（[docs/acm.md](docs/acm.md)）。
 
 ```bash

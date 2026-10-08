@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 
 BENCHMARKS = ('terminal-bench', 'terminal-bench-science', 'deep-swe', 'swe-bench-pro', 'multi-swe-bench', 'swe-bench-multilingual',
-              'appworld', 'kernelbench', 'longbench-v2', 'swe-qa')
+              'appworld', 'kernelbench', 'longbench-v2', 'swe-qa', 'officebench', 'recovery-bench')
 
 
 class UnsupportedVariant(ValueError):

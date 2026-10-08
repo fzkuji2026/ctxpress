@@ -62,3 +62,15 @@ class SWEQA(Converted):
     NAME = 'swe-qa'
     TITLE = 'SWE-QA'
     ADAPTER = 'python -m ctxpress.benchmarks.convert swe-qa (answers collected for the official LLM judge)'
+
+
+class OfficeBench(Converted):
+    NAME = 'officebench'
+    TITLE = 'OfficeBench'
+    ADAPTER = 'python -m ctxpress.benchmarks.convert officebench (official evaluate_* functions; app scripts from a shell)'
+
+
+class RecoveryBench(Converted):
+    NAME = 'recovery-bench'
+    TITLE = 'Recovery-Bench'
+    ADAPTER = 'python -m ctxpress.benchmarks.convert recovery-bench (official replay and recovery instruction; original tests)'

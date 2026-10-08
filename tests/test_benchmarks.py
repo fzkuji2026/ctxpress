@@ -17,7 +17,7 @@ def test_discovery_does_not_start_processes_or_import_local_helpers(tmp_path, mo
     main(['eval', 'benchmarks'])
     adapters = json.loads(capsys.readouterr().out)['benchmarks']
     by_name = {row['name']:row for row in adapters}
-    assert set(by_name) == {'swe-milestone','swe-bench','swe-bench-verified','swe-bench-lite','terminal-bench','terminal-bench-science','deep-swe','swe-polybench','swe-bench-pro','bigcodebench','browsecomp-plus','multi-swe-bench','swe-bench-multilingual','appworld','kernelbench','longbench-v2','swe-qa'}
+    assert set(by_name) == {'swe-milestone','swe-bench','swe-bench-verified','swe-bench-lite','terminal-bench','terminal-bench-science','deep-swe','swe-polybench','swe-bench-pro','bigcodebench','browsecomp-plus','multi-swe-bench','swe-bench-multilingual','appworld','kernelbench','longbench-v2','swe-qa','officebench','recovery-bench'}
     assert by_name['swe-milestone']['from_task_start'] is False
     assert by_name['terminal-bench']['execution_supported'] and not by_name['terminal-bench']['real_run_verified']
     main(['eval', 'tasks', '--scripts', cfg['environment']['scripts'], '--min-context', '128000', '--gradable'])

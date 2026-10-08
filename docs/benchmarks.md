@@ -46,4 +46,19 @@ Terminal-Bench/Science 现在按冻结源码选择旧 `Trial` 或新版 `SingleS
 
 `browsecomp-plus` 运行固定版本的 ACM 作者 Agent（`lixiaochuan2020/agentic-context-management@f06f90e`）：作者自己的检索循环（本地 BM25 上的 `search` / `get_document`，可选 `manage_context` / `query_memory`）原样执行，训练过的检查点看到的提示词、工具和 token 提示与训练时相同。它通过 ctxpress 代理调用模型，计划里的方法改写它的 Chat Completions 请求，用量、费用和方法动作与其他家族一样记录。`backend` 为 `acm_author`；`model` 写 LiteLLM 名称 `openai/<服务名>`；`environment` 声明作者仓库、作者 Python、题目集（作者格式的 JSON 列表）、解密后的标准答案、可选 qrels、BM25 索引目录、Agent 模型上游，以及摘要模型和评分模型的 `{model, upstream}`。计划对作者源码、题目、答案文件和索引的每个文件计算哈希。每个作业启动三个本地代理（Agent、摘要、评分各一个，分别写日志），作者进程只拿到占位密钥，真实密钥由代理从运行环境 `CTXPRESS_AGENT_API_KEY`、`CTXPRESS_SUMMARIZER_API_KEY`、`CTXPRESS_GRADER_API_KEY` 取得。评分调用作者的 `evaluate_browsecomp_plus`（LLM 评判）；评判缺失或无法解析计为评分错误，作者进程没有产出结果计为基础设施无效。带自有 Agent 工具的方法（DTOC、CWL、ACM 等）不能用于这个家族，因为作者循环只提供它自己的工具。2026-10-07 在本机（RTX 3080 16 GB）用真实作者代码和 ACM iter3 权重（vLLM 0.31，FP8，32k 窗口）跑通：检索、`manage_context` 调用、代理记账与前缀缓存观测、作者评分均正常；语料是自造的小型替代库，检索代码为接口相同的替代实现（官方数据需登录接受条款），没有正式成绩。
 
+**固定协议以外的 Harbor 任务家族。** 下列 benchmark 都以 Harbor 任务格式运行，复用同一个 Harbor 执行与评分链路（`ctxpress/benchmarks/harbor`）：数据目录必须带 `dataset_manifest.json` 声明数据集和版本，各任务 `tests/` 里的评分代码给出 reward。它们不进入固定的 8 家族实验协议。
+
+| 家族 | 任务来源 | 评分 | 说明 |
+|---|---|---|---|
+| `multi-swe-bench` | Harbor 官方适配器 `harbor/adapters/multi-swe-bench`（7 种语言，1,632 题） | 官方 RUN/TEST/FIX 流程 | 需要预先拉取 `mswebench/` 镜像，体量大 |
+| `swe-bench-multilingual` | Harbor 官方适配器 `swebench_multilingual` | 官方测试 | |
+| `appworld` | Terminal-Bench 官方 AppWorld 适配器生成，再用 `harbor tasks migrate` 迁移 | 官方 AppWorld 评测 | 本地模拟环境，无需网络 |
+| `kernelbench` | `python -m ctxpress.benchmarks.convert kernelbench` | 官方 `eval_kernel_against_ref`：compiled、correct、speedup、fast_1 | 每题申请 1 块 NVIDIA GPU；镜像需含 CUDA、PyTorch 和同一份 KernelBench |
+| `longbench-v2` | `... convert longbench-v2` | 官方选项字母比对 | 原协议是单轮提示，这里把长文作为文件交给 Agent 读，属于协议改动 |
+| `swe-qa` | `... convert swe-qa`（仓库按固定提交构建） | 官方是 LLM 评判（五个维度）；验证器只收集答案和参考答案，记 `answered`，不给质量分 | 字段名按发布数据读取，未知格式直接报错 |
+| `officebench` | `... convert officebench` | 官方 `evaluate_*` 函数，全部通过才算成功 | 原 Agent 输出 OfficeBench 动作；这里 Agent 在 shell 里调用同一套 `apps/` 脚本 |
+| `recovery-bench` | `... convert recovery-bench`（Terminal-Bench 2.0 任务 + 失败的初始轨迹 + recovery-bench 代码） | 原任务测试 | 只用初始尝试失败（reward 0）的轨迹；用官方 replay 提取命令，在镜像构建时重放；恢复说明由官方 `build_recovery_instruction` 生成，支持 full / summary / none |
+
+Terminal-Bench 2.0 不需要新代码：`terminal-bench` 家族读取任意 Harbor 版本，数据带 `dataset_manifest.json`（`revision: "2.0"`）即可。转换器只读取已经在本地的官方发布，不下载任何东西；以上家族目前只用本地替身检查过，没有真实运行。暂不接入：需要实时联网的 BrowseComp、BrowseComp-ZH、GAIA、WideSearch、DeepSearchQA；按 OpenClaw Agent 设计的 Claw-Eval、PinchBench（换成其他宿主等于改协议）；尚未公开发布数据的 LongCLI-Bench。
+
 模型发布成绩不能直接按模型品牌推断 Agent：[DeepSWE 官方榜单](https://deepswe.datacurve.ai/run)使用 Pier + mini-swe-agent；[Science 0.1 官方评测](https://www.tbench.ai/news/terminal-bench-science-0-1)列出 GPT 配 Codex、Claude 配 Claude Code。我们分别准备原协议复刻与固定 Codex 的上下文方法比较，保留版本、宿主、提示、资源、重复数与评分设置；改用另一 Agent 的结果不冒充原发布成绩。

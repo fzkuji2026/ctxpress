@@ -9,7 +9,7 @@ from ctxpress.benchmarks.polybench.adapter import PolyBench
 from ctxpress.benchmarks.pro.adapter import SWEPro
 from ctxpress.benchmarks.bigcode.adapter import BigCodeBench
 from ctxpress.benchmarks.browsecomp.adapter import BrowseCompPlus
-from ctxpress.benchmarks.harbor.official import MultiSWEBench, SWEBenchMultilingual, AppWorld, KernelBench, LongBenchV2, SWEQA
+from ctxpress.benchmarks.harbor.official import MultiSWEBench, SWEBenchMultilingual, AppWorld, KernelBench, LongBenchV2, SWEQA, OfficeBench, RecoveryBench
 
 DEFAULT = "swe-milestone"
 REGISTRY = {DEFAULT: SWEMilestone, 'swe-bench':SWEBench, 'swe-bench-verified':SWEBenchVerified,
@@ -17,7 +17,8 @@ REGISTRY = {DEFAULT: SWEMilestone, 'swe-bench':SWEBench, 'swe-bench-verified':SW
             'terminal-bench-science':TerminalScience, 'deep-swe':DeepSWE, 'swe-polybench':PolyBench,
             'swe-bench-pro':SWEPro,'bigcodebench':BigCodeBench,'browsecomp-plus':BrowseCompPlus,
             'multi-swe-bench':MultiSWEBench,'swe-bench-multilingual':SWEBenchMultilingual,'appworld':AppWorld,
-            'kernelbench':KernelBench,'longbench-v2':LongBenchV2,'swe-qa':SWEQA}
+            'kernelbench':KernelBench,'longbench-v2':LongBenchV2,'swe-qa':SWEQA,'officebench':OfficeBench,
+            'recovery-bench':RecoveryBench}
 
 FAMILIES = {'swe-milestone': ['swe-milestone'],
             'swe-bench': ['swe-bench', 'swe-bench-verified', 'swe-bench-lite'],
@@ -28,7 +29,7 @@ FAMILIES = {'swe-milestone': ['swe-milestone'],
 # official Harbor adapters generate the tasks.
 AUTHOR_AGENT_FAMILIES = {'browsecomp-plus': ['browsecomp-plus']}
 ADDITIONAL_FAMILIES = {name: [name] for name in ('multi-swe-bench', 'swe-bench-multilingual', 'appworld', 'kernelbench',
-                                                 'longbench-v2', 'swe-qa')}
+                                                 'longbench-v2', 'swe-qa', 'officebench', 'recovery-bench')}
 
 
 def get(name=DEFAULT):

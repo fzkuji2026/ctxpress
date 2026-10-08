@@ -20,6 +20,7 @@ ctxpress 是 Agent 上下文管理工具箱：所有方法复用同一个改写�
 | 全方法冒烟测试 | `ctxpress smoke`：每个方法经真实代理、假模型和真实 `ctxpress mcp` 跑通并输出统一统计 | 合成用量；不代表质量或费用 |
 | 代码结构（v1.0.0） | 框架分层 core → methods → live → hosts；评测按职责（jobs / runtime / results / checks）和 benchmark 家族分组 | `tests/test_layering.py` 检查依赖方向 |
 | ACM | 统一方法接口与作者机制对照；作者训练模型通过 `browsecomp-plus` 家族接入统一评测 | 只用本地替身检查；作者 9B 权重、索引和真实成绩未取得 |
+| 附加 benchmark 家族 | Multi-SWE-bench、SWE-bench Multilingual、AppWorld（官方适配器）；KernelBench、LongBench v2、SWE-QA、OfficeBench、Recovery-Bench（转换官方发布）；Terminal-Bench 2.0 用现有家族 | 只用本地替身检查；联网类、OpenClaw 类与未发布的 LongCLI-Bench 暂不接入 |
 | Chat Completions 宿主 | 代理改写带工具的 Chat Completions 请求，单次调用原样转发并计费；可代管上游凭据 | 用本地假服务检查，尚未连接真实 vLLM |
 | 正式比较 v7 | SWE-bench Verified 130 个、SWE-Milestone 39 个作业跑完，经统一验收：169 个作业的资源清理全部核验，缺陷排除与缺用量分别记录 | 每家族 1–3 次重复，结果是描述性的；长任务受 100 次调用预算截断 |
 | 持续集成 | GitHub Actions：Linux / macOS / Windows × Python 3.10 / 3.12，跑全部测试和全方法冒烟测试 | 评测用例只在 Linux 上运行 |
