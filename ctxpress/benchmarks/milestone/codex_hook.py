@@ -54,8 +54,8 @@ def framework(base, settings):
     if 'model_catalog' in settings:
         from ctxpress.harness.runtime.codex_catalog import CONTAINER_PATH
         catalog_target=CONTAINER_PATH
-    if type(settings['compact_limit']) is not int or settings['compact_limit'] <= 0:
-        raise ValueError('compact_limit must be a positive integer')
+    if settings['compact_limit'] is not None and (type(settings['compact_limit']) is not int or settings['compact_limit'] <= 0):
+        raise ValueError('compact_limit must be a positive integer, or None for the host default')
     if not isinstance(settings['binary_version'], str) or not settings['binary_version']:
         raise ValueError('binary version must be explicit')
     validate_live(settings['method'], settings.get('profiles'))
@@ -188,7 +188,9 @@ if source.is_file():
                 if settings.get(key):
                     args += ['--' + key, settings[key]]
             if private:args+=['--via',self._model_relay]
-            overrides=['--', '-c', f"model_auto_compact_token_limit={settings['compact_limit']}"]
+            overrides=['--']
+            if settings['compact_limit'] is not None:           # None: the host's own default threshold
+                overrides+=['-c', f"model_auto_compact_token_limit={settings['compact_limit']}"]
             if 'model_catalog' in settings:overrides+=['-c','model_catalog_json='+json.dumps(catalog_target)]
             return shlex.join(args + overrides) + ' ' + command[len('codex '):]
 

@@ -41,7 +41,7 @@ def validate(request):
     milestone_resources.identity(settings['project'],settings['label'])
     for name in ('timeout','max_calls'):
         eval_plan._positive(run.get(name),name,integer=name!='timeout')
-    eval_plan._positive(settings['compact_limit'],'compact_limit',integer=True)
+    if settings['compact_limit'] is not None:eval_plan._positive(settings['compact_limit'],'compact_limit',integer=True)
     if 'grading_timeout' in run:eval_plan._positive(run['grading_timeout'],'grading_timeout',integer=False)
     if run.get('grade') is not True:raise ValueError('native itinerary execution requires its dependency grading')
     milestone_transport.destination(settings['upstream'])

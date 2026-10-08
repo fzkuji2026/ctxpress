@@ -67,7 +67,8 @@ response = client.responses.create(**request)
 
 | 方法 | 类 | 来源 |
 |---|---|---|
-| 不压缩（对照） | `NoCompaction` | — |
+| 宿主默认：Agent 出厂设置（对照） | `HostDefault` | Codex / Claude Code |
+| 不压缩 | `NoCompaction` | — |
 | Codex 自动压缩 | `CodexAutoCompact` | Codex CLI |
 | Claude Code 压缩 | `ClaudeCode` | Claude Code |
 | 滑动窗口 | `SlidingWindow` | — |

@@ -76,7 +76,8 @@ the original implementation.
 
 | Method | Class | Source |
 |---|---|---|
-| No compaction (baseline) | `NoCompaction` | — |
+| Host default: the agent exactly as shipped (baseline) | `HostDefault` | Codex / Claude Code |
+| No compaction | `NoCompaction` | — |
 | Codex auto-compact | `CodexAutoCompact` | Codex CLI |
 | Claude Code compaction | `ClaudeCode` | Claude Code |
 | Sliding window | `SlidingWindow` | — |

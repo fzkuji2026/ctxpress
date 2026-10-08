@@ -6,7 +6,8 @@
 
 | 方法 | 类 | 来源 | 要点 |
 |---|---|---|---|
-| 不压缩 | `NoCompaction` | | 对照 |
+| 宿主默认 | `HostDefault` | Codex / Claude Code | 对照：不改写请求，也不覆盖宿主的原生压缩设置；评测计划里该作业的 `compact_limit` 为空，启动器不传 `model_auto_compact_token_limit` |
+| 不压缩 | `NoCompaction` | | 关闭宿主压缩，窗口满了就停 |
 | Codex auto-compact | `CodexAutoCompact(t)` | Codex CLI | 超过 t 整体摘要；t = 230k 即标准 |
 | Claude Code | `ClaudeCode(t, k, f)` | Claude Code | 先清旧工具输出，仍超再摘要 |
 | CliffCompaction | `CliffCompaction(t, keep_recent)` | 2609.26779 | 超过 t：开头 + 机械摘要（≤500 字符的输出原样保留）+ 最近 3 轮；与原版逐请求一致 |

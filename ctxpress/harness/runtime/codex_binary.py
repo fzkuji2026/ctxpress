@@ -4,6 +4,7 @@ import json, os, queue, re, struct, subprocess, sys, tempfile, threading
 from pathlib import Path
 
 COMPANION = 'codex-code-mode-host'
+SANDBOX = 'codex-resources/bwrap'          # the release bundle's own bubblewrap, used when the system has none
 
 
 def _host_platform():
@@ -32,9 +33,10 @@ def _host_compatible(kind):
 
 
 def requires_companion(version):
-    # This release family is verified to route tools through the separate host.
-    # Do not infer requirements for older or independently built standalone CLIs.
-    return bool(re.fullmatch(r'(?:codex-cli\s+)?0\.159\.\d+(?:[-+][\w.-]+)?', version or ''))
+    # These release families are verified to route tools through the separate host
+    # (0.159 alpha and the 0.161 stable bundle). Do not infer requirements for older
+    # or independently built standalone CLIs.
+    return bool(re.fullmatch(r'(?:codex-cli\s+)?0\.(?:159|161)\.\d+(?:[-+][\w.-]+)?', version or ''))
 
 
 def _environment(home):
@@ -151,6 +153,9 @@ def inspect(bindir, *, probe=False, bindings=None):
             missing.append(str(companion) + ': companion is not executable')
         elif required and bindings is not None and str(companion.resolve()) not in bindings:
             missing.append(str(companion) + ': companion is not bound to the frozen plan')
+    sandbox = Path(bindir) / SANDBOX
+    if sandbox.is_file():                  # part of the host when present: bind it like the CLI
+        paths.append(sandbox)
     if probe and required and not missing:
         health = probe_companion(companion)
     return dict(version=detected, paths=paths, missing=missing, companion_required=required, health=health,

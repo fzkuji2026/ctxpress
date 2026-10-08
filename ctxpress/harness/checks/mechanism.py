@@ -10,6 +10,7 @@ from ctxpress.core import artifacts as artifact_io
 
 ENTRIES = [
     ("CodexAutoCompact", {"t": 230000}),
+    ("HostDefault", {}),
     ("NoCompaction", {}),
     ("ComplexityTrap", {"budget": 10}),
     ("KeepLastTokens", {"budget": 16000}),

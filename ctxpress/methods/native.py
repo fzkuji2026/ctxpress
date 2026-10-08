@@ -23,6 +23,16 @@ class NoCompaction(Method):
     framework = dict(L1="无", L2="无", L3="无（窗口满了就失败）", cross="无", memory="无", decider="无")
 
 
+class HostDefault(Method):
+    """The host exactly as shipped: no request is rewritten and none of its native compaction settings (threshold,
+    scope, on/off) is overridden. The proxy only records usage. This is the baseline every method is compared with
+    on a pinned host version."""
+    name = "宿主默认"
+    source = "宿主（Codex / Claude Code）出厂设置"
+    host_compaction = "default"               # evaluation launchers pass no compaction override
+    framework = dict(L1="无", L2="无", L3="宿主原生压缩（默认阈值）", cross="无", memory="无", decider="宿主默认")
+
+
 class CodexAutoCompact(Method):
     """Codex CLI auto-compact: when the context exceeds T, replace everything after the fixed prefix with one
     summary. T = 230k is the standard against which every method is checked."""

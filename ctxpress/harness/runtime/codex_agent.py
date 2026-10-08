@@ -115,8 +115,8 @@ def framework(base, exec_input, settings, limit_error=RuntimeError, credential_s
     for key in ('model', 'reasoning', 'binary_version', 'upstream'):
         if not isinstance(settings[key], str) or not settings[key].strip():
             raise ValueError(key + ' must be explicit')
-    if type(settings['compact_limit']) is not int or settings['compact_limit'] <= 0:
-        raise ValueError('compact limit must be a positive integer')
+    if settings['compact_limit'] is not None and (type(settings['compact_limit']) is not int or settings['compact_limit'] <= 0):
+        raise ValueError('compact limit must be a positive integer, or None for the host default')
     if 'max_calls' in settings and (type(settings['max_calls']) is not int or settings['max_calls'] <= 0):
         raise ValueError('max_calls must be a positive integer')
     validate_live(settings['method'], settings.get('profiles'))
@@ -213,8 +213,9 @@ else:
             self._ctxpress_proxy = proxy
             # Disable web tools independently of the container network policy.
             from ctxpress.core import toml
-            config = dict(model=settings['model'], model_reasoning_effort=settings['reasoning'], web_search='disabled',
-                          model_auto_compact_token_limit=settings['compact_limit'])
+            config = dict(model=settings['model'], model_reasoning_effort=settings['reasoning'], web_search='disabled')
+            if settings['compact_limit'] is not None:          # None: the host's own default threshold
+                config['model_auto_compact_token_limit'] = settings['compact_limit']
             if 'model_catalog' in settings:
                 config['model_catalog_json'] = settings['model_catalog']
             data = toml.dumps(config)
@@ -240,8 +241,9 @@ else:
                     '--log', LOGS + '/ctxpress-requests.jsonl', '--store-dir', LOGS + '/ctxpress-store', '--',
                     'exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check',
                     '--model', settings['model'], '--json', '--enable', 'unified_exec',
-                    '-c', 'model_reasoning_effort=' + settings['reasoning'], '-c',
-                    'model_auto_compact_token_limit=' + str(settings['compact_limit']), '--', instruction]
+                    '-c', 'model_reasoning_effort=' + settings['reasoning'],
+                    *(['-c', 'model_auto_compact_token_limit=' + str(settings['compact_limit'])]
+                      if settings['compact_limit'] is not None else []), '--', instruction]
             # BaseInstalledAgent uses pipefail. Official stdout/context parsing is
             # retained while the ctxpress proxy separately records actual usage.
             owned = ['python3', '-m', 'ctxpress.harness.runtime.agent_process', '--pid-file', PRIVATE + '/agent.json', '--']

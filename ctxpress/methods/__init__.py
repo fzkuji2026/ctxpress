@@ -5,7 +5,7 @@ so wrappers take other entries as arguments:
 `METHODS` lists every method with its paper, whether it needs a model of its own, whether it runs for real
 (through ctxpress.live.proxy) and how it differs from the original implementation (`ctxpress list`)."""
 from ctxpress.methods.budget import resolve_wrapper_budget
-from ctxpress.methods.native import NoCompaction, CodexAutoCompact, ClaudeCode, SlidingWindow
+from ctxpress.methods.native import HostDefault, NoCompaction, CodexAutoCompact, ClaudeCode, SlidingWindow
 from ctxpress.methods.masking import ComplexityTrap, KeepLastTokens
 from ctxpress.methods.cliff import CliffCompaction
 from ctxpress.methods.pichay import Pichay
@@ -28,7 +28,7 @@ from ctxpress.methods.scored import ScoredMethod
 from ctxpress.methods.wrappers import Composed, EntryTruncation, PinRequirements, WithMemory, Trigger
 from ctxpress.methods.auto_cost import AutoCostModel
 
-REGISTRY = {c.__name__: c for c in [NoCompaction, CodexAutoCompact, ClaudeCode, CliffCompaction, ClearThenSummarize, SlidingWindow,
+REGISTRY = {c.__name__: c for c in [HostDefault, NoCompaction, CodexAutoCompact, ClaudeCode, CliffCompaction, ClearThenSummarize, SlidingWindow,
                                     ComplexityTrap, KeepLastTokens, Pichay, PichayApprox, ClawVM, ClawVMApprox, TokenPilot, SWEPruner, ARC,
                                     ComplexityTrapSummary, ComplexityTrapHybrid, AgentDiet, CWL, DTOC, ACM, AgentFold, ACON, ReSum, WorkingView, CostModel, ScoredMethod,
                                     Composed, EntryTruncation, PinRequirements, WithMemory, Trigger, AutoCostModel,
@@ -41,6 +41,7 @@ METHODS = {
     "TokenPilotLifecycle": ("arXiv 2606.17016", True, True, "模型批量更新任务生命周期；选择核心按 LightRSI 源码移植；使用自定义估计提示词、按请求批次调度、输出块和入口截断；额外保留最新输出及混合活动任务块，未复现完整 LightRSI 运行时"),
     "AgentFoldTools": ("arXiv 2510.24699", False, True, "自主折叠工具适配：宿主 Agent 写摘要并选择完整步骤范围，可合并之前的折叠；固定指令、媒体、用户消息和调用配对受保护；工具协议替代原文四块响应协议，未加载作者训练策略，未与作者运行代码对照"),
     "ACM": ("arXiv 2607.23809", True, True, "工具机制适配：Agent 主动分段摘要、磁盘归档和模型检索；须 store_dir；自定义提示词与 Responses 边界；未加载作者 9B 训练策略、未复现 BrowseComp-Plus；宿主修订历史会重建状态"),
+    "HostDefault": ("宿主出厂设置", False, True, "不改写请求，也不覆盖宿主的原生压缩设置（阈值、范围、开关都用宿主默认）；代理只记录用量"),
     "NoCompaction": ("对照", False, True, "无"),
     "CodexAutoCompact": ("Codex CLI", True, True, "真实运行时就是 Codex 自带的压缩（--compact-limit），摘要由 Codex 的模型写；重放中摘要长度取 8k"),
     "ClaudeCode": ("Claude Code", True, True, "清理旧工具输出的部分与原机制一致；之后的 /compact 摘要交给宿主的压缩"),

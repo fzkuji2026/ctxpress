@@ -10,6 +10,7 @@ ctxpress 是 Agent 上下文管理工具箱：所有方法复用同一个改写�
 |---|---|---|
 | 方法库 | 已发表方法、本文方法及组合包装器，见 [方法文档](docs/methods.md) | 与原实现的差别由 `ctxpress list` 逐项列出 |
 | 宿主接入 | Codex（`install` / `use` / `doctor`）、Claude Code（`ctxpress claude`）、其他 Responses 宿主（`ctxpress serve`） | 真实 TUI 交互检查覆盖 Codex 0.159.0-alpha.12.1 与 Claude Code 2.1.59 |
+| 固定宿主版本 | 基线固定在 Codex 0.161.0（稳定版，离线兼容和工具检查通过，默认压缩阈值实测约 244.8k）；Claude Code 登记 2.1.285 stable；`HostDefault` 不覆盖宿主任何压缩设置 | 每个大版本重新适配；Claude Code 暂无额度，未评测 |
 | 8 类 benchmark 接入 | 各有一个原始任务的真实执行和官方评分证据 | 不代表完整 benchmark 已跑完 |
 | 统一验收 | `ctxpress eval review` | 绑定冻结计划，评分、费用、排除、清理和分析分别给证据 |
 | 过程评测 | `ctxpress analyze` | 效率、token、费用、上下文长度和缓存中断按原因统计，并自带一致性检查 |

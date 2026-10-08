@@ -2,6 +2,19 @@
 
 ctxpress 以本地代理的方式接入现成的编码 Agent：Agent 的每次模型请求先经过所选方法改写，再发往真实 API。本页说明 Codex、Claude Code 及其他 Responses 宿主的接入方式、保证和检查命令。Python 程序直接调用见 [Python 接口](python-api.md)。
 
+## 固定的宿主版本
+
+评测基线固定在各宿主的稳定大版本上，先用宿主出厂设置（`HostDefault`）测基线，再在同一版本上比较其他方法。宿主发布新的大版本时做一次适配：重跑兼容检查（`doctor codex`、离线工具检查）、重新测默认压缩阈值、确认模型目录可解析，再重跑基线。
+
+| 宿主 | 固定版本 | 来源 | 已核对 |
+|---|---|---|---|
+| Codex CLI | `0.161.0`（稳定版，2026-10-07） | npm `@openai/codex@0.161.0-linux-x64`，sha512 校验通过 | 版本与参数能力、三种离线启动、6 项 Agent 工具检查（CWL / DTOC，含恢复与隐藏控制）、code-mode 配套进程握手、`gpt-6.1-sol` 冻结模型目录解析（medium / xhigh） |
+| Claude Code | `2.1.285`（stable 通道） | npm `@anthropic-ai/claude-code@2.1.285` | 仅登记版本，尚未下载和评测 |
+
+Codex 0.161 的发布包把沙箱用的 bubblewrap 放在 `codex-resources/bwrap`；bin 目录需与发布包结构一致（`codex`、`codex-code-mode-host`、`codex-resources/bwrap`），三个文件都写入计划哈希。系统没有 `bwrap` 时缺少它会让 Agent 的普通命令失败。
+
+**默认压缩阈值（实测）**：Codex 0.161.0 + `gpt-6.1-sol`（窗口 272k）在上报用量 244,100 时不压缩、246,100 时发出压缩请求，与窗口的 90%（244,800）一致。测法：隔离的 `CODEX_HOME`、假密钥、本地回环 Responses 服务逐轮增加上报用量，不设任何压缩阈值。`HostDefault` 不覆盖它，真实运行时以日志里的压缩请求为准。复测命令：`python -m ctxpress.hosts.codex.threshold --codex-bin <bin/codex> --model gpt-6.1-sol --model-catalog <models.json>`。
+
 ## Codex
 
 ```bash

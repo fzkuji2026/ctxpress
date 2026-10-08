@@ -157,8 +157,10 @@ def compile_plan(config, base_dir=None):
         profiles(entry)
         method = build(entry)
         method.validate_live()
-        limit = method.codex_config.get("model_auto_compact_token_limit", settings["compact_limit"])
-        _positive(limit, "effective native compact limit")
+        limit = (None if getattr(method, "host_compaction", None) == "default" else
+                 method.codex_config.get("model_auto_compact_token_limit", settings["compact_limit"]))
+        if limit is not None:                       # None: HostDefault keeps the host threshold
+            _positive(limit, "effective native compact limit")
         if config["scope"] == "formal" and limit < 128000:
             raise ValueError("formal native compaction thresholds must be at least 128k")
         for point in points:
