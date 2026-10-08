@@ -397,7 +397,8 @@ def test_analysis_is_read_only_and_contains_no_original_prompts(tmp_path):
 
 def test_fixed_eight_families_have_comparison_readers_without_pending_routes():
     from test_eval_families import NAMES
-    assert set(eval_task_compare.SUPPORTED) == set(NAMES)
+    extra = {name for names in benchmarks.ADDITIONAL_FAMILIES.values() for name in names}
+    assert set(eval_task_compare.SUPPORTED) == set(NAMES) | extra             # official Harbor adapters reuse the Harbor reader
     assert set(eval_task_compare.UNSUPPORTED) == {'browsecomp-plus'}         # author-agent family, reader pending
 
 

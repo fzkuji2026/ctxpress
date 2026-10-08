@@ -188,8 +188,8 @@ def test_catalog_exposes_all_eight_task_start_families_without_execution(capsys,
     monkeypatch.setattr(subprocess, 'Popen', lambda *a, **k: pytest.fail('catalog started a process'))
     main(['eval', 'benchmarks', '--start-mode', 'task_start'])
     data = json.loads(capsys.readouterr().out)
-    assert data['family_count'] == 8 and len(data['benchmarks']) == 11
-    covered = {name for names in {**data['families'], **benchmarks.AUTHOR_AGENT_FAMILIES}.values() for name in names}
+    assert data['family_count'] == 8 and len(data['benchmarks']) == len(benchmarks.REGISTRY)
+    covered = {name for names in {**data['families'], **benchmarks.AUTHOR_AGENT_FAMILIES, **benchmarks.ADDITIONAL_FAMILIES}.values() for name in names}
     assert covered == set(benchmarks.REGISTRY)
     assert all(row['from_task_start'] and row['execution_supported'] and row['official_grading_supported']
                and not row['real_run_verified'] for row in data['benchmarks'])
