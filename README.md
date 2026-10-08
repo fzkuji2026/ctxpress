@@ -33,8 +33,9 @@ pip install ./ctxpress
 ctxpress --version
 ```
 
-Optional extras: `.[sim]` for the replay simulator, `.[itemmodel]` for the learned reuse model, `.[test]` for the
-test suite.
+Optional extras: `.[sim]` for the replay simulator, `.[itemmodel]` for the learned reuse model, `.[analysis]` for
+the figures of `ctxpress analyze`, `.[test]` for the test suite. The evaluation environment is described in
+[docs/evaluation.md](docs/evaluation.md#运行环境).
 
 ## Quick start
 

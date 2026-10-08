@@ -54,6 +54,19 @@ ctxpress eval plan runs/next/verified-pilot.json --output runs/next/verified-pil
 
 各适配器的执行、评分和资源准备细节见 [Benchmark 适配器](benchmarks.md)。
 
+## 运行环境
+
+评测在 Linux 上运行（Windows 用 WSL2）。需要：
+
+| 组件 | 要求 | 说明 |
+|---|---|---|
+| Python | ≥ 3.10 的独立环境，`pip install -e ".[analysis,sim,itemmodel,test]"` | 框架运行时只用标准库；`analysis` 提供 `ctxpress analyze` 的图（缺少时只写表格并生成 `figures-skipped.txt`），其余为重放、学习模型和测试。系统 Python 缺 venv 时可用 conda 建环境 |
+| Docker | 可用的守护进程 | 任务与评分容器；镜像按资源清单提前准备，不在运行中拉取 |
+| 宿主 | 固定版本的 bin 目录 | Codex：`codex`、`codex-code-mode-host`、`codex-resources/bwrap`，见 [宿主文档](hosts.md#固定的宿主版本) |
+| 模型目录 | 冻结的 `models.json` | 通过 `environment.model_catalog` 绑定 |
+| 凭据 | 运行时环境变量 | Codex：`CTXPRESS_CODEX_AUTH_FILE`；BrowseComp-Plus：`CTXPRESS_AGENT_API_KEY` / `CTXPRESS_SUMMARIZER_API_KEY` / `CTXPRESS_GRADER_API_KEY`。不写入计划、日志或结果 |
+| BrowseComp-Plus（可选） | Java 21（`JAVA_HOME`）、作者仓库及其 Python 环境、BM25 索引、已部署的模型服务 | 见 [ACM 接入](acm.md) |
+
 ## 统一验收与分层状态
 
 ```bash

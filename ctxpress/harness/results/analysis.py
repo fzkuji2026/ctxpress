@@ -672,6 +672,14 @@ def write(analysis, tables, output, figures=True):
     with open(output / "methods.csv", "w", newline="", encoding="utf-8") as stream:
         w = csv.DictWriter(stream, fieldnames=list(methods[0])); w.writeheader(); w.writerows(methods)
     if figures:
+        try:
+            import matplotlib  # noqa: F401  (optional: pip install "ctxpress[analysis]")
+        except ImportError:
+            (output / "figures-skipped.txt").write_text(
+                "Figures were skipped: matplotlib is not installed. Install ctxpress[analysis] to draw them.\n", encoding="utf-8")
+            import sys
+            print("ctxpress analyze: matplotlib not installed; tables written, figures skipped", file=sys.stderr)
+            return
         from ctxpress.harness.results.analysis_plot import plot
         plot(analysis, tables, output, usable_for)
 

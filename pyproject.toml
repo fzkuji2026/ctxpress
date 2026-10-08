@@ -27,6 +27,7 @@ Documentation = "https://github.com/fzkuji2026/ctxpress/tree/main/docs"
 sim = ["pyyaml", "numpy"]   # replay pre-screen and experiment configs
 itemmodel = ["scikit-learn", "numpy"]
 test = ["pytest"]
+analysis = ["matplotlib"]   # figures of `ctxpress analyze`; tables need nothing extra
 
 [project.scripts]
 ctxpress = "ctxpress.__main__:main"

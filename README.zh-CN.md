@@ -27,7 +27,7 @@ pip install ./ctxpress
 ctxpress --version
 ```
 
-可选依赖：`.[sim]` 用于重放模拟器，`.[itemmodel]` 用于学习的再用模型，`.[test]` 用于测试。
+可选依赖：`.[sim]` 用于重放模拟器，`.[itemmodel]` 用于学习的再用模型，`.[analysis]` 用于 `ctxpress analyze` 的图，`.[test]` 用于测试。评测运行环境见 [docs/evaluation.md](docs/evaluation.md#运行环境)。
 
 ## 快速上手
 
