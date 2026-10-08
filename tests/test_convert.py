@@ -1,5 +1,5 @@
 """Official releases converted to Harbor tasks, then read by their benchmark families. Synthetic stand-in releases."""
-import json, subprocess, sys
+import json, os, subprocess, sys
 
 import pytest
 
@@ -27,7 +27,7 @@ def get_init_inputs():
 
 def kernel_source(tmp_path):
     root = tmp_path / "KernelBench-checkout"
-    for level, name in ((1, "1_Square_matrix_multiplication_.py"), (2, "7_Matmul_ReLU.py")):
+    for level, name in ((1, "1_Square_matrix_multiplication_.py"), (2, "7_Matmul_ReLU.py"), (3, "4_LeNet5.py")):
         folder = root / "KernelBench" / f"level{level}"; folder.mkdir(parents=True)
         (folder / name).write_text(REFERENCE, encoding="utf-8")
     return root
@@ -75,28 +75,86 @@ def test_kernelbench_problems_become_gpu_tasks_with_the_official_check(tmp_path)
     assert plan_for(tmp_path, "kernelbench", out, ids[0])["run_count"] == 1
 
 
+KERNELBENCH_STUB = {
+    "kernelbench/__init__.py": "",
+    "kernelbench/kernel_static_checker.py": (
+        "STRICT_CHECKS = ['code_bypass']\nWARNING_CHECKS = ['torch_computation_ops', 'pytorch_wrap']\n"
+        "def validate_kernel_static(code, backend='cuda', precision='fp16', forbidden=None, warnings=None):\n"
+        "    bad = 'torch_computation_ops' in forbidden and 'torch.matmul' in code\n"
+        "    return (not bad, ['torch op'] if bad else [], [])\n"),
+    "kernelbench/eval.py": (
+        "class R:\n    def __init__(self, **k): self.__dict__.update(k)\n"
+        "def get_tolerance_for_precision(precision):\n    return 1e-4\n"
+        "def eval_kernel_against_ref(ref, src, num_correct_trials=1, num_perf_trials=10, measure_performance=False,"
+        " backend='cuda', **k):\n"
+        "    assert get_tolerance_for_precision('fp32') == 1e-2 and num_perf_trials == 10 and num_correct_trials == 5\n"
+        "    runtime = float(src.split('RUNTIME=')[1].split()[0]) if 'RUNTIME=' in src else -1.0\n"
+        "    return R(compiled=runtime > 0, correctness=runtime > 0, runtime=runtime, ref_runtime=100.0, metadata={})\n"),
+}
+
+
+def test_kernelbench_continual_follows_cliffcompaction(tmp_path):
+    out = kernelbench.convert(kernel_source(tmp_path), tmp_path / "kb", image="kb:1", revision="v0.1", protocol="continual")
+    tasks = benchmarks.get("kernelbench").task_instances(out)
+    assert [t["id"] for t in tasks] == ["kernelbench-l3-004-LeNet5"]               # Level 3 only by default
+    task_dir = out / tasks[0]["id"]
+    instruction = (task_dir / "instruction.md").read_text()
+    assert "evaluate_kernel.py" in instruction and "PyTorch compute operators may not be used" in instruction
+    manifest = json.loads((out / "dataset_manifest.json").read_text())
+    assert manifest["protocol"] == "continual" and manifest["tolerance"] == 1e-2 and manifest["perf_trials"] == 10
+    assert (task_dir / "environment" / "kb_protocol.py").read_text() == (task_dir / "tests" / "kb_protocol.py").read_text()
+    for name in ("environment/evaluate_kernel.py", "environment/kb_protocol.py", "tests/kernelbench_verify.py"):
+        compile((task_dir / name).read_text(), name, "exec")
+    work, logs, stub = tmp_path / "workspace", tmp_path / "logs", tmp_path / "stub"
+    for relative, text in KERNELBENCH_STUB.items():
+        (stub / relative).parent.mkdir(parents=True, exist_ok=True); (stub / relative).write_text(text)
+    (work / "candidates").mkdir(parents=True)
+    tests = task_dir / "tests"
+    script = (tests / "kernelbench_verify.py").read_text().replace("/workspace", work.as_posix()) \
+        .replace("/logs", logs.as_posix()).replace("/tests", tests.as_posix())
+    env = dict(os.environ, PYTHONPATH=str(stub))
+
+    def score():
+        subprocess.run([sys.executable, "-c", script], check=True, env=env)
+        return json.loads((logs / "verifier" / "reward.json").read_text())
+
+    assert score() == dict(compiled=0, correct=0, speedup=0.0, fast_1=0, score=0.1, candidates=0)
+    (work / "candidates" / "1-a.py").write_text("# RUNTIME=50 \n")                    # 2x
+    (work / "candidates" / "2-b.py").write_text("# RUNTIME=5 \ntorch.matmul(a, b)\n")  # fast but a PyTorch fallback
+    (work / "candidates" / "3-c.py").write_text("# RUNTIME=50 \n")                    # duplicate of the first
+    (work / "model_new.py").write_text("# RUNTIME=200 \n")                           # the final kernel is slower
+    result = score()
+    assert result["speedup"] == 2.0 and result["score"] == 2.0 and result["candidates"] == 3 and result["fast_1"] == 1
+    (work / "candidates" / "4-d.py").write_text("# RUNTIME=1 \n")                     # 100x is clamped to 10
+    assert score()["score"] == 10.0
+
+
 def test_longbench_answers_stay_in_tests_and_selection_is_honoured(tmp_path):
     out = longbench.convert(longbench_source(tmp_path), tmp_path / "lb", image="python:3.12-slim", revision="hf-rev", difficulty="hard")
     tasks = benchmarks.get("longbench-v2").task_instances(out)
     assert [t["id"] for t in tasks] == ["longbench-v2-66f36490821e116aacb2cc22"]
     task_dir = out / tasks[0]["id"]
     assert (task_dir / "tests" / "expected.txt").read_text().strip() == "C"
-    assert "C. 2003" in (task_dir / "instruction.md").read_text() and "answer" not in json.loads(
+    assert "(C) 2003" in (task_dir / "instruction.md").read_text() and "answer" not in json.loads(
         (out / "dataset_manifest.json").read_text())
     assert (task_dir / "environment" / "context.txt").read_text().startswith("A long document.")
     assert plan_for(tmp_path, "longbench-v2", out, tasks[0]["id"])["run_count"] == 1
 
 
-@pytest.mark.linux_only
-def test_longbench_verifier_is_the_official_letter_match(tmp_path):
+def test_longbench_verifier_is_the_official_answer_extraction(tmp_path):
     out = longbench.convert(longbench_source(tmp_path), tmp_path / "lb", image="python:3.12-slim", revision="hf-rev")
-    script = (out / "longbench-v2-66f36490821e116aacb2cc22" / "tests" / "test.sh").read_text()
-    work, logs, tests = tmp_path / "workspace", tmp_path / "logs", out / "longbench-v2-66f36490821e116aacb2cc22" / "tests"
+    tests = out / "longbench-v2-66f36490821e116aacb2cc22" / "tests"
+    instruction = (tests.parent / "instruction.md").read_text()
+    assert "What is the correct answer to this question: Which year?" in instruction and "(C) 2003" in instruction
+    assert 'Format your response as follows: "The correct answer is (insert answer here)".' in instruction
+    work, logs = tmp_path / "workspace", tmp_path / "logs"
     work.mkdir()
-    for given, reward in (("c\n", "1"), ("B", "0")):
+    script = (tests / "longbench_verify.py").read_text().replace("/workspace", work.as_posix()) \
+        .replace("/logs", logs.as_posix()).replace("/tests", tests.as_posix())
+    for given, reward in (("The correct answer is (C)", "1"), ("**The correct answer is C**", "1"),
+                          ("C", "0"), ("The correct answer is (B)", "0")):
         (work / "answer.txt").write_text(given)
-        text = script.replace("/workspace", str(work)).replace("/logs", str(logs)).replace("/tests", str(tests))
-        subprocess.run(["bash", "-c", text], check=True)
+        subprocess.run([sys.executable, "-c", script], check=True)
         assert (logs / "verifier" / "reward.txt").read_text().strip() == reward
 
 
@@ -139,19 +197,29 @@ def test_appworld_reads_migrated_official_tasks(tmp_path):
     assert benchmarks.get("appworld").task_instances(root)[0]["evaluation"]["dataset"]["name"] == "appworld"
 
 
-def officebench_source(tmp_path):
-    root = tmp_path / "OfficeBench"
-    sub = root / "tasks" / "1-3" / "subtasks"; sub.mkdir(parents=True)
-    (root / "tasks" / "1-3" / "testbed" / "data").mkdir(parents=True)
-    (root / "tasks" / "1-3" / "testbed" / "data" / "notes.txt").write_text("meeting at 3pm", encoding="utf-8")
-    (sub / "0.json").write_text(json.dumps(dict(task="Write the meeting time to data/time.txt.", evaluation=[
-        dict(function="evaluate_contain", args=dict(file="data/time.txt", keywords=["3pm"]))])), encoding="utf-8")
+def officebench_source(tmp_path, root_name="OfficeBench"):
+    root = tmp_path / root_name
+    for task, keyword in (("1-3", "3pm"), ("2-7", "noon")):
+        sub = root / "tasks" / task / "subtasks"; sub.mkdir(parents=True)
+        (root / "tasks" / task / "testbed" / "data").mkdir(parents=True)
+        (root / "tasks" / task / "testbed" / "data" / "notes.txt").write_text("meeting at " + keyword, encoding="utf-8")
+        (sub / "0.json").write_text(json.dumps(dict(task="Write the meeting time to data/time.txt.", evaluation=[
+            dict(function="evaluate_contain", args=dict(file="data/time.txt", keywords=[keyword]))])), encoding="utf-8")
     (root / "apps" / "word_app").mkdir(parents=True)
-    (root / "apps" / "word_app" / "read_file.py").write_text("print('official app')\n", encoding="utf-8")
-    (root / "evaluation.py").write_text(
-        "import os\n\ndef evaluate_contain(output_dir, args):\n"
-        "    path = os.path.join(output_dir, args['file'])\n"
-        "    return os.path.exists(path) and all(k in open(path).read() for k in args['keywords'])\n", encoding="utf-8")
+    (root / "apps" / "__init__.py").write_text("")
+    (root / "apps" / "word_app" / "__init__.py").write_text("")
+    (root / "apps" / "word_app" / "word_read_file.py").write_text(
+        "def read_file(path):\n    return open(path).read()\n", encoding="utf-8")
+    (root / "utils").mkdir()
+    # Like the official utils/evaluate.py: imports apps.* through the parent directory and reads /testbed paths.
+    (root / "utils" / "evaluate.py").write_text(
+        "import os, sys\nsys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))\n"
+        "from apps.word_app import word_read_file\n\n"
+        "def evaluate_contain(testbed_dir, args):\n"
+        "    path = os.path.join(testbed_dir, args['file'])\n"
+        "    return os.path.exists(path) and all(k in word_read_file.read_file(path) for k in args['keywords'])\n",
+        encoding="utf-8")
+    (root / "evaluation.py").write_text("import fire\nfrom utils.evaluate import evaluate_contain\n", encoding="utf-8")
     return root
 
 
@@ -159,14 +227,33 @@ def test_officebench_uses_the_official_checks_on_the_final_testbed(tmp_path):
     from ctxpress.benchmarks.convert import officebench
     out = officebench.convert(officebench_source(tmp_path), tmp_path / "ob", image="officebench:fixture", revision="abc123")
     tasks = benchmarks.get("officebench").task_instances(out)
-    assert [t["id"] for t in tasks] == ["officebench-1-3-0"]
+    assert [t["id"] for t in tasks] == ["officebench-1-3-0", "officebench-2-7-0"]
     task_dir = out / "officebench-1-3-0"
     assert (task_dir / "environment" / "testbed" / "data" / "notes.txt").is_file()
-    assert (task_dir / "environment" / "apps" / "word_app" / "read_file.py").is_file()
+    assert (task_dir / "environment" / "apps" / "word_app" / "word_read_file.py").is_file()
+    assert (task_dir / "tests" / "officebench" / "apps" / "word_app" / "word_read_file.py").is_file()
     assert "evaluate_contain" in (task_dir / "tests" / "subtask.json").read_text()
-    assert "3pm" not in (task_dir / "instruction.md").read_text()
+    instruction = (task_dir / "instruction.md").read_text()
+    assert "3pm" not in instruction and "/apps/word_app/word_read_file.py" in instruction
     compile((task_dir / "tests" / "officebench_verify.py").read_text(), "verify", "exec")
     assert plan_for(tmp_path, "officebench", out, "officebench-1-3-0")["run_count"] == 1
+
+
+def test_officebench_takes_acon_tasks_and_split(tmp_path):
+    from ctxpress.benchmarks.convert import officebench
+    acon = officebench_source(tmp_path, "acon-officebench")
+    (tmp_path / "test_tasks.txt").write_text("2-7\n")
+    with pytest.raises(ValueError, match="tasks_source"):
+        officebench.convert(officebench_source(tmp_path), tmp_path / "x", image="i", revision="r", tasks=acon / "tasks")
+    out = officebench.convert(tmp_path / "OfficeBench", tmp_path / "ob", image="i", revision="r", tasks=acon / "tasks",
+                              task_list=tmp_path / "test_tasks.txt", tasks_source="microsoft/acon@d63f9ae")
+    assert [t["id"] for t in benchmarks.get("officebench").task_instances(out)] == ["officebench-2-7-0"]
+    manifest = json.loads((out / "dataset_manifest.json").read_text())
+    assert manifest["task_source"] == "microsoft/acon@d63f9ae" and manifest["task_list"] == ["2-7"]
+    (tmp_path / "missing.txt").write_text("9-9\n")
+    with pytest.raises(ValueError, match="not found: 9-9"):
+        officebench.convert(tmp_path / "OfficeBench", tmp_path / "ob2", image="i", revision="r", tasks=acon / "tasks",
+                            task_list=tmp_path / "missing.txt", tasks_source="acon")
 
 
 @pytest.mark.linux_only
@@ -183,7 +270,9 @@ def test_officebench_verifier_runs_the_official_functions(tmp_path):
         assert (logs / "verifier" / "reward.txt").read_text().strip() == expected
 
 
-RECOVERY_REPLAY = '''import json
+# Stand-ins with the signatures and behaviour of letta-ai/recovery-bench (replay.py, prompts.py, utils.py, pipeline.py).
+RECOVERY = {
+    "replay.py": '''import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -191,69 +280,169 @@ from pathlib import Path
 class ReplayCommand:
     command: str
     keystrokes: str
-    timeout_sec: float = 15
+    timeout_sec: float = 15.0
 
 def _find_trajectory_file(folder):
     for path in (Path(folder) / "agent" / "trajectory.json", Path(folder) / "trajectory.json"):
-        if path.is_file():
+        if path.exists():
             return path
 
 def _load_trajectory(path):
-    return json.loads(Path(path).read_text())["steps"]
+    data = json.loads(Path(path).read_text())
+    return data.get("steps", data) if isinstance(data, dict) else data
 
 def _extract_from_step(step):
-    if step.get("source") != "agent":
-        return []
-    return [ReplayCommand(c["arguments"]["keystrokes"].strip(), c["arguments"]["keystrokes"], 7) for c in step.get("tool_calls", [])]
-'''
+    source, content = step.get("source", ""), step.get("message", "")
+    commands = []
+    if source == "agent":
+        for call in step.get("tool_calls", []):
+            ks = call.get("arguments", {}).get("keystrokes", "")
+            if ks:
+                cmd = ks.rstrip("\\n")
+                commands.append(ReplayCommand(cmd if not cmd.startswith("C-") else "", ks))
+    role = "assistant" if source == "agent" else source
+    return commands, ({"role": role, "content": content} if role in ("user", "assistant", "system") else None)
 
-RECOVERY_PIPELINE = r'''from pathlib import Path
-import json
+def extract_commands(folder):
+    return [c for step in _load_trajectory(_find_trajectory_file(folder)) for c in _extract_from_step(step)[0]]
 
 def extract_messages(folder):
-    return "previous transcript: " + " | ".join(s.get("message", "") for s in json.loads((Path(folder) / "trajectory.json").read_text())["steps"])
+    return [m for step in _load_trajectory(_find_trajectory_file(folder)) for m in [_extract_from_step(step)[1]] if m]
 
-def build_recovery_instruction(instruction, message_context):
-    return instruction + "\n\nA previous attempt failed. " + message_context
-'''
+def _find_interrupted_commands(commands):
+    return {i for i in range(len(commands) - 1) if commands[i + 1].keystrokes.strip().startswith("C-") and commands[i].command}
+''',
+    "prompts.py": '''RECOVERY_PREAMBLE = "RECOVERY MODE: The previous attempt to complete this task failed."
+
+def build_recovery_instruction(instruction, message_context=None):
+    parts = [RECOVERY_PREAMBLE]
+    if message_context:
+        parts.append(f"--- PREVIOUS ATTEMPT CONTEXT ---\\n{message_context}")
+    parts.append(f"--- ORIGINAL TASK ---\\n{instruction}")
+    return "\\n\\n".join(parts)
+
+def format_messages_as_text(messages):
+    return "\\n\\n".join(f"[{m.get('role', 'unknown').upper()}]: {m.get('content', '')}" for m in messages)
+''',
+    "utils.py": '''import json, os
+from pathlib import Path
+
+def get_unsolved_tasks(logs_dir, print_output=False):
+    found = []
+    for task_id in os.listdir(logs_dir):
+        result = Path(logs_dir) / task_id / "result.json"
+        if not result.exists():
+            continue
+        data = json.loads(result.read_text())
+        if ((data.get("verifier_result") or {}).get("rewards") or {}).get("reward", 0.0) > 0:
+            continue
+        found.append(data.get("task_name", task_id))
+    return found
+
+def find_trajectory_by_name(task_name, base_folder):
+    for item in Path(base_folder).iterdir():
+        name = item.name[9:] if len(item.name) > 9 and item.name[8] == "-" else item.name
+        if "__" in name:
+            name = name.rsplit("__", 1)[0]
+        if name == task_name and ((item / "agent" / "trajectory.json").exists() or (item / "trajectory.json").exists()):
+            return item
+''',
+    "pipeline.py": '''from .prompts import build_recovery_instruction, format_messages_as_text
+from .replay import extract_messages
+from .utils import find_trajectory_by_name
+
+MAX_INSTRUCTION_BYTES = 64_000
+
+def filter_oversized_tasks(task_ids, traces_folder, max_bytes=MAX_INSTRUCTION_BYTES):
+    kept = []
+    for task_id in task_ids:
+        folder = find_trajectory_by_name(task_id, traces_folder)
+        messages = extract_messages(folder) if folder else []
+        size = len(build_recovery_instruction("(task instruction)", format_messages_as_text(messages)).encode()) if messages else 0
+        if size <= max_bytes:
+            kept.append(task_id)
+    return kept
+''',
+}
 
 
 def recovery_sources(tmp_path):
     checkout = tmp_path / "recovery-bench"; (checkout / "recovery_bench").mkdir(parents=True)
     (checkout / "recovery_bench" / "__init__.py").write_text("")
-    (checkout / "recovery_bench" / "replay.py").write_text(RECOVERY_REPLAY)
-    (checkout / "recovery_bench" / "pipeline.py").write_text(RECOVERY_PIPELINE)
+    for name, text in RECOVERY.items():
+        (checkout / "recovery_bench" / name).write_text(text)
     tasks = tmp_path / "tb2"
-    for name in ("fix-git", "build-tcc"):
-        task = tasks / name; (task / "environment").mkdir(parents=True); (task / "tests").mkdir()
+    for name in ("fix-git", "build-tcc", "huge-log"):
+        task = tasks / name; (task / "environment").mkdir(parents=True); (task / "tests").mkdir(); (task / "solution").mkdir()
         (task / "task.toml").write_text(f'version = "1.0"\n[task]\nname = "terminal-bench/{name}"\n[verifier]\ntimeout_sec = 300\n')
         (task / "instruction.md").write_text(f"Do {name}.")
         (task / "environment" / "Dockerfile").write_text("FROM tb2/" + name + ":2.0\n")
         (task / "tests" / "test.sh").write_text("#!/bin/bash\npytest /tests/test_outputs.py\n")
         (task / "tests" / "test_outputs.py").write_text("def test_ok():\n    assert True\n")
+        (task / "solution" / "solve.sh").write_text("#!/bin/bash\n")
     traces = tmp_path / "initial"
-    for name, reward in (("fix-git", 0.0), ("build-tcc", 1.0)):
-        trace = traces / f"{name}__abc"; trace.mkdir(parents=True)
-        steps = [dict(source="user", message="start"),
-                 dict(source="agent", message="try", tool_calls=[dict(arguments=dict(keystrokes="git reset --hard HEAD~3\n"))])]
-        (trace / "trajectory.json").write_text(json.dumps(dict(steps=steps)))
-        (trace / "result.json").write_text(json.dumps(dict(verifier_result=dict(rewards=dict(reward=reward)))))
+
+    def calls(*keys):
+        return [dict(arguments=dict(keystrokes=k)) for k in keys]
+
+    for folder, task, reward, steps in (
+            ("1a2b3c4d-fix-git__abc", "fix-git", 0.0, [dict(source="user", message="start"),
+                dict(source="agent", message="try", tool_calls=calls("git reset --hard HEAD~3\n", "sleep 999\n", "C-c", "ls\n"))]),
+            ("build-tcc__x", "build-tcc", 1.0, [dict(source="agent", message="ok", tool_calls=calls("make\n"))]),
+            ("huge-log__y", "huge-log", 0.0, [dict(source="agent", message="x" * 70_000, tool_calls=calls("cat big\n"))])):
+        trace = traces / folder; (trace / "agent").mkdir(parents=True)
+        (trace / "agent" / "trajectory.json").write_text(json.dumps(dict(steps=steps)))
+        (trace / "result.json").write_text(json.dumps(dict(task_name=task, verifier_result=dict(rewards=dict(reward=reward)))))
     return tasks, traces, checkout
 
 
-def test_recovery_bench_uses_failed_attempts_the_official_replay_and_instruction(tmp_path):
+def test_recovery_bench_uses_the_official_selection_instruction_and_replay(tmp_path):
     from ctxpress.benchmarks.convert import recovery
     tasks, traces, checkout = recovery_sources(tmp_path)
     out = recovery.convert(tasks, traces, checkout, tmp_path / "rb", revision="lfs-abc")
     found = benchmarks.get("recovery-bench").task_instances(out)
-    assert [t["id"] for t in found] == ["recovery-fix-git"]                     # the successful initial attempt is not used
+    assert [t["id"] for t in found] == ["recovery-fix-git"]           # solved and oversized initial attempts are left out
     task_dir = out / "recovery-fix-git"
     instruction = (task_dir / "instruction.md").read_text()
-    assert instruction.startswith("Do fix-git.") and "A previous attempt failed. previous transcript" in instruction
-    dockerfile = (task_dir / "environment" / "Dockerfile").read_text()
-    assert dockerfile.startswith("FROM tb2/fix-git:2.0") and "RUN bash /tmp/recovery-replay.sh" in dockerfile
-    assert "git reset --hard HEAD~3" in (task_dir / "environment" / "replay.sh").read_text()
-    assert (task_dir / "tests" / "test_outputs.py").is_file()
+    assert instruction.startswith("RECOVERY MODE") and "[ASSISTANT]: try" in instruction
+    assert instruction.endswith("--- ORIGINAL TASK ---\nDo fix-git.")
+    assert (task_dir / "environment" / "Dockerfile").read_text() == "FROM tb2/fix-git:2.0\n"   # the image is unchanged
+    replay = json.loads((task_dir / "recovery" / "replay.json").read_text())
+    assert replay["commands"] == ["git reset --hard HEAD~3", "ls"]        # the interrupted `sleep 999` is skipped
+    assert replay["timeout_sec"] == 15 and replay["setup_timeout_multiplier"] == 3.0
+    assert (task_dir / "tests" / "test_outputs.py").is_file() and (task_dir / "solution" / "solve.sh").is_file()
     none = recovery.convert(tasks, traces, checkout, tmp_path / "rb-none", revision="lfs-abc", message_mode="none")
-    assert (none / "recovery-fix-git" / "instruction.md").read_text() == "Do fix-git."
+    text = (none / "recovery-fix-git" / "instruction.md").read_text()
+    assert text.startswith("RECOVERY MODE") and "PREVIOUS ATTEMPT" not in text
+    with pytest.raises(ValueError, match="summary"):
+        recovery.convert(tasks, traces, checkout, tmp_path / "rb-s", revision="lfs-abc", message_mode="summary")
     assert plan_for(tmp_path, "recovery-bench", out, "recovery-fix-git")["run_count"] == 1
+
+
+def test_recovery_replay_runs_in_the_container_before_the_agent(tmp_path):
+    import asyncio, shlex
+    from ctxpress.benchmarks.convert import recovery
+    from ctxpress.benchmarks.harbor import modern, worker
+    from ctxpress.harness.runtime import codex_agent
+    tasks, traces, checkout = recovery_sources(tmp_path)
+    out = recovery.convert(tasks, traces, checkout, tmp_path / "rb", revision="lfs-abc")
+    request = dict(task=str(out / "recovery-fix-git"))
+    assert codex_agent.replay_settings(request) == {"replay": dict(commands=["git reset --hard HEAD~3", "ls"], timeout_sec=15)}
+    assert worker.setup_timeout(request) == modern.setup_timeout(request) == {"agent_setup_timeout_multiplier": 3.0}
+    plain = dict(task=str(tasks / "fix-git"))
+    assert codex_agent.replay_settings(plain) == {} and worker.setup_timeout(plain) == {}
+
+    class Environment:
+        def __init__(self):
+            self.commands = []
+
+        async def exec(self, command, timeout_sec=None, **kwargs):
+            self.commands.append(command)
+            if "hang" in command:
+                await asyncio.sleep(5)
+            if "fail" in command:
+                raise RuntimeError("non-zero exit")
+
+    environment = Environment()
+    asyncio.run(codex_agent.replay(environment, dict(commands=["fail now", "hang", "echo 'ok'"], timeout_sec=0.05)))
+    assert environment.commands == ["bash -lc " + shlex.quote(c) for c in ("fail now", "hang", "echo 'ok'")]

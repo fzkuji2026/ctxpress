@@ -49,13 +49,13 @@ class Converted(OfficialHarbor):
 class KernelBench(Converted):
     NAME = 'kernelbench'
     TITLE = 'KernelBench'
-    ADAPTER = 'python -m ctxpress.benchmarks.convert kernelbench (official eval_kernel_against_ref; NVIDIA GPU)'
+    ADAPTER = 'python -m ctxpress.benchmarks.convert kernelbench (official eval_kernel_against_ref; official or CliffCompaction continual protocol; NVIDIA GPU)'
 
 
 class LongBenchV2(Converted):
     NAME = 'longbench-v2'
     TITLE = 'LongBench v2'
-    ADAPTER = 'python -m ctxpress.benchmarks.convert longbench-v2 (context as a file; official letter match)'
+    ADAPTER = 'python -m ctxpress.benchmarks.convert longbench-v2 (official 0-shot prompt, text as a file; official extract_answer)'
 
 
 class SWEQA(Converted):
@@ -73,4 +73,4 @@ class OfficeBench(Converted):
 class RecoveryBench(Converted):
     NAME = 'recovery-bench'
     TITLE = 'Recovery-Bench'
-    ADAPTER = 'python -m ctxpress.benchmarks.convert recovery-bench (official replay and recovery instruction; original tests)'
+    ADAPTER = 'python -m ctxpress.benchmarks.convert recovery-bench (official selection, instruction and in-container replay; original tests)'

@@ -61,6 +61,37 @@ def catalog_mounts(request):
                  read_only=True, bind={'create_host_path':False})]
 
 
+def task_replay(request):
+    """Recovery-Bench: commands of the failed attempt (recovery/replay.json in the task), or None."""
+    path = Path(request['task']) / 'recovery' / 'replay.json'
+    if request.get('pro_replay') or not path.is_file():
+        return None
+    data = json.loads(path.read_text(encoding='utf-8'))
+    commands = data.get('commands')
+    if (data.get('schema') != 'ctxpress.recovery_replay' or not isinstance(commands, list) or
+            not all(isinstance(c, str) and c for c in commands) or type(data.get('timeout_sec')) is not int):
+        raise ValueError('invalid Recovery-Bench replay in the task')
+    return dict(commands=commands, timeout_sec=data['timeout_sec'],
+                setup_timeout_multiplier=float(data.get('setup_timeout_multiplier') or 1.0))
+
+
+def replay_settings(request):
+    replay = task_replay(request)
+    return {'replay':dict(commands=replay['commands'], timeout_sec=replay['timeout_sec'])} if replay else {}
+
+
+async def replay(environment, replay):
+    """recovery_bench.replay.replay_via_exec: each command once, bounded, failures and timeouts ignored."""
+    limit = replay['timeout_sec']
+    for command in replay['commands']:
+        try:
+            await asyncio.wait_for(environment.exec(command='bash -lc ' + shlex.quote(command), timeout_sec=limit), timeout=limit)
+        except (asyncio.TimeoutError, TimeoutError):
+            continue
+        except Exception:
+            continue
+
+
 def catalog_settings(request):
     if check_catalog(request) is None or request.get('pro_replay'):
         return {}
@@ -102,7 +133,7 @@ class CallProgress:
 def framework(base, exec_input, settings, limit_error=RuntimeError, credential_state=None):
     settings = copy.deepcopy(settings)
     required = {'method', 'model', 'reasoning', 'binary_version', 'compact_limit', 'upstream'}
-    optional = {'auth_file', 'max_calls', 'model_catalog', 'model_catalog_sha256', 'profiles'}
+    optional = {'auth_file', 'max_calls', 'model_catalog', 'model_catalog_sha256', 'profiles', 'replay'}
     if not isinstance(settings, dict) or set(settings) - required - optional or required - set(settings):
         raise ValueError('declare method, model, reasoning, binary version, compact limit and upstream')
     if {'model_catalog', 'model_catalog_sha256'}.intersection(settings):
@@ -163,6 +194,8 @@ def framework(base, exec_input, settings, limit_error=RuntimeError, credential_s
                     '    raise ValueError("mounted Codex model catalog differs from the frozen input")\n'
             await self._checked(environment, 'python3 -c ' + shlex.quote(readiness),
                 env={'PYTHONPATH':'/ctxpress-runtime'})
+            if settings.get('replay'):
+                await replay(environment, settings['replay'])
             await self._checked(environment, 'test ! -e ' + PRIVATE + ' && test ! -L ' + PRIVATE +
                 ' && (umask 077; mkdir ' + PRIVATE + ' && mkdir ' + HOME + ')')
             self._ctxpress_home_owned = True

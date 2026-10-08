@@ -48,17 +48,17 @@ Terminal-Bench/Science 现在按冻结源码选择旧 `Trial` 或新版 `SingleS
 
 **固定协议以外的 Harbor 任务家族。** 下列 benchmark 都以 Harbor 任务格式运行，复用同一个 Harbor 执行与评分链路（`ctxpress/benchmarks/harbor`）：数据目录必须带 `dataset_manifest.json` 声明数据集和版本，各任务 `tests/` 里的评分代码给出 reward。它们不进入固定的 8 家族实验协议。
 
-| 家族 | 任务来源 | 评分 | 说明 |
+| 家族 | 任务来源 | 评分 | 和上下文管理论文的对齐 |
 |---|---|---|---|
-| `multi-swe-bench` | Harbor 官方适配器 `harbor/adapters/multi-swe-bench`（7 种语言，1,632 题） | 官方 RUN/TEST/FIX 流程 | 需要预先拉取 `mswebench/` 镜像，体量大 |
+| `multi-swe-bench` | Harbor 官方适配器 `harbor/adapters/multi-swe-bench`（7 种语言，1,632 题） | 官方 RUN/TEST/FIX 流程 | AgentDiet 用的 Flash 子集（300 题）：适配器 `--dataset-path` 指向 Flash 数据；AgentDiet 的 100 步上限可用 `max_calls` 近似。需要预先拉取 `mswebench/` 镜像，体量大 |
 | `swe-bench-multilingual` | Harbor 官方适配器 `swebench_multilingual` | 官方测试 | |
-| `appworld` | Terminal-Bench 官方 AppWorld 适配器生成，再用 `harbor tasks migrate` 迁移 | 官方 AppWorld 评测 | 本地模拟环境，无需网络 |
-| `kernelbench` | `python -m ctxpress.benchmarks.convert kernelbench` | 官方 `eval_kernel_against_ref`：compiled、correct、speedup、fast_1 | 每题申请 1 块 NVIDIA GPU；镜像需含 CUDA、PyTorch 和同一份 KernelBench |
-| `longbench-v2` | `... convert longbench-v2` | 官方选项字母比对 | 原协议是单轮提示，这里把长文作为文件交给 Agent 读，属于协议改动 |
-| `swe-qa` | `... convert swe-qa`（仓库按固定提交构建） | 官方是 LLM 评判（五个维度）；验证器只收集答案和参考答案，记 `answered`，不给质量分 | 字段名按发布数据读取，未知格式直接报错 |
-| `officebench` | `... convert officebench` | 官方 `evaluate_*` 函数，全部通过才算成功 | 原 Agent 输出 OfficeBench 动作；这里 Agent 在 shell 里调用同一套 `apps/` 脚本 |
-| `recovery-bench` | `... convert recovery-bench`（Terminal-Bench 2.0 任务 + 失败的初始轨迹 + recovery-bench 代码） | 原任务测试 | 只用初始尝试失败（reward 0）的轨迹；用官方 replay 提取命令，在镜像构建时重放；恢复说明由官方 `build_recovery_instruction` 生成，支持 full / summary / none |
+| `appworld` | Terminal-Bench 官方 AppWorld 适配器生成，再用 `harbor tasks migrate` 迁移 | 官方 AppWorld 评测 | ACON 用 `--split test_normal`（168 题，任务目标完成率）。本地模拟环境，无需网络 |
+| `kernelbench` | `python -m ctxpress.benchmarks.convert kernelbench` | 官方 `eval_kernel_against_ref` | `--protocol official`：交一个 kernel，报 compiled、correct、speedup、fast_1。`--protocol continual` 按 CliffCompaction（附录 D.2）：默认 Level 3（50 题）；Agent 用 `/workspace/evaluate_kernel.py` 评测并存档每个候选，验证器逐个重评，取最好的加速比（上限 10 倍，没有正确候选记 0.1，总分取几何平均）；5 组正确性输入、10 次计时、容差 1e-2（CUDA）/ 5e-2（Triton），CUDA 版用官方静态检查禁止 PyTorch 计算算子。仍有差别：Codex 可以自己结束，论文去掉了这一能力并固定 400 步；预热次数用官方默认。每题 1 块 NVIDIA GPU |
+| `longbench-v2` | `... convert longbench-v2` | 官方 `pred.py` 的 `extract_answer` + 字母比对 | 提示词是官方 `prompts/0shot.txt`，只把正文换成 `/workspace/context.txt` 文件。ARC 就是这样当作 Agent 任务测的（长文要经工具观察进入上下文，压缩才有作用），用 `--difficulty hard`（311 题） |
+| `swe-qa` | `... convert swe-qa`（仓库按固定提交构建） | 官方是 LLM 评判（五个维度）；验证器只收集答案和参考答案，记 `answered`，不给质量分 | SWE-Pruner 用 `--projects streamlink reflex conan`。字段名按发布数据读取，未知格式直接报错 |
+| `officebench` | `... convert officebench` | 官方 `utils/evaluate.py` 的 `evaluate_*` 函数，全部通过才算成功 | 容器布局与原版一致（`/apps`、`/testbed`）。原 Agent 的 JSON 动作最终也是执行 `python3 /apps/<app>/<script>.py --参数`，这里 Agent 在 shell 里直接调用同样的脚本。ACON 的设置：`--tasks` 指向 ACON 清洗过的 `experiments/officebench/tasks`，`--task-list` 用它的 `test_tasks.txt`（纯文本题，1:1 划分），`--tasks-source microsoft/acon@<commit>` |
+| `recovery-bench` | `... convert recovery-bench`（Terminal-Bench 2.0 任务 + 初始轨迹 + recovery-bench 代码，需在装好 recovery-bench 的 Python 里运行） | 原任务测试 | 照官方 `recovery-codex` 流程，全部调官方函数：选未解出（reward 0）且恢复说明不超过 64 KB 的题；指令由官方 `build_recovery_instruction` 生成（full / none；summary 要在运行时调模型，未提供）；失败轨迹的命令（去掉被 Ctrl-C 中断的）写入 `recovery/replay.json`，Codex 装好后、开始做题前在运行中的容器里逐条执行（每条 15 秒，失败忽略），Agent 准备阶段超时乘 3 |
 
-Terminal-Bench 2.0 不需要新代码：`terminal-bench` 家族读取任意 Harbor 版本，数据带 `dataset_manifest.json`（`revision: "2.0"`）即可。转换器只读取已经在本地的官方发布，不下载任何东西；以上家族目前只用本地替身检查过，没有真实运行。暂不接入：需要实时联网的 BrowseComp、BrowseComp-ZH、GAIA、WideSearch、DeepSearchQA；按 OpenClaw Agent 设计的 Claw-Eval、PinchBench（换成其他宿主等于改协议）；尚未公开发布数据的 LongCLI-Bench。
+Terminal-Bench 2.0 不需要新代码：`terminal-bench` 家族读取任意 Harbor 版本，数据带 `dataset_manifest.json`（`revision: "2.0"`）即可。CWL 用的就是完整 2.0（89 题）。转换器只读取已经在本地的官方发布，不下载任何东西；以上家族目前只用和官方代码签名一致的本地替身检查过，没有真实运行。暂不接入：需要实时联网的 BrowseComp、BrowseComp-ZH、GAIA、WideSearch、DeepSearchQA；按 OpenClaw Agent 设计的 Claw-Eval、PinchBench（换成其他宿主等于改协议）；尚未公开发布数据的 LongCLI-Bench。
 
 模型发布成绩不能直接按模型品牌推断 Agent：[DeepSWE 官方榜单](https://deepswe.datacurve.ai/run)使用 Pier + mini-swe-agent；[Science 0.1 官方评测](https://www.tbench.ai/news/terminal-bench-science-0-1)列出 GPT 配 Codex、Claude 配 Claude Code。我们分别准备原协议复刻与固定 Codex 的上下文方法比较，保留版本、宿主、提示、资源、重复数与评分设置；改用另一 Agent 的结果不冒充原发布成绩。

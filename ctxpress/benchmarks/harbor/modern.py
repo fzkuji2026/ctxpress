@@ -73,6 +73,13 @@ def load(official):
     return Codex, NonZeroAgentExitCodeError, DockerEnvironment, ExecResult, TrialConfig, Trial, verifier_definition(verifier_mode), EnvironmentCapabilities
 
 
+def setup_timeout(request):
+    # Recovery-Bench replays the failed attempt during agent setup; the official pipeline triples that timeout.
+    from ctxpress.harness.runtime.codex_agent import task_replay
+    replay = task_replay(request)
+    return {'agent_setup_timeout_multiplier':replay['setup_timeout_multiplier']} if replay else {}
+
+
 def trial_config(request, config_class, channel):
     from ctxpress.harness.runtime.codex_agent import catalog_mounts
     mounts = [dict(type='bind', source=source, target=target, read_only=True, bind={'create_host_path':False})
@@ -85,7 +92,7 @@ def trial_config(request, config_class, channel):
             'model_name':request['model'], 'override_timeout_sec':request['run']['timeout']},
         environment={'import_path':'ctxpress.benchmarks.harbor.modern:CtxpressDocker',
                      'force_build':False, 'delete':True, 'mounts':mounts},
-        verifier={'disable':not request['run']['grade']})
+        verifier={'disable':not request['run']['grade']}, **setup_timeout(request))
 
 
 async def run_trial(request, official, channel, journal,agent_factory=None):
@@ -133,7 +140,8 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
     settings=dict(method=request['method'], profiles=request.get('profiles'), model=request['model'],
         reasoning=request['reasoning'], binary_version=request['binary_version'], compact_limit=request['compact_limit'],
         upstream=request['upstream'], auth_file=os.environ['CTXPRESS_CODEX_AUTH_FILE'],
-        max_calls=request['run']['max_calls'], **codex_agent.catalog_settings(request))
+        max_calls=request['run']['max_calls'], **codex_agent.catalog_settings(request),
+        **codex_agent.replay_settings(request))
     CtxpressCodex = agent_factory(Codex,None,settings,LimitError,credentials) if agent_factory else \
         harbor_modern_codex.framework(Codex,settings,LimitError,credentials)
 

@@ -199,7 +199,9 @@ The package is layered so that each layer imports only the ones above it:
 graders: SWE-bench (full, Verified, Lite), SWE-Milestone, Terminal-Bench, Terminal-Bench-Science, DeepSWE,
 SWE-bench Pro, SWE-PolyBench and BigCodeBench. Further Harbor-task families cover Multi-SWE-bench, SWE-bench
 Multilingual, AppWorld, KernelBench, OfficeBench, Recovery-Bench, SWE-QA and LongBench v2, from official adapters or
-from official releases converted with `python -m ctxpress.benchmarks.convert` ([docs/benchmarks.md](docs/benchmarks.md)).
+from official releases converted with `python -m ctxpress.benchmarks.convert`, set up the way context-management papers
+ran them (for example ACON's OfficeBench split and CliffCompaction's continual KernelBench protocol;
+[docs/benchmarks.md](docs/benchmarks.md)).
 BrowseComp-Plus runs the ACM authors' own research agent behind
 the proxy, so their trained checkpoint can be evaluated in the same pipeline ([docs/acm.md](docs/acm.md)).
 

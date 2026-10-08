@@ -1,8 +1,10 @@
-"""LongBench v2 items as Harbor tasks: the agent reads the long context from a file and answers one letter.
+"""LongBench v2 items as Harbor tasks: the official 0-shot prompt, with the long text in a file the agent reads.
 
 Source: the official data file (zai-org/LongBench-v2, a JSON list with _id, question, choice_A..choice_D, answer,
-context, domain, difficulty, length). The answer is only in tests/. Grading is the official exact letter match.
-This changes the protocol from a single prompt to a file the agent reads with tools; report it as such.
+context, domain, difficulty, length). The prompt is THUDM/LongBench prompts/0shot.txt with $DOC$ replaced by a
+pointer to /workspace/context.txt; the answer is only in tests/ and is extracted from the agent's response with
+pred.py's extract_answer. Agentic context-management papers evaluate it this way (ARC 2607.25066: hard subset,
+311 items), since the text must reach the agent through tool observations for compaction to act on it.
 """
 from __future__ import annotations
 import json
@@ -12,22 +14,46 @@ from ctxpress.benchmarks.convert.common import new_output, write_manifest, write
 
 FIELDS = ("_id", "question", "choice_A", "choice_B", "choice_C", "choice_D", "answer", "context")
 
-INSTRUCTION = """Read the document in /workspace/context.txt and answer the multiple-choice question below.
-Write only the letter of the correct choice (A, B, C or D) to /workspace/answer.txt.
+# prompts/0shot.txt; the only change is where the text is.
+INSTRUCTION = """Please read the following text and answer the question below.
 
-Question: {question}
+<text>
+The text is in the file /workspace/context.txt ({chars} characters). Read it from there.
+</text>
 
-A. {choice_A}
-B. {choice_B}
-C. {choice_C}
-D. {choice_D}
+What is the correct answer to this question: {question}
+Choices:
+(A) {choice_A}
+(B) {choice_B}
+(C) {choice_C}
+(D) {choice_D}
+
+Format your response as follows: "The correct answer is (insert answer here)".
+Write that response to /workspace/answer.txt.
 """
 
-VERIFIER = """#!/bin/bash
-mkdir -p /logs/verifier
-answer=$(tr -d '[:space:]' < /workspace/answer.txt 2>/dev/null | head -c 1 | tr 'abcd' 'ABCD')
-expected=$(cat /tests/expected.txt)
-if [ "$answer" = "$expected" ]; then echo 1 > /logs/verifier/reward.txt; else echo 0 > /logs/verifier/reward.txt; fi
+# pred.py extract_answer, applied to the response file.
+VERIFIER = r"""import re
+from pathlib import Path
+
+def extract_answer(response):
+    response = response.replace('*', '')
+    match = re.search(r'The correct answer is \(([A-D])\)', response)
+    if match:
+        return match.group(1)
+    else:
+        match = re.search(r'The correct answer is ([A-D])', response)
+        if match:
+            return match.group(1)
+        else:
+            return None
+
+out = Path("/logs/verifier"); out.mkdir(parents=True, exist_ok=True)
+path = Path("/workspace/answer.txt")
+pred = extract_answer(path.read_text(errors="replace")) if path.is_file() else None
+expected = Path("/tests/expected.txt").read_text().strip()
+(out / "reward.txt").write_text("1\n" if pred == expected else "0\n")
+(out / "prediction.txt").write_text(str(pred) + "\n")
 """
 
 
@@ -47,13 +73,17 @@ def convert(source, output, *, image, revision, difficulty=None, length=None, ag
     for row in items(source):
         if difficulty and row.get("difficulty") != difficulty or length and row.get("length") != length:
             continue
-        write_task(output, "longbench-v2-" + row["_id"], instruction=INSTRUCTION.format(**row),
+        fields = {k: str(row[k]).strip() for k in FIELDS[1:6]}               # pred.py strips each field
+        write_task(output, "longbench-v2-" + row["_id"], instruction=INSTRUCTION.format(chars=len(row["context"]), **fields),
                    config=dict(agent=dict(timeout_sec=agent_timeout), verifier=dict(timeout_sec=120), environment={}),
                    environment={"Dockerfile": f"FROM {image}\nCOPY context.txt /workspace/context.txt\n", "context.txt": row["context"]},
-                   tests={"test.sh": VERIFIER, "expected.txt": row["answer"] + "\n"})
+                   tests={"test.sh": "#!/bin/bash\npython3 /tests/longbench_verify.py\n", "longbench_verify.py": VERIFIER,
+                          "expected.txt": row["answer"] + "\n"})
         count += 1
     if not count:
         raise ValueError("no LongBench v2 items matched the selection")
     write_manifest(output, "longbench-v2", revision, source="zai-org/LongBench-v2", difficulty=difficulty, length=length,
-                   converter="ctxpress.benchmarks.convert.longbench", protocol_note="context given as a file, not a single prompt")
+                   converter="ctxpress.benchmarks.convert.longbench", prompt="THUDM/LongBench prompts/0shot.txt",
+                   answer_extraction="THUDM/LongBench pred.py extract_answer",
+                   protocol_note="the long text is a file the agent reads, not inline in the prompt")
     return output

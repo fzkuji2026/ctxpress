@@ -1,87 +1,75 @@
 """Recovery-Bench as Harbor tasks: a Terminal-Bench 2.0 task resumed from a failed attempt.
 
-Sources, all on disk: the Terminal-Bench 2.0 Harbor tasks, the recovery-bench checkout (letta-ai/recovery-bench) and
-its initial traces (runs/initial-...; one folder per task with trajectory.json and the trial result). Only failed
-initial attempts (reward 0) are used, as in the official pipeline. The official code does the two
-benchmark-specific steps: recovery_bench.replay extracts the failed agent's commands, which the task image
-re-executes to rebuild the corrupted state, and recovery_bench.pipeline builds the recovery instruction from
-the task instruction and the previous transcript (message mode full / summary / none). Grading is the original
-task's tests.
+Sources, all on disk: the Terminal-Bench 2.0 Harbor tasks, a recovery-bench checkout (letta-ai/recovery-bench, run
+with its dependencies installed) and its initial traces (runs/initial-...). Every benchmark-specific step is the
+official code, as `recovery_bench.generate_traces --recovery-agent recovery-codex` runs it:
+  - task selection: utils.get_unsolved_tasks (reward 0) and pipeline.filter_oversized_tasks (64 KB instruction cap);
+  - the failed agent's commands: replay.extract_commands, minus replay._find_interrupted_commands;
+  - the instruction: prompts.build_recovery_instruction over prompts.format_messages_as_text (message mode full),
+    or with no context (none). Summary mode asks the recovery model for a summary at run time and is not offered.
+The commands go to recovery/replay.json, which Harbor does not copy into the container. As in the official
+RecoveryCodex.setup, ctxpress executes them one by one in the running container after the agent is installed and
+before it starts (bash -lc, 15 s each, failures ignored); the agent setup timeout is tripled as the official
+pipeline does. Grading is the original task's tests.
 """
 from __future__ import annotations
-import importlib, json, shlex, shutil, sys
+import importlib, json, shutil, sys
 from pathlib import Path
 
-from ctxpress.benchmarks.convert.common import new_output, write_manifest, write_task
+from ctxpress.benchmarks.convert.common import new_output, write_manifest
 from ctxpress.core import toml
+
+REPLAY = "recovery/replay.json"
+REPLAY_TIMEOUT = 15            # recovery_bench.replay.replay_via_exec default
+SETUP_MULTIPLIER = 3.0         # recovery_bench.pipeline.RECOVERY_SETUP_TIMEOUT_MULTIPLIER
 
 
 def official(checkout):
     sys.path.insert(0, str(Path(checkout).expanduser().resolve()))
     try:
-        return importlib.import_module("recovery_bench.replay"), importlib.import_module("recovery_bench.pipeline")
+        return {name: importlib.import_module("recovery_bench." + name) for name in ("replay", "prompts", "utils", "pipeline")}
     finally:
         sys.path.pop(0)
 
 
-def reward(trace):
-    for name in ("result.json", "trial_result.json"):
-        path = trace / name
-        if path.is_file():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            rewards = (data.get("verifier_result") or {}).get("rewards") or {}
-            if rewards:
-                return max(float(v) for v in rewards.values())
-    return None
-
-
-def commands(replay, trace):
-    """Shell commands of the failed attempt, through the official parser."""
-    steps = replay._load_trajectory(replay._find_trajectory_file(trace))
-    found = []
-    for step in steps:
-        for command in replay._extract_from_step(step) or []:
-            found.append((command.command, getattr(command, "timeout_sec", 15) or 15))
-    skipped = set(replay._find_interrupted_commands(steps)) if hasattr(replay, "_find_interrupted_commands") else set()
-    return [c for i, c in enumerate(found) if i not in skipped]
+def replay_commands(replay, folder):
+    commands = replay.extract_commands(folder)
+    skipped = replay._find_interrupted_commands(commands)
+    return [c.command for i, c in enumerate(commands) if c.command and i not in skipped]
 
 
 def convert(tasks, traces, checkout, output, *, revision, message_mode="full"):
-    if message_mode not in ("full", "summary", "none"):
-        raise ValueError("message_mode is full, summary or none")
-    replay, pipeline = official(checkout)
+    if message_mode not in ("full", "none"):
+        raise ValueError("message_mode is full or none (summary needs the recovery model at run time)")
+    code = official(checkout)
     tasks, traces = Path(tasks).expanduser().resolve(), Path(traces).expanduser().resolve()
+    candidates = code["pipeline"].filter_oversized_tasks(code["utils"].get_unsolved_tasks(str(traces)), str(traces))
     output = new_output(output)
     used = []
-    for trace in sorted(p for p in traces.iterdir() if p.is_dir()):
-        name = trace.name.split("__")[0]
-        source = tasks / name
-        if not (source / "task.toml").is_file() or reward(trace) != 0:
-            continue                                         # unknown task, or the initial attempt did not fail
-        instruction = (source / "instruction.md").read_text(encoding="utf-8")
-        context = pipeline.extract_messages(trace) if message_mode != "none" else None
-        recovery = pipeline.build_recovery_instruction(instruction, context) if context else instruction
-        script = "#!/bin/bash\n" + "".join(f"timeout {int(t)} bash -lc {shlex.quote(c)} || true\n" for c, t in commands(replay, trace))
-        directory = write_task(output, f"recovery-{name}", instruction=recovery, config={},
-                               environment={"replay.sh": script}, tests={"test.sh": source / "tests" / "test.sh"})
-        shutil.rmtree(directory / "tests"); shutil.copytree(source / "tests", directory / "tests")
-        for path in sorted((source / "environment").rglob("*")):
-            if path.is_file():
-                target = directory / "environment" / path.relative_to(source / "environment")
-                target.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(path, target)
-        dockerfile = directory / "environment" / "Dockerfile"
-        if not dockerfile.is_file():
-            raise ValueError("Recovery-Bench conversion needs the task's environment/Dockerfile: " + name)
-        dockerfile.write_text(dockerfile.read_text(encoding="utf-8").rstrip() +
-                              "\n# Recovery-Bench: rebuild the failed attempt's state\nCOPY replay.sh /tmp/recovery-replay.sh\n"
-                              "RUN bash /tmp/recovery-replay.sh && rm /tmp/recovery-replay.sh\n", encoding="utf-8")
+    for name in candidates:
+        short = name.split("/")[-1]
+        source = tasks / short
+        folder = code["utils"].find_trajectory_by_name(name, str(traces))
+        if not (source / "task.toml").is_file() or folder is None:
+            continue
+        messages = code["replay"].extract_messages(folder) if message_mode == "full" else []
+        context = code["prompts"].format_messages_as_text(messages) if messages else None
+        instruction = code["prompts"].build_recovery_instruction((source / "instruction.md").read_text(encoding="utf-8"), context)
+        directory = output / ("recovery-" + short)
+        shutil.copytree(source, directory)
+        (directory / "instruction.md").write_text(instruction, encoding="utf-8")
+        (directory / "recovery").mkdir()
+        (directory / REPLAY).write_text(json.dumps(dict(schema="ctxpress.recovery_replay", version=1,
+            timeout_sec=REPLAY_TIMEOUT, setup_timeout_multiplier=SETUP_MULTIPLIER,
+            trace=folder.name, commands=replay_commands(code["replay"], folder)), indent=1), encoding="utf-8")
         config = toml.load(source / "task.toml")
         config.setdefault("task", {})["name"] = directory.name     # the task directory is the recovery variant
         (directory / "task.toml").write_text(toml.dumps(config), encoding="utf-8")
-        used.append(name)
+        used.append(short)
     if not used:
         raise ValueError("no failed initial traces matched the Terminal-Bench tasks")
     write_manifest(output, "recovery-bench", revision, source="letta-ai/recovery-bench", message_mode=message_mode,
                    tasks=used, converter="ctxpress.benchmarks.convert.recovery",
-                   protocol_note="the failed attempt's commands are replayed at image build")
+                   protocol_note="official RecoveryCodex flow: replay in the running container before the agent starts")
     return output
+
