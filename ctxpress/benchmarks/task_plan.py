@@ -70,8 +70,9 @@ def compile_plan(config, base_dir=None):
     if not isinstance(settings, dict) or set(settings) - run_fields:
         raise ValueError('invalid task-start run settings')
     settings = dict(max_calls=100, timeout=1800, compact_limit=230000, grade=True) | settings
-    for key in ('max_calls', 'compact_limit'):
-        eval_plan._positive(settings[key], key)
+    eval_plan._positive(settings['max_calls'], 'max_calls')
+    if settings['compact_limit'] is not None:           # None: every method keeps the host's default threshold
+        eval_plan._positive(settings['compact_limit'], 'compact_limit')
     eval_plan._positive(settings['timeout'], 'timeout', integer=False)
     if 'grading_timeout' in settings:
         if (config['benchmark'] not in ('swe-bench','swe-bench-lite','swe-bench-verified','swe-milestone','swe-polybench','swe-bench-pro','bigcodebench') or
@@ -148,8 +149,10 @@ def compile_plan(config, base_dir=None):
         labels.add(label); profiles(entry)
         method = build(entry); method.validate_live()
         # HostDefault leaves the host's own threshold in place: no override is passed (limit None).
-        limit = None if getattr(method, 'host_compaction', None) == 'default' else eval_plan._positive(
-            method.codex_config.get('model_auto_compact_token_limit', settings['compact_limit']), 'native compact limit')
+        limit = None if getattr(method, 'host_compaction', None) == 'default' else \
+            method.codex_config.get('model_auto_compact_token_limit', settings['compact_limit'])
+        if limit is not None:
+            eval_plan._positive(limit, 'native compact limit')
         for number, task in enumerate(selected):
             for repeat in range(repeats):
                 job = dict(id=f'm{index:03d}-t{number:03d}-r{repeat:03d}', task=task,

@@ -40,6 +40,11 @@ def test_plans_carry_no_compaction_limit_for_host_default(tmp_path, name):
                environment={"data": str(root), "bindir": str(binary)})
     plan = eval_plan.compile_plan(cfg)
     assert [job["compact_limit"] for job in plan["jobs"]] == [None, 200000]
+    # run.compact_limit null: every method keeps the host default unless it sets its own threshold.
+    cfg["methods"] = methods + [{"class": "ComplexityTrap", "args": {"n": 10}}]
+    cfg["run"] = {"compact_limit": None}
+    plan = eval_plan.compile_plan(cfg)
+    assert [job["compact_limit"] for job in plan["jobs"]] == [None, 200000, None]
 
 
 def test_milestone_hook_passes_no_override_for_host_default():
