@@ -1,6 +1,6 @@
 [project]
 name = "ctxpress"
-version = "1.0.1"
+version = "1.1.0"
 description = "Context management for LLM agents: plug-and-play methods for Codex, Claude Code and other agents, evaluated on official benchmarks"
 requires-python = ">=3.10"
 license = {text = "MIT"}
