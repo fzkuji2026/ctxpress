@@ -29,3 +29,36 @@ class SWEBenchMultilingual(OfficialHarbor):
     NAME = 'swe-bench-multilingual'
     TITLE = 'SWE-bench Multilingual'
     ADAPTER = 'swebench_multilingual'
+
+
+class AppWorld(OfficialHarbor):
+    """Tasks from the official Terminal-Bench AppWorld adapter, moved to Harbor with `harbor tasks migrate`."""
+    NAME = 'appworld'
+    TITLE = 'AppWorld'
+    ADAPTER = 'terminal-bench/adapters/appworld, then `harbor tasks migrate`'
+
+
+class Converted(OfficialHarbor):
+    """Official releases packaged as Harbor tasks by ctxpress.benchmarks.convert; items and graders unchanged."""
+    def describe(self):
+        return dict(super().describe(), suite='official release converted by ' + self.ADAPTER,
+                    required_resources=['official release on disk', 'tasks written by ' + self.ADAPTER,
+                                        'the prepared image named at conversion', 'Codex binary', 'official Harbor runtime'])
+
+
+class KernelBench(Converted):
+    NAME = 'kernelbench'
+    TITLE = 'KernelBench'
+    ADAPTER = 'python -m ctxpress.benchmarks.convert kernelbench (official eval_kernel_against_ref; NVIDIA GPU)'
+
+
+class LongBenchV2(Converted):
+    NAME = 'longbench-v2'
+    TITLE = 'LongBench v2'
+    ADAPTER = 'python -m ctxpress.benchmarks.convert longbench-v2 (context as a file; official letter match)'
+
+
+class SWEQA(Converted):
+    NAME = 'swe-qa'
+    TITLE = 'SWE-QA'
+    ADAPTER = 'python -m ctxpress.benchmarks.convert swe-qa (answers collected for the official LLM judge)'

@@ -11,7 +11,8 @@ import json
 import re
 from pathlib import Path
 
-BENCHMARKS = ('terminal-bench', 'terminal-bench-science', 'deep-swe', 'swe-bench-pro', 'multi-swe-bench', 'swe-bench-multilingual')
+BENCHMARKS = ('terminal-bench', 'terminal-bench-science', 'deep-swe', 'swe-bench-pro', 'multi-swe-bench', 'swe-bench-multilingual',
+              'appworld', 'kernelbench', 'longbench-v2', 'swe-qa')
 
 
 class UnsupportedVariant(ValueError):
