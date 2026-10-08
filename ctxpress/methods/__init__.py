@@ -64,7 +64,7 @@ METHODS = {
     "AgentFold": ("arXiv 2510.24699", True, True, "可调用当前 Agent 的模型写段摘要和深度摘要；按规则分段触发，可配置摘要指南，未复现原文训练或模型自主折叠决策"),
     "ACON": ("arXiv 2510.00615", True, True, "可调用当前 Agent 的模型压缩观察和历史；两种操作可分别配置指南，默认通用续接提示词，未复现原文优化流程、指南或效果"),
     "ReSum": ("arXiv 2509.13313", True, True, "可按周期调用当前 Agent 的模型摘要；提示词依据 v3 附录 C 改写，只整理有依据的信息，不强制计划或缺口清单；保留周期触发近似，未复现原文提示词全文、续接模板、训练或效果"),
-    "WorkingView": ("本项目此前的方法", True, False, "原实现在 adapters/codex（Rust）里；这里是规则近似"),
+    "WorkingView": ("本项目此前的方法", True, True, "原实现在 adapters/codex（Rust）里；这里是规则近似，经代理真实运行"),
     "CostModel": ("本文", False, True, "可加载 ctxpress fit 生成的固定再用曲线接入真实代理；λ、价格、找回与重新探索参数仍需明确配置，真实任务效果尚未评测"),
     "AutoCostModel": ("本文", False, True, "加载 ctxpress tune 冻结的统计、参数及留一会话选出的 λ；无合格候选时退回原生 Codex 压缩；筛选是模拟证据，真实任务约束尚未验证"),
     "ScoredMethod": ("打分方法基类", False, True, "无"),

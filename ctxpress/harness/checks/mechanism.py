@@ -37,6 +37,7 @@ ENTRIES = [
     ("ClearThenSummarize", {"t": 230000}),
     ("PichayApprox", {}),
     ("ClawVMApprox", {"budget": 5}),
+    ("WorkingView", {}),
     ("CostModel", {}),
     ("AutoCostModel", {}),
     ("EntryTruncation", {"inner": {"class": "ScoredMethod", "args": {"budget": 16000}}, "budget": 2000}),

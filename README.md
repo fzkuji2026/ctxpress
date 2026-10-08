@@ -115,23 +115,23 @@ minutes; the host's native compaction threshold is 230k tokens. Costs use the de
 ($2.00 input, $0.10 cached input, $10.00 output per million tokens). *Cost ratio* is paired against no compaction
 over tasks where both sides report complete usage. Samples are small (1–3 repeats), so the numbers are descriptive.
 
-**SWE-Milestone, Navidrome milestone chain** — official `score_1000`, 3 repeats per method
+**SWE-Milestone, Navidrome milestone chain** — official `score_1000`, mean of 3 runs per method
 
-| Method | Runs | Mean | Cost / run | Cost ratio | Max input | Cache-read share | History reduction |
-|---|---|---:|---:|---:|---:|---:|---:|
-| No compaction | 42.0, 42.0, 42.0 | 42.0 | $1.78 | 1.00 | 199k | 0.98 | 0% |
-| Codex auto-compact (230k) | 42.0, 42.0, 42.0 | 42.0 | $2.08 | 1.17 | 226k | 0.98 | 0% |
-| DTOC | 42.0, 42.0, 42.0 | 42.0 | $1.65 | **0.93** | 117k | 0.94 | 37% |
-| Complexity Trap (summary) † | 42.0, 42.0, 42.0 | 42.0 | $2.04 | 1.15 | 86k | 0.92 | 54% |
-| AutoCostModel † | 42.0, 42.0, 42.0 | 42.0 | $2.50 ‡ | 1.40 | 219k | 0.97 | 12% |
-| KeepLastTokens | 42.0, 42.0, 42.0 | 42.0 | $4.30 | 2.42 | 99k | 0.73 | 44% |
-| Complexity Trap (hybrid) † | 42.0, 41.9, 42.0 | 42.0 | $6.92 | 3.89 | 62k | 0.30 | 62% |
-| Complexity Trap (masking) | 42.0, 30.8, 42.0 | 38.3 | $7.35 | 4.12 | 73k | 0.27 | 52% |
-| CWL | 30.9, 30.9, 42.0 | 34.6 | $2.15 ‡ | 1.21 | 104k | 0.92 | 20% |
-| ARC | 30.9, 30.9, 42.0 | 34.6 | $6.51 ‡ | 3.70 | 72k | 0.28 | 54% |
-| Pichay | 42.0, 29.3, 19.7 | 30.3 | $4.95 ‡ | 2.74 | 65k | 0.43 | 58% |
-| AgentDiet | 27.1, 27.1, — § | 27.1 | $2.26 ‡ | 1.15 | 54k | 0.73 | 73% |
-| ClawVM | 30.8, 11.1, 22.2 | 21.4 | $2.12 | 1.19 | 66k | 0.79 | 56% |
+| Method | Mean score | Cost / run | Cost ratio | Max input | Cache-read share | History reduction |
+|---|---:|---:|---:|---:|---:|---:|
+| No compaction | 42.0 | $1.78 | 1.00 | 199k | 0.98 | 0% |
+| Codex auto-compact (230k) | 42.0 | $2.08 | 1.17 | 226k | 0.98 | 0% |
+| DTOC | 42.0 | $1.65 | **0.93** | 117k | 0.94 | 37% |
+| Complexity Trap (summary) † | 42.0 | $2.04 | 1.15 | 86k | 0.92 | 54% |
+| AutoCostModel † | 42.0 | $2.50 ‡ | 1.37 | 219k | 0.97 | 12% |
+| KeepLastTokens | 42.0 | $4.30 | 2.42 | 99k | 0.73 | 44% |
+| Complexity Trap (hybrid) † | 41.9 | $6.92 | 3.88 | 62k | 0.30 | 62% |
+| Complexity Trap (masking) | 38.3 | $7.35 | 4.12 | 73k | 0.27 | 52% |
+| CWL | 34.6 | $2.15 ‡ | 1.21 | 104k | 0.92 | 20% |
+| ARC | 34.6 | $6.51 ‡ | 3.70 | 76k | 0.28 | 54% |
+| Pichay | 30.3 | $4.95 ‡ | 2.74 | 69k | 0.42 | 59% |
+| AgentDiet § | 27.1 | $2.10 ‡ | 1.15 | 52k | 0.73 | 75% |
+| ClawVM | 21.4 | $2.12 | 1.19 | 66k | 0.79 | 56% |
 
 **SWE-bench Verified, 10 instances** — 1 run per method
 
@@ -141,11 +141,11 @@ over tasks where both sides report complete usage. Samples are small (1–3 repe
 | Codex auto-compact (230k) | 8/10 | $1.31 | 1.12 | 28.4k | 0.79 |
 | AutoCostModel † | 8/10 | $1.07 | **0.92** | 26.9k | 0.85 |
 | Complexity Trap (summary) | 8/10 | $1.15 | 0.99 | 26.6k | 0.81 |
-| CWL | 8/10 | $1.17 ‡ | 1.08 | 27.0k | 0.88 |
+| CWL | 8/10 | $1.17 (9 tasks) ‡ | 1.08 | 27.3k | 0.87 |
 | KeepLastTokens | 8/10 | $1.27 | 1.09 | 29.0k | 0.84 |
 | DTOC | 8/10 | $1.42 | 1.22 | 28.0k | 0.81 |
 | AgentDiet | 8/10 | $1.63 | 1.40 | 20.3k | 0.76 |
-| Complexity Trap (masking) | 8/10 | $1.58 ‡ | 1.46 | 25.1k | 0.76 |
+| Complexity Trap (masking) | 8/10 | $1.58 (9 tasks) ‡ | 1.46 | 25.5k | 0.76 |
 | Complexity Trap (hybrid) | 8/10 | $1.92 | 1.65 | 25.4k | 0.75 |
 | ARC | 8/10 | $2.15 | 1.85 | 23.2k | 0.63 |
 | Pichay | 8/10 | $2.30 | 1.98 | 22.7k | 0.68 |
@@ -154,7 +154,7 @@ over tasks where both sides report complete usage. Samples are small (1–3 repe
 † Rerun on ctxpress 1.0.1 after fixing an AutoCostModel launch defect and a summary defect that dropped the tool
 catalog; the other rows come from the previous round with otherwise identical settings.
 ‡ Some runs lack complete usage; the cost averages only runs with complete usage, and unknown cost is never counted
-as zero. § Excluded: the reflection call failed.
+as zero; process columns use the same runs. § Mean of 2 runs: the third was excluded because its request log has a numbering gap.
 
 - **Short tasks do not separate methods.** On Verified every method resolves the same 8/10 with about 28k tokens of
   context; methods that act there only add cost.
