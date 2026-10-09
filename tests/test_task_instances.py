@@ -103,3 +103,16 @@ def test_task_start_discovery_distinguishes_code_support_from_real_run(tmp_path)
     description = adapter.task_start_description()
     assert description['execution_supported'] and description['official_grading_supported']
     assert description['from_task_start'] and not description['real_run_verified']
+
+
+def test_configured_post_snapshot_script_is_a_grading_input(tmp_path):
+    root = dataset(tmp_path)
+    (root/'dockerfiles/evaluation_post_snapshot.sh').write_text('#!/bin/bash\n', encoding='utf-8')
+    (tmp_path/'config').mkdir()
+    (tmp_path/'config'/(root.name+'.yaml')).write_text(
+        'repo_src_dirs: [src]\n# Evaluator-owned hook\nevaluation_post_snapshot_script: "dockerfiles/evaluation_post_snapshot.sh"\n',
+        encoding='utf-8')
+    grading = [Path(item['path']).as_posix() for item in itinerary(root)['inputs'] if item['role'] == 'grading']
+    assert any(path.endswith('/dockerfiles/evaluation_post_snapshot.sh') for path in grading)
+    (tmp_path/'config'/(root.name+'.yaml')).write_text('repo_src_dirs: [src]\n', encoding='utf-8')
+    assert not any('post_snapshot' in item['path'] for item in itinerary(root)['inputs'])

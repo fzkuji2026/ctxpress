@@ -1,6 +1,6 @@
 """Read repository itineraries from official SWE-Milestone data, without running code."""
 from __future__ import annotations
-import csv, json
+import csv, json, re
 from graphlib import TopologicalSorter
 from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan, trees as eval_trees
@@ -101,6 +101,11 @@ def itinerary(workspace):
     # cloned repositories, caches and unrelated workspaces are not selected.
     for name in ('scripts', 'tests', 'grading_assets'):
         grading_tree(name)
+    # A repository config may name an evaluator post-snapshot hook (go-zero, dubbo); the native harness runs it.
+    if config.is_file():
+        match = re.search(r'^evaluation_post_snapshot_script:\s*["\']?([^"\'\s#]+)', config.read_text(encoding='utf-8'), re.M)
+        if match:
+            add(eval_trees.relative(match.group(1)).as_posix(), 'grading')
     state=dict(repo=metadata['repo_name'], base_ref=metadata.get('base_tag'),
                                             workspace=str(root), input_directories=sorted(directories),
                                             evidence='dataset metadata; execution image not yet bound')
