@@ -343,3 +343,25 @@ def test_comparison_cannot_claim_savings_when_cache_rewrites_cost_more(tmp_path)
     comparison = analyzed(plan, jobs)
     assert comparison['quality_satisfied'] and not comparison['api_cost_complete']
     assert comparison['api_saving_usd'] is None
+
+
+def test_failed_summary_calls_record_the_exception():
+    import http.client
+    import pytest
+    from ctxpress.live.summarize import ResponsesSummarizer
+
+    class Dropped:
+        def request(self, *args, **kwargs):
+            raise http.client.RemoteDisconnected("Remote end closed connection without response")
+
+        def close(self):
+            pass
+
+    records = []
+    summarizer = ResponsesSummarizer(lambda: Dropped(), "/v1/responses", {"Authorization": "Bearer secret"},
+                                     {"model": "m", "input": []}, record=records.append)
+    with pytest.raises(http.client.RemoteDisconnected):
+        summarizer.summarize_prompt("system", "user", purpose="history")
+    assert records[0]["completed"] is False and "status" not in records[0]
+    assert records[0]["error"] == "RemoteDisconnected: Remote end closed connection without response"
+    assert "secret" not in str(records[0])

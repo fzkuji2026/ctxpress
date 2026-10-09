@@ -96,6 +96,12 @@ def response_error(raw):
     return result
 
 
+def summary_error(error):
+    """Exception class and message of a failed summary call, for the request log. Messages come from the HTTP
+    client or from this module (status text), never from request headers."""
+    return (type(error).__name__ + ": " + str(error))[:300]
+
+
 def response_text(raw):
     """Accept a completed Responses JSON body or SSE stream, never a partial failed result."""
     decoded = raw.decode("utf-8")
@@ -204,8 +210,9 @@ class ResponsesSummarizer:
             result = response_text(raw)
             info["completed"] = True
             return result
-        except Exception:
+        except Exception as error:
             info["completed"] = False
+            info["error"] = summary_error(error)
             raise
         finally:
             connection.close()

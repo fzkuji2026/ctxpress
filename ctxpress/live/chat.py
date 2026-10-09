@@ -292,8 +292,10 @@ class ChatSummarizer:
             info["completed"] = True
             info["response_model"] = reply.get("model")
             return text
-        except Exception:
+        except Exception as error:
             info["completed"] = False
+            from ctxpress.live.summarize import summary_error
+            info["error"] = summary_error(error)
             raise
         finally:
             connection.close()
