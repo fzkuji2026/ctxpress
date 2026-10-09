@@ -115,4 +115,4 @@ def test_configured_post_snapshot_script_is_a_grading_input(tmp_path):
     grading = [Path(item['path']).as_posix() for item in itinerary(root)['inputs'] if item['role'] == 'grading']
     assert any(path.endswith('/dockerfiles/evaluation_post_snapshot.sh') for path in grading)
     (tmp_path/'config'/(root.name+'.yaml')).write_text('repo_src_dirs: [src]\n', encoding='utf-8')
-    assert not any('post_snapshot' in item['path'] for item in itinerary(root)['inputs'])
+    assert not any(Path(item['path']).name == 'evaluation_post_snapshot.sh' for item in itinerary(root)['inputs'])
