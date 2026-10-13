@@ -31,8 +31,10 @@ class ACM(Method):
                      memory='会话磁盘归档', decider='宿主 Agent（未加载 ACM 训练策略）')
     agent_tools = (
         dict(name='manage_context', description='Archive and summarize the segment since the last successful compression.',
+             annotations=dict(readOnlyHint=True, destructiveHint=False, openWorldHint=False),
              inputSchema=dict(type='object', properties={}, additionalProperties=False)),
         dict(name='query_memory', description='Ask for details from the original archived segment.',
+             annotations=dict(readOnlyHint=True, destructiveHint=False, openWorldHint=False),
              inputSchema=dict(type='object', properties=dict(summary_id=dict(type='integer', minimum=1),
                  query=dict(type='string', minLength=1)), required=['summary_id', 'query'], additionalProperties=False)),
     )

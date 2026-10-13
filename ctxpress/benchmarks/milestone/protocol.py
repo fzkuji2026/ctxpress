@@ -138,6 +138,8 @@ def requirements(config,tasks,lock):
         if name not in files:missing.append('SWE-Milestone native source: '+name)
     if (set(CONTRACTS)|set(FUNCTION_CONTRACTS))<=set(files):missing.extend(contract_errors(code['root']))
     deps=lock['trees'].get('dependencies',{}).get('files',{})
+    if 'bin/ast-grep' not in deps:
+        missing.append('SWE-Milestone frozen dependencies: executable bin/ast-grep (recapture resource manifest)')
     for package in ('yaml','pathspec'):
         if package+'/__init__.py' not in deps:missing.append('SWE-Milestone frozen dependencies: '+package)
     for task in tasks:

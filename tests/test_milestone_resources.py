@@ -246,3 +246,27 @@ def test_auth_refresh_refuses_a_replaced_private_home_before_any_upload(tmp_path
     with pytest.raises(RuntimeError,match='home changed'):owner.credentials(source)
     assert owner.record['credentials_may_exist']
     owner.cleanup();assert owner.record['cleaned']
+
+
+@pytest.mark.parametrize('lost_response',[False,True])
+def test_failed_network_create_can_retry_only_when_no_network_exists(tmp_path,monkeypatch,lost_response):
+    registry,docker=fixture(tmp_path,monkeypatch)
+    attempts=[]
+    def failing(*args):
+        if args[:2]==('network','create'):
+            attempts.append(args)
+            if len(attempts)==1:
+                if lost_response:docker(*args)
+                raise RuntimeError('network creation failed')
+        return docker(*args)
+    monkeypatch.setattr(resources,'docker',failing)
+    with pytest.raises(RuntimeError,match='network creation failed'):registry.grading_network()
+    assert registry.network['phase']=='creating'
+    if lost_response:
+        with pytest.raises(ValueError,match='occupied'):registry.grading_network()
+        assert len(attempts)==1
+    else:
+        assert registry.grading_network()==PROJECT+'-grade'
+        assert len(attempts)==2 and registry.network['phase']=='created'
+    registry.cleanup()
+    assert not docker.networks

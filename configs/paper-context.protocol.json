@@ -1,0 +1,851 @@
+{
+  "schema": "ctxpress.experiment.protocol",
+  "version": 1,
+  "artifact_root": "..",
+  "status": "paused_context_profile_configured",
+  "family_count": 8,
+  "protocol": "ctxpress_comparison",
+  "start_mode": "task_start",
+  "scope": "benchmark",
+  "analysis": {
+    "research_question": "Published online context-compression mechanisms transferred to one real host and model; compare quality, behavior and complete cost with explicit adaptation limits",
+    "allocation": {
+      "frozen_before_formal_runs": false,
+      "interpretation": "Freeze tasks and explicit unbounded agent execution in a new plan before execution. Do not pool previous cohorts."
+    },
+    "source_catalog": "ctxpress.methods.paper_catalog",
+    "context_design": {
+      "version": "paper-context-128k-20261013-v1",
+      "context": {
+        "version": 1,
+        "max_context_tokens": 128000,
+        "compression_trigger_tokens": 102400
+      },
+      "counting": "complete rendered agent input; shared chars/4 and media estimate, not exact provider tokens",
+      "scope": "Shared agent and auxiliary-model input limit; source history is not silently truncated to fit. Per-call generation limits are unchanged.",
+      "native_fallback": false,
+      "external_request_or_time_caps": false,
+      "methods": [
+        {
+          "method": "ComplexityTrap",
+          "args": {
+            "n": 10,
+            "pin_spec": false,
+            "polling": 1,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "Rolling masking retains 10 latest outputs; no global length trigger in this algorithm."
+        },
+        {
+          "method": "ComplexityTrapSummary",
+          "args": {
+            "n": 21,
+            "m": 10,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "Author 21+10-turn checkpoint schedule retained; 102400 is not a substitute for turn counts."
+        },
+        {
+          "method": "ComplexityTrapHybrid",
+          "args": {
+            "n": 43,
+            "m": 10,
+            "w": 10,
+            "polling": 1,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "Author 43+10-turn summary and latest-10 masking retained."
+        },
+        {
+          "method": "AgentDiet",
+          "args": {
+            "a": 2,
+            "b": 1,
+            "threshold": 500,
+            "min_saving": 400,
+            "max_ratio": 0.8,
+            "reflect_model": "gpt-6-luna",
+            "bypass_filter": false,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "500 is a per-step eligibility threshold, 400 minimum saving, 0.8 acceptance ratio; these are not context caps."
+        },
+        {
+          "method": "ACONSource",
+          "args": {
+            "t_hist": 102400,
+            "trigger_tokens": 102400,
+            "t_obs": 25600,
+            "keep_turns": 2,
+            "summary_model": null,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "History uses the complete-input 102400 trigger. Per-observation threshold is 25600 (window headroom); retain 2 recent turns."
+        },
+        {
+          "method": "ReSumSource",
+          "args": {
+            "context_k": 125,
+            "trigger_tokens": 102400,
+            "interval": null,
+            "summary_model": null,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "Explicit 102400 complete-input trigger replaces the implicit 32k-derived trigger; periodic 40-turn trigger disabled."
+        },
+        {
+          "method": "AgentFoldSource",
+          "args": {
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "Agent chooses fold ranges and summary using its tool/visible tags; shared threshold is guidance, not a forced model call."
+        },
+        {
+          "method": "SWEPruner",
+          "args": {
+            "threshold": 0.5,
+            "min_chars": 500,
+            "chunk_overlap_tokens": 50,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "0.5 relevance score, 500 characters and 50-token overlap retained; focus question and real service remain required."
+        },
+        {
+          "method": "TokenPilotLifecycle",
+          "args": {
+            "entry_budget": 25600,
+            "batch_turns": 8,
+            "min_chars": 256,
+            "estimator_model": null,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "Per-output cap increased from 2000 to 25600; lifecycle estimation every 8 requests retained, 256 is characters."
+        },
+        {
+          "method": "ACM",
+          "args": {
+            "summary_model": null,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "Agent-selected segments and archival retrieval; same window guidance, no forced replacement algorithm."
+        },
+        {
+          "method": "CWL",
+          "args": {
+            "budget": 102400,
+            "full_context": true,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "102400 complete-input estimate including fixed instructions replaces 80000 conversation-only estimate; dependencies can still restore history."
+        },
+        {
+          "method": "DTOC",
+          "args": {
+            "strategy": true,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "Agent controls hide/show; shared window guidance; strategy instructions enabled."
+        },
+        {
+          "method": "ContextFoldingTools",
+          "args": {
+            "max_branches": null,
+            "branch_max_turns": null,
+            "branch_timeout": null,
+            "branch_tokens": 25600,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "Remove lifetime branch count and branch time/turn caps; 25600 branch-growth allowance uses shared headroom, complete-pair protection retained."
+        },
+        {
+          "method": "FoldActSource",
+          "args": {
+            "max_model_len": 128000,
+            "selection_tokens": 102400,
+            "max_obs_length": null,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "128000 model-length setting, explicit 102400 selection budget; remove 4096 observation clipping and its forced last-three-turn side effect."
+        },
+        {
+          "method": "TACO",
+          "args": {
+            "uncovered_threshold": 3000,
+            "freeze_rules": false,
+            "task_category": "software-engineering",
+            "summary_model": null,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "3000 uncovered characters triggers rule induction, not a token cap; rule feedback and dynamic planning retained."
+        },
+        {
+          "method": "CoMem",
+          "args": {
+            "trigger_tokens": 102400,
+            "interval": 1,
+            "lag": 1,
+            "summary_model": null,
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "Only schedule a new async summary at 102400; retain one-step lag, settle pending calls and preserve full source archive."
+        },
+        {
+          "method": "LongSeeker",
+          "args": {
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "Agent chooses among five operations; shared window guidance, no forced summary mechanism."
+        },
+        {
+          "method": "ZipRL",
+          "args": {
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "Agent chooses compression level 1–5 and summary; shared window guidance, no artificial length replacement."
+        }
+      ],
+      "validation": "local synthetic contract tests; no real execution after reconfiguration",
+      "interpretation": "128k means 128000 tokens. Experimental input limit, not model physical capacity; 131072 remainder is excluded."
+    }
+  },
+  "models": {
+    "agent": "gpt-6.1-sol",
+    "agent_reasoning": "medium",
+    "agentdiet_reflection": "gpt-6-luna",
+    "reflection_reasoning": "provider default, no explicit effort override; returned model ID must be recorded",
+    "summaries": "same agent model and reasoning"
+  },
+  "model_sources": [
+    "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+    "https://developers.openai.com/api/docs/models/gpt-6-luna"
+  ],
+  "selection": {
+    "seed": 20261004,
+    "comparison_tasks_per_family": 10,
+    "pilot_tasks_per_family": 1,
+    "exclude_task_ids": [
+      "retro-console-soc",
+      "payments-pipeline-fix"
+    ],
+    "rule": "freeze exact task IDs and input hashes once original dataset resources are present; never substitute recorded jobs"
+  },
+  "pilot": {
+    "methods": [
+      {
+        "class": "ComplexityTrap",
+        "args": {
+          "n": 10,
+          "pin_spec": false,
+          "polling": 1,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "ComplexityTrap"
+      }
+    ],
+    "repeats": 1,
+    "workers": 1
+  },
+  "method_pilot": {
+    "method_classes": [
+      "ComplexityTrap",
+      "ComplexityTrapSummary",
+      "ComplexityTrapHybrid",
+      "AgentDiet",
+      "ACONSource",
+      "ReSumSource",
+      "AgentFoldSource",
+      "SWEPruner",
+      "TokenPilotLifecycle",
+      "ACM",
+      "CWL",
+      "DTOC",
+      "ContextFoldingTools",
+      "FoldActSource",
+      "TACO",
+      "CoMem",
+      "LongSeeker",
+      "ZipRL"
+    ],
+    "repeats": 1,
+    "workers": 1,
+    "methods": [
+      {
+        "class": "ComplexityTrap",
+        "args": {},
+        "label": "ComplexityTrap"
+      },
+      {
+        "class": "ComplexityTrapSummary",
+        "args": {},
+        "label": "ComplexityTrapSummary"
+      },
+      {
+        "class": "ComplexityTrapHybrid",
+        "args": {},
+        "label": "ComplexityTrapHybrid"
+      },
+      {
+        "class": "AgentDiet",
+        "args": {
+          "reflect_model": "gpt-6-luna"
+        },
+        "label": "AgentDiet"
+      },
+      {
+        "class": "ACONSource",
+        "args": {},
+        "label": "ACONSource"
+      },
+      {
+        "class": "ReSumSource",
+        "args": {},
+        "label": "ReSumSource"
+      },
+      {
+        "class": "AgentFoldSource",
+        "args": {},
+        "label": "AgentFoldSource"
+      },
+      {
+        "class": "SWEPruner",
+        "args": {
+          "url": "http://127.0.0.1:18765/prune"
+        },
+        "label": "SWEPruner"
+      },
+      {
+        "class": "TokenPilotLifecycle",
+        "args": {},
+        "label": "TokenPilotLifecycle"
+      },
+      {
+        "class": "ACM",
+        "args": {},
+        "label": "ACM"
+      },
+      {
+        "class": "CWL",
+        "args": {},
+        "label": "CWL"
+      },
+      {
+        "class": "DTOC",
+        "args": {},
+        "label": "DTOC"
+      },
+      {
+        "class": "ContextFoldingTools",
+        "args": {},
+        "label": "ContextFoldingTools"
+      },
+      {
+        "class": "FoldActSource",
+        "args": {},
+        "label": "FoldActSource"
+      },
+      {
+        "class": "TACO",
+        "args": {},
+        "label": "TACO"
+      },
+      {
+        "class": "CoMem",
+        "args": {},
+        "label": "CoMem"
+      },
+      {
+        "class": "LongSeeker",
+        "args": {},
+        "label": "LongSeeker"
+      },
+      {
+        "class": "ZipRL",
+        "args": {},
+        "label": "ZipRL"
+      }
+    ]
+  },
+  "comparison": {
+    "methods": [
+      {
+        "class": "ComplexityTrap",
+        "args": {
+          "n": 10,
+          "pin_spec": false,
+          "polling": 1,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "ComplexityTrap"
+      },
+      {
+        "class": "ComplexityTrapSummary",
+        "args": {
+          "n": 21,
+          "m": 10,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "ComplexityTrapSummary"
+      },
+      {
+        "class": "ComplexityTrapHybrid",
+        "args": {
+          "n": 43,
+          "m": 10,
+          "w": 10,
+          "polling": 1,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "ComplexityTrapHybrid"
+      },
+      {
+        "class": "AgentDiet",
+        "args": {
+          "a": 2,
+          "b": 1,
+          "threshold": 500,
+          "min_saving": 400,
+          "max_ratio": 0.8,
+          "reflect_model": "gpt-6-luna",
+          "bypass_filter": false,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "AgentDiet"
+      },
+      {
+        "class": "ACONSource",
+        "args": {
+          "t_hist": 102400,
+          "trigger_tokens": 102400,
+          "t_obs": 25600,
+          "keep_turns": 2,
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "ACONSource"
+      },
+      {
+        "class": "ReSumSource",
+        "args": {
+          "context_k": 125,
+          "trigger_tokens": 102400,
+          "interval": null,
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "ReSumSource"
+      },
+      {
+        "class": "AgentFoldSource",
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "AgentFoldSource"
+      },
+      {
+        "class": "SWEPruner",
+        "args": {
+          "threshold": 0.5,
+          "min_chars": 500,
+          "chunk_overlap_tokens": 50,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "SWEPruner"
+      },
+      {
+        "class": "TokenPilotLifecycle",
+        "args": {
+          "entry_budget": 25600,
+          "batch_turns": 8,
+          "min_chars": 256,
+          "estimator_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "TokenPilotLifecycle"
+      },
+      {
+        "class": "ACM",
+        "args": {
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "ACM"
+      },
+      {
+        "class": "CWL",
+        "args": {
+          "budget": 102400,
+          "full_context": true,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "CWL"
+      },
+      {
+        "class": "DTOC",
+        "args": {
+          "strategy": true,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "DTOC"
+      },
+      {
+        "class": "ContextFoldingTools",
+        "args": {
+          "max_branches": null,
+          "branch_max_turns": null,
+          "branch_timeout": null,
+          "branch_tokens": 25600,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "ContextFoldingTools"
+      },
+      {
+        "class": "FoldActSource",
+        "args": {
+          "max_model_len": 128000,
+          "selection_tokens": 102400,
+          "max_obs_length": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "FoldActSource"
+      },
+      {
+        "class": "TACO",
+        "args": {
+          "uncovered_threshold": 3000,
+          "freeze_rules": false,
+          "task_category": "software-engineering",
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "TACO"
+      },
+      {
+        "class": "CoMem",
+        "args": {
+          "trigger_tokens": 102400,
+          "interval": 1,
+          "lag": 1,
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "CoMem"
+      },
+      {
+        "class": "LongSeeker",
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "LongSeeker"
+      },
+      {
+        "class": "ZipRL",
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
+        "label": "ZipRL"
+      }
+    ],
+    "repeats": 3,
+    "workers": 1
+  },
+  "run": {
+    "max_calls": null,
+    "timeout": null,
+    "compact_limit": null,
+    "grade": true,
+    "grading_timeout": 3600,
+    "grading_workers": 1
+  },
+  "pricing": {
+    "status": "declared_per_run",
+    "reference_file": "prices.gpt6.standard.json",
+    "rule": "tokens recorded per model; no USD total until applicable rates for all observed models are supplied",
+    "scope": "declared-rate estimates; provider cache writes, long-context multipliers, tiers and host compute require applicable rate declarations"
+  },
+  "gates": [
+    "Explicitly resume only after real-host trigger, provider-token conformance, complete cost and cleanup acceptance under paper-context-128k-20261013-v1; legacy plans are superseded",
+    "Freeze a new task cohort with no artificial agent call or elapsed-time cap",
+    "Configure real author SWE-Pruner service; no heuristic substitute",
+    "Record all source adaptations and trained-policy omissions",
+    "Complete native host tool, pricing and cleanup preflight",
+    "Run only the fixed paper-cohort methods, one complete job at a time"
+  ],
+  "families": [
+    {
+      "family": "swe-milestone",
+      "benchmark": "swe-milestone",
+      "release": "v1.0.2",
+      "comparison_task_count": 1,
+      "comparison_repeats": 3,
+      "template": "swe_milestone.example.json",
+      "pilot_tasks": [
+        "navidrome_navidrome_v0.57.0_v0.58.0"
+      ],
+      "comparison_tasks": null,
+      "task_freeze_status": "Navidrome pilot selected; formal tasks remain gated on real pilot acceptance"
+    },
+    {
+      "family": "swe-bench",
+      "benchmark": "swe-bench-verified",
+      "release": "Verified",
+      "template": "swe_bench.example.json",
+      "comparison_repeats": 1,
+      "pilot_tasks": null,
+      "comparison_tasks": null,
+      "task_freeze_status": "not selected for this new paper cohort; family support is not execution authorization",
+      "dataset_revision": "78f471bf655a3137b2e8a75af1501690ec009ec3"
+    },
+    {
+      "family": "terminal-bench",
+      "benchmark": "terminal-bench",
+      "release": "4.0",
+      "template": "terminal_bench.example.json",
+      "pilot_tasks": null,
+      "comparison_tasks": null,
+      "task_freeze_status": "not selected for this new paper cohort; family support is not execution authorization",
+      "dataset_revision": "v4.0.0@452bf305c6daa62fc59061d22133a7cbc7c1572e"
+    },
+    {
+      "family": "terminal-bench-science",
+      "benchmark": "terminal-bench-science",
+      "release": "0.1",
+      "template": "terminal_science.example.json",
+      "pilot_tasks": null,
+      "comparison_tasks": null,
+      "task_freeze_status": "not selected for this new paper cohort; family support is not execution authorization",
+      "dataset_revision": "v0.1.0@f81afac4f11048e77a15dfc8fb1dbfb897fea0ce"
+    },
+    {
+      "family": "deep-swe",
+      "benchmark": "deep-swe",
+      "release": "1.1",
+      "template": "deep_swe.example.json",
+      "pilot_tasks": null,
+      "comparison_tasks": null,
+      "task_freeze_status": "not selected for this new paper cohort; family support is not execution authorization",
+      "dataset_revision": "v1.1@0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea",
+      "release_evidence": "v1.1 in pinned author README and task image references; repository has no v1.1 Git tag"
+    },
+    {
+      "family": "swe-bench-pro",
+      "benchmark": "swe-bench-pro",
+      "release": "V2 public; V1 remains supported",
+      "template": "swe_pro_v2.example.json",
+      "pilot_tasks": null,
+      "comparison_tasks": null,
+      "task_freeze_status": "not selected for this new paper cohort; family support is not execution authorization",
+      "dataset_revision": "v2.0.0@66f92766bba642462d4bbe5479e83f91f9211862"
+    },
+    {
+      "family": "swe-polybench",
+      "benchmark": "swe-polybench",
+      "release": "Verified",
+      "template": "polybench.example.json",
+      "pilot_tasks": null,
+      "comparison_tasks": null,
+      "task_freeze_status": "not selected for this new paper cohort; family support is not execution authorization",
+      "dataset_revision": "b3fca77b637379f0c01ad86d18753a7ac1998b53"
+    },
+    {
+      "family": "bigcodebench",
+      "benchmark": "bigcodebench",
+      "release": "Complete Full; Instruct/Hard remain supported",
+      "template": "bigcodebench.example.json",
+      "pilot_tasks": null,
+      "comparison_tasks": null,
+      "task_freeze_status": "not selected for this new paper cohort; family support is not execution authorization",
+      "dataset_revision": "b74c0d0bf70d2c0bc459be537895cca163007f1a"
+    }
+  ],
+  "paper_cohort": "online-context-papers-20261012-v2",
+  "pilot_acceptance": {
+    "all_methods_required": true,
+    "real_model_required": true,
+    "compression_trigger_required": true,
+    "successful_request_after_compression_required": true,
+    "complete_api_cost_required": true,
+    "official_grade_required": true,
+    "resource_cleanup_required": true,
+    "inactive_method_action": "diagnose; do not claim passage or automatically launch formal runs",
+    "compute_cost": "Local SWE-Pruner GPU cost is separate and unpriced; never include as zero API cost",
+    "threshold_policy": "Keep author defaults; any diagnostic threshold override must be separate from formal evidence"
+  },
+  "active_pilot": {
+    "plan": "runs/prepared/paper-pilot-20261012/plan-r2.json",
+    "plan_sha256": "92d7cf4737280b4f07cd557402ca31ad8fa206af47559708ef3296960e74600a",
+    "resource_manifest": "runs/prepared/paper-pilot-20261012/resources-r2-python313.json",
+    "formal_gate": "all 18 methods real activation + continuation + complete declared-rate API cost + official scoring + verified cleanup; method-specific manual evidence review required"
+  },
+  "dispatch_priority": {
+    "methods": [
+      "AgentDiet",
+      "ACONSource",
+      "AgentFoldSource",
+      "CoMem",
+      "TokenPilotLifecycle",
+      "ComplexityTrap",
+      "ComplexityTrapSummary",
+      "ComplexityTrapHybrid",
+      "SWEPruner",
+      "ReSumSource",
+      "TACO",
+      "ACM",
+      "LongSeeker",
+      "ZipRL",
+      "FoldActSource",
+      "CWL",
+      "DTOC",
+      "ContextFoldingTools"
+    ],
+    "rule": "Published main-conference/journal first, then accepted, then workshop; remaining preprints by available project influence. Within incomplete-evidence tiers order is provisional, not a numerical citation ranking. AgentDiet has 57 observed citations; shared DeepResearch project gives AgentFold/ReSum qualitative ecosystem evidence only, not independent 20034 stars. Most citation lookups returned 429, unknown is not zero. Current running ComplexityTrap finishes before the reordered pending jobs.",
+    "evidence": "runs/prepared/paper-pilot-20261012/priority/order.json"
+  }
+}

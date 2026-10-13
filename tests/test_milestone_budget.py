@@ -78,3 +78,29 @@ def test_existing_timer_is_not_replaced(tmp_path):
             with current.watch():pass
         assert signal.getitimer(signal.ITIMER_REAL)[0]>0
     finally:signal.setitimer(signal.ITIMER_REAL,0)
+
+
+def test_unbounded_budget_has_no_deadline_or_call_cap(tmp_path, monkeypatch):
+    import math
+    current = budget.Budget(tmp_path, None, None)
+    monkeypatch.setattr(current.progress, 'update', lambda: (1000000, True))
+    current.started -= 1000000
+    assert current.poll() is None
+    # Author recovery defaults must not restore an invocation deadline.
+    assert current.remaining_ms(1000) == math.inf
+    with current.watch():
+        assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+    current.write(tmp_path / 'unbounded.json')
+    import json
+    saved = json.loads((tmp_path / 'unbounded.json').read_text())
+    assert saved['seconds'] is None and saved['max_calls'] is None
+    assert saved['stop_reason'] is None
+
+
+def test_unbounded_agent_subprocess_waits_without_overflow():
+    import math, sys
+    from ctxpress.benchmarks.milestone.agent import AgentSubprocess
+    api = AgentSubprocess()
+    assert api.run([sys.executable, '-c', 'pass'], timeout=math.inf).returncode == 0
+    with api.Popen([sys.executable, '-c', 'pass']) as process:
+        assert process.wait(timeout=math.inf) == 0

@@ -24,10 +24,15 @@ def destination(upstream):
 
 
 class Channel:
-    def __init__(self,registry,upstream,via=None):
+    def __init__(self,registry,upstream,via=None,auxiliary_deepseek=False,pruner_endpoint=None):
         destination(upstream)
         if via:connect_proxy.proxy_address(via)
         self.registry=registry;self.target=destination(upstream);self.via=via
+        self.pruner_endpoint=pruner_endpoint
+        if pruner_endpoint:
+            from ctxpress.methods.pruner_channel import validate_endpoint
+            validate_endpoint(pruner_endpoint)
+        self.auxiliary_deepseek=auxiliary_deepseek
         self.path=registry.folder/'resources-milestone-channel.json'
         if self.path.exists() or self.path.is_symlink():raise ValueError('native model channel journal already exists')
         self.server=self.thread=None
@@ -53,6 +58,12 @@ class Channel:
         artifact_io.atomic_json(channel/'owner.json',dict(project=self.registry.project,label=self.registry.label))
         template=connect_proxy.make_server('127.0.0.1',0,[self.target],via=self.via)
         handler=template.RequestHandlerClass;template.server_close()
+        if self.auxiliary_deepseek:
+            from ctxpress.live.deepseek import relay_handler
+            handler=relay_handler(handler)
+        if self.pruner_endpoint:
+            from ctxpress.methods.pruner_channel import relay_handler
+            handler=relay_handler(handler,self.pruner_endpoint)
         self.server=socket_bridge.unix_server(channel/'model.sock',handler);(channel/'model.sock').chmod(0o666)
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
         self.record['phase']='serving';self.persist();return channel

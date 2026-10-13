@@ -126,8 +126,11 @@ class CWL(Method):
                     "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False}},)
     instructions = "Guidelines for context management:\n" + "\n".join(f"- {g}" for g in GUIDELINES)
 
-    def __init__(self, budget=None):
+    def __init__(self, budget=None, full_context=False):
         budget = self.budget_spec.resolve(budget, None)
+        if type(full_context) is not bool:
+            raise ValueError("full_context must be boolean")
+        self.full_context = full_context
         self.budget = budget
         self.name = f"CWL（{budget // K}k）"
         self.framework = dict(L1="无", L2="Agent 用 delimiter 标注探索 / 行动片段及依赖；超过阈值从最早的已完成片段逐级剥离",
@@ -231,6 +234,12 @@ class CWL(Method):
             seg["end"] = None
         return segs
 
+    def _size(self, sim):
+        if self.full_context:
+            from ctxpress.methods.experiment_context import context_tokens
+            return context_tokens(sim)
+        return self.estimate(sim)
+
     def step(self, sim, r):
         # pi-cwl filters the whole stored history before every call: an exploration evicted earlier comes back when
         # a later action declares a dependency on it. Restore what the last pass removed, then filter again.
@@ -238,7 +247,7 @@ class CWL(Method):
         self.history += [s for s in sim.ctx if id(s) not in seen]
         sim.reinstate(self.history)
         self._record(sim)
-        if self.estimate(sim) <= self.budget:
+        if self._size(sim) <= self.budget:
             return
         segs = self.segments(sim)
         dependents = {}
@@ -246,7 +255,7 @@ class CWL(Method):
             for d in seg["deps"]:
                 dependents.setdefault(d, set()).add(seg["name"])
         evicted = set()
-        while self.estimate(sim) > self.budget:
+        while self._size(sim) > self.budget:
             cands = [g for g in segs if g["done"] and g["name"] not in evicted and dependents.get(g["name"], set()) <= evicted]
             if not cands:
                 break
@@ -257,7 +266,7 @@ class CWL(Method):
                 if items is None:
                     break
                 self.strip(sim, items, level)
-                if level != "entire" and self.estimate(sim) <= self.budget:
+                if level != "entire" and self._size(sim) <= self.budget:
                     break
             evicted.add(seg["name"])
 

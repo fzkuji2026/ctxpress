@@ -224,6 +224,9 @@ class LiveContext(Simulator):
     def _prompt_text(self, prompt, purpose, model=None):
         """A method's verbatim (system, user) prompt; services without `summarize_prompt` cannot honour it."""
         try:
+            if purpose == "infinite_context_compression" and model == "deepseek-flash":
+                from ctxpress.live.deepseek import summarize
+                return summarize(*prompt, model=model, record=getattr(self.summarizer, "record", None))
             if not hasattr(self.summarizer, "summarize_prompt"):
                 raise TypeError("summary service cannot send a method's own prompt")
             system, user = prompt

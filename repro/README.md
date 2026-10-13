@@ -120,3 +120,31 @@ python repro/acm_compare.py --original /prepared/agentic-context-management --ou
 
 AgentFoldTools implements autonomous granular/deep folding through the shared method tool protocol. It is
 a paper-mechanism adaptation with host-contract tests, not an author-code or trained-model reproduction.
+
+
+ReSum author inference adapter (`ReSumSource`, arXiv:2509.13313) is registered in the common method interface. Run `python -m repro.resum_compare --source PATH --output REPORT.json` against the pinned `prompt.py`, `summary_utils.py`, and `react_agent.py` listed in `reference_sources.json`. The comparison runs the author's functions with deterministic model/network substitutes: prompt construction, output parsing, threshold/period trigger and continuation match. It does not prove full trajectory, tokenizer, serving parameters, ReSumTool weights or GRPO training equivalence. The adapter preserves host system/user instructions and tool pairs; its request boundary differs from the author's post-tool loop. No new standalone evaluation harness is introduced.
+
+Context-Folding (`ContextFoldingTools`, arXiv:2510.11967) now uses the shared method registry and MCP tools. `context_branch(description, prompt)` enters an inline subtask with the parent context; `context_return(message)` removes its complete intermediate tool pairs and replaces the opening observation with the return message. The fixed author revision and license are recorded in `reference_sources.json` and `docs/licenses/`. Shared Responses and Anthropic message-contract tests cover successful folding and invalid boundaries. This is a host-mechanism adaptation, not an author-trajectory match: tool names/transport differ, the host executes inline instead of a separate branch loop, and author prompts, forced branch limits/timeouts, fallback return, FoldGRPO training and trained weights are not reproduced. User corrections and media prevent folding; failures leave branch history intact. No standalone benchmark runner or model call was added.
+
+## Fixed paper cohort (2026-10-12)
+
+The next experiments use the 12-paper / 14-method cohort in
+[docs/paper-baselines.md](../docs/paper-baselines.md), exposed by `ctxpress eval paper-methods`.
+`AgentFoldSource` ports the author's step replacement and formatting functions;
+`FoldActSource` ports the inference window selector and recognizes visible host-written summary tags.
+They both use the existing proxy and evaluation runner. `repro/folding_compare.py` independently runs
+pinned author functions: 2,000 AgentFold step transitions/format checks and 500 FoldAct normalized
+single-trajectory window cases matched. NumPy stands in for tensor operations; no model was called.
+`repro/context_folding_compare.py` checks 286 completed branch projections across 100 synthetic sessions
+against the author's retained parent-tool history and return-message template. It does not exercise the
+author's separate generation loop, forced return, timeout or fallback handling.
+
+These bounded checks do not establish trained-policy equivalence, full trajectory equivalence or paper
+scores. The old approximations remain available for historical runs but are not selected by the new
+paper-only protocol. Install lightweight oracle dependencies with `pip install -e ".[test,repro]"`;
+TypeScript author tests additionally need a compatible local Node runtime.
+
+
+### TACO / CoMem / LongSeeker / ZipRL
+
+`python repro/context_additions_compare.py --sources <pinned-source-directory>` verifies the source hashes in `reference_sources.json`, compares the imported definitions/prompts, and runs 300 randomized TACO filtering cases. The directory contains `taco/`, `comem/`, `longseeker/`, and `ziprl/` at the recorded revisions. No download, model or benchmark call is made by this check. TACO uses the adapted record type on both sides; this does not verify Pydantic semantics or entire author runners. Production execution uses the shared `ctxpress` registry, proxy and evaluation harness; these source checks are not standalone baseline runners. See [adaptation limits](../docs/paper-baselines.md).

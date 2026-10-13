@@ -1,0 +1,14 @@
+{
+  "summary_tokens": [512],
+  "evidence_tokens": [5166],
+  "batch_size": [16],
+  "group_tokens": [512],
+  "long_tokens": [800],
+  "eviction_k": [3],
+  "compact_m": [4],
+  "similarity": [0.35],
+  "pressure_seconds": [45],
+  "max_aux_calls": [64],
+  "annotation_workers": [2],
+  "retry_seconds": [2]
+}

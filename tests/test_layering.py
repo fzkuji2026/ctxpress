@@ -6,7 +6,7 @@ PACKAGE = Path(__file__).resolve().parents[1] / "ctxpress"
 # layer -> the ctxpress packages it may import (besides itself and the vendored libraries)
 ALLOWED = {
     "core": set(),
-    "methods": {"core"},
+    "methods": {"core", "settings"},  # settings: dependency-free paths and user config
     "live": {"core", "methods", "settings"},
     "settings": set(),
     "hosts": {"core", "methods", "live", "settings"},

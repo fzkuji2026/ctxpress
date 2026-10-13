@@ -197,3 +197,43 @@ def test_parent_dispatch_isolated_environment_and_terminal_recovery(tmp_path,mon
         assert result['usage']['api_cached_tokens']==60 and result['requests']==1
         assert result['grade']=={'resolved':False} and result['start_mode']=='task_start'
     assert all(command[1:4]==['-I','-S','-B'] for command in commands)
+
+
+@pytest.mark.linux_only
+def test_cancel_reaps_detached_native_process_ignoring_term(tmp_path):
+    import subprocess
+    import sys
+    import time
+    ready = tmp_path / 'ready'
+    child = subprocess.Popen([sys.executable, '-c',
+        "import signal,time,pathlib; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+        "pathlib.Path(__import__('sys').argv[1]).touch(); time.sleep(60)", str(ready)],
+        start_new_session=True)
+    try:
+        deadline = time.monotonic() + 3
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert ready.exists()
+        started = time.monotonic()
+        milestone_driver._stop_execution(child)
+        assert child.poll() is not None
+        assert time.monotonic() - started < 2
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.wait()
+
+
+@pytest.mark.linux_only
+def test_native_terminal_failure_cannot_hang_parent_on_executor_threads(tmp_path):
+    import subprocess
+    import sys
+    child = subprocess.Popen([sys.executable, '-c',
+        "import pathlib,time,json; pathlib.Path(__import__('sys').argv[1], 'native-execution.json').write_text(json.dumps({'error_type':'DrainTimeout','cleanup_complete':False})); time.sleep(60)",
+        str(tmp_path)], start_new_session=True)
+    try:
+        assert milestone_driver._wait_execution(child, tmp_path) != 0
+        assert child.poll() is not None
+    finally:
+        if child.poll() is None:child.kill()
+        child.wait()

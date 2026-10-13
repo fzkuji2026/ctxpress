@@ -74,6 +74,8 @@ response = client.responses.create(**request)
 the original implementation.
 
 ## Methods
+The fixed research cohort is **16 papers / 18 method configurations**, all using the shared interfaces. See [source inventory and adaptation limits](docs/paper-baselines.md); `ctxpress eval paper-methods` lists it. New paper-only protocols reject legacy heuristics and project candidates.
+
 
 | Method | Class | Source |
 |---|---|---|
@@ -94,9 +96,11 @@ the original implementation.
 | SWE-Pruner | `SWEPruner` | [arXiv:2601.16746](https://arxiv.org/abs/2601.16746) |
 | ARC | `ARC` | [arXiv:2607.25066](https://arxiv.org/abs/2607.25066) |
 | ACM | `ACM` | [arXiv:2607.23809](https://arxiv.org/abs/2607.23809) |
-| AgentFold: segment approximation / agent-selected folding tool | `AgentFold`, `AgentFoldTools` | [arXiv:2510.24699](https://arxiv.org/abs/2510.24699) |
+| AgentFold: segment approximation / agent-selected folding tool | `AgentFold`, `AgentFoldTools`, `AgentFoldSource` | [arXiv:2510.24699](https://arxiv.org/abs/2510.24699) |
 | ACON: generic guidelines / public AppWorld templates | `ACON`, `ACONSource` | [arXiv:2510.00615](https://arxiv.org/abs/2510.00615) |
-| ReSum | `ReSum` | [arXiv:2509.13313](https://arxiv.org/abs/2509.13313) |
+| ReSum: periodic approximation / author inference adaptation | `ReSum`, `ReSumSource` | [arXiv:2509.13313](https://arxiv.org/abs/2509.13313) |
+| Context-Folding: host branch/return adaptation (not FoldGRPO training) | `ContextFoldingTools` | [arXiv:2510.11967](https://arxiv.org/abs/2510.11967) |
+| FoldAct: author inference window selector, host policy | `FoldActSource` | [arXiv:2512.22733](https://arxiv.org/abs/2512.22733) |
 | Cost model (fixed or offline-tuned policy) | `CostModel`, `AutoCostModel` | this project |
 | Scored method base class | `ScoredMethod` | this project |
 
@@ -106,67 +110,18 @@ takes one scoring function ([docs/new_method.md](docs/new_method.md)).
 
 All variants use the same `ctxpress codex`, `ctxpress claude`, Python API and `ctxpress eval` interfaces;
 author-source comparisons in `repro/` are test oracles, not standalone baseline runners.
-The three new adaptations have offline integration tests, not real-model benchmark results. Their precise
-reproduction scope and pinned sources are documented in [the method guide](docs/methods.md#新增源码适配与统一入口).
+Offline source comparisons do not establish full paper reproduction or replace real-model benchmark evidence.
+The adaptation scope, pinned sources and remaining differences are documented in [the method guide](docs/methods.md#新增源码适配与统一入口).
 
-## Results
+## Rerun status
 
-Preliminary results with Codex as the host (`gpt-6.1-sol`, medium reasoning). Every job runs the original task from
-scratch in a container and is scored by the benchmark's official grader. Jobs are capped at 100 tool calls and 30
-minutes; the host's native compaction threshold is 230k tokens. Costs use the declared rates checked on 2026-10-04
-($2.00 input, $0.10 cached input, $10.00 output per million tokens). *Cost ratio* is paired against no compaction
-over tasks where both sides report complete usage. Samples are small (1–3 repeats), so the numbers are descriptive.
+The fixed cohort of **16 papers / 18 method configurations** will be rerun under the new settings:
 
-**SWE-Milestone, Navidrome milestone chain** — official `score_1000`, mean of 3 runs per method
-
-| Method | Mean score | Cost / run | Cost ratio | Max input | Cache-read share | History reduction |
-|---|---:|---:|---:|---:|---:|---:|
-| No compaction | 42.0 | $1.78 | 1.00 | 199k | 0.98 | 0% |
-| Codex auto-compact (230k) | 42.0 | $2.08 | 1.17 | 226k | 0.98 | 0% |
-| DTOC | 42.0 | $1.65 | **0.93** | 117k | 0.94 | 37% |
-| Complexity Trap (summary) † | 42.0 | $2.04 | 1.15 | 86k | 0.92 | 54% |
-| AutoCostModel † | 42.0 | $2.50 ‡ | 1.37 | 219k | 0.97 | 12% |
-| KeepLastTokens | 42.0 | $4.30 | 2.42 | 99k | 0.73 | 44% |
-| Complexity Trap (hybrid) † | 41.9 | $6.92 | 3.88 | 62k | 0.30 | 62% |
-| Complexity Trap (masking) | 38.3 | $7.35 | 4.12 | 73k | 0.27 | 52% |
-| CWL | 34.6 | $2.15 ‡ | 1.21 | 104k | 0.92 | 20% |
-| ARC | 34.6 | $6.51 ‡ | 3.70 | 76k | 0.28 | 54% |
-| Pichay | 30.3 | $4.95 ‡ | 2.74 | 69k | 0.42 | 59% |
-| AgentDiet § | 27.1 | $2.10 ‡ | 1.15 | 52k | 0.73 | 75% |
-| ClawVM | 21.4 | $2.12 | 1.19 | 66k | 0.79 | 56% |
-
-**SWE-bench Verified, 10 instances** — 1 run per method
-
-| Method | Resolved | Cost (10 tasks) | Cost ratio | Max input (mean) | Cache-read share |
-|---|---:|---:|---:|---:|---:|
-| No compaction | 8/10 | $1.17 | 1.00 | 28.4k | 0.83 |
-| Codex auto-compact (230k) | 8/10 | $1.31 | 1.12 | 28.4k | 0.79 |
-| AutoCostModel † | 8/10 | $1.07 | **0.92** | 26.9k | 0.85 |
-| Complexity Trap (summary) | 8/10 | $1.15 | 0.99 | 26.6k | 0.81 |
-| CWL | 8/10 | $1.17 (9 tasks) ‡ | 1.08 | 27.3k | 0.87 |
-| KeepLastTokens | 8/10 | $1.27 | 1.09 | 29.0k | 0.84 |
-| DTOC | 8/10 | $1.42 | 1.22 | 28.0k | 0.81 |
-| AgentDiet | 8/10 | $1.63 | 1.40 | 20.3k | 0.76 |
-| Complexity Trap (masking) | 8/10 | $1.58 (9 tasks) ‡ | 1.46 | 25.5k | 0.76 |
-| Complexity Trap (hybrid) | 8/10 | $1.92 | 1.65 | 25.4k | 0.75 |
-| ARC | 8/10 | $2.15 | 1.85 | 23.2k | 0.63 |
-| Pichay | 8/10 | $2.30 | 1.98 | 22.7k | 0.68 |
-| ClawVM | 8/10 | $2.79 | 2.39 | 22.2k | 0.76 |
-
-† Rerun on ctxpress 1.0.1 after fixing an AutoCostModel launch defect and a summary defect that dropped the tool
-catalog; the other rows come from the previous round with otherwise identical settings.
-‡ Some runs lack complete usage; the cost averages only runs with complete usage, and unknown cost is never counted
-as zero; process columns use the same runs. § Mean of 2 runs: the third was excluded because its request log has a numbering gap.
-
-- **Short tasks do not separate methods.** On Verified every method resolves the same 8/10 with about 28k tokens of
-  context; methods that act there only add cost.
-- **Rewriting early history breaks prompt caching.** Complexity Trap masking shortens the history by 52%, but its
-  cache-read share drops from 0.98 to 0.27 and it costs 4.1× the baseline. Methods that keep the prefix stable
-  (DTOC, Complexity Trap summary) stay near the baseline cost; DTOC is the only one cheaper than no compaction while
-  keeping all three runs at the baseline score.
-- **The budget bounds this round.** At 100 tool calls the agent completes 3 of the 9 milestones and no compaction
-  peaks at 199k tokens, below the 230k native threshold. A longer-budget round that fills the window is planned
-  ([ROADMAP.md](ROADMAP.md)).
+- **Input design limit:** 128000 tokens; **overall-context trigger reference:** 102400 tokens for methods triggered by total context length. This is the experimental window setting; actual input compliance still needs per-request verification.
+- **Agent execution:** no total request or runtime budget; cancellation, network-failure handling and grader test timeouts remain available.
+- **Scheduling:** one job at a time, including execution, official grading and resource cleanup before the next job; grading concurrency is 1.
+- **Status:** paused at the user’s request pending evaluation-code fixes. The initialization job and remaining queue have been cancelled; automatic follow-up is paused. No new completed scores are available.
+- **Cost reporting:** API-equivalent estimates are calculated locally from recorded usage. Declared model rates are stored in the evaluation configuration; missing usage or prices leave costs unknown, never zero. Local GPU costs are reported separately and remain unpriced.
 
 ## How it works
 

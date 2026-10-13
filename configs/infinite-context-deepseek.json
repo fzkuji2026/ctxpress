@@ -1,0 +1,11 @@
+{
+  "model": "deepseek-flash",
+  "input": 0.0000003,
+  "output": 0.0000012,
+  "unit": "same_as_main_per_token",
+  "currency": "USD",
+  "thinking": "disabled",
+  "price_basis": "peak uncached input/output; conservative decision estimate, not actual billing",
+  "price_checked": "2026-10-10",
+  "price_source": "https://api-docs.deepseek.com/quick_start/pricing/"
+}

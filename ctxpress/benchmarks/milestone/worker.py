@@ -44,6 +44,10 @@ def main(argv=None):
     modes.add_argument('--validate-execution',action='store_true')
     args=parser.parse_args(argv)
     request=json.loads(Path(args.request).read_text(encoding='utf-8'));source=load(request)
+    if args.execute or args.validate_execution:
+        from ctxpress.benchmarks.milestone.grading_tools import bind_ast_grep
+        bind_ast_grep(source, Path(request['official'])/'dependencies',
+                      Path(request['folder'])/'parser-diagnostics' if args.execute else None)
     if args.validate_execution:
         from ctxpress.benchmarks.milestone.runner import validate
         validate(request);print(json.dumps(dict(execution_inputs='verified',model_calls=0,containers_started=0)));return

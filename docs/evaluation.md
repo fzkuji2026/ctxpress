@@ -305,6 +305,8 @@ ctxpress eval tasks --benchmark swe-milestone --start-mode task_start --data /pa
 
 SWE-Milestone 的原生准备使用冻结的 `code` 官方源码树和 `dependencies`（已有 yaml、pathspec 及传递依赖），并绑定 Linux Python ≥3.10 的路径、版本与二进制哈希。计划逐项列出源码/接口、数据 release、元数据和每个有效 DAG 节点的准备评分镜像缺项。各工作区的 `dataset_manifest.json` 明确 `dataset: "swe-milestone"` 和与资源 `release` 一致的 `revision`；预检查还核对官方 `manifests/BENCHMARK_VERSION`。准备检查可只使用声明和文件哈希；连续执行另要求资源 specification 的 `native_data_version: true`。捕获只读原数据 checkout，要求 HEAD 与 release 标签指向同一提交，保存真实 commit/tag 对象及工作区 dirty 状态。worker 在私有输入目录恢复最小 Git 对象库，固定 release 并移除继承的版本校验关闭项，再调用作者版本 gate。该证明不声称冻结文件等于干净提交树，文件内容仍由各自哈希绑定；不复制历史 blobs、远端配置或 Git hooks。
 
+连续执行和执行预检查还要求 `dependencies/bin/ast-grep` 是已冻结且可执行的作者解析器 CLI。适配器只绑定解析器路径，保持作者 Rust 测试过滤逻辑和参数，不从宿主 PATH 回退；缺失依赖在模型调用前报错。Agent 镜像中的 `python3`、`sudo`、`git`、`bash`、`tar` 必须提前安装并重新冻结镜像，运行期间不联网安装。评分失败的旧轨迹继续保留；补装依赖后的离线重评分不能消除原先错误评分反馈对 Agent 轨迹的影响。
+
 发现器保留所选 milestone 的全部 `dockerfiles/` 评分文件、共享 `scripts/`、`tests/`、`grading_assets/` 与其中空目录，原历史 trial、克隆仓库和缓存不进入输入。仓库配置沿用作者优先级：相邻数据 `config/<repo-id>.yaml` 优先于官方代码的 config。单工作区选择时用独立 `dataset-config` 树冻结相邻配置，数据根目录和任务集合不扩大。任务 remap 只允许文件路径变化，仓库状态、目录清单、评分集合、输入角色/哈希及顺序必须与冻结原任务一致。
 
 原生准备目录恢复为 `native-inputs/<repo-id>`，避免把快照目录 `task-data` 错当仓库 ID。实际作者的 resolve/freeze API 固定仓库配置和运行政策，metadata 解析器读取 source/test/exclusion 分区，配置与分类过滤器先校验，实际 DAGManager 保留依赖类型及配置语义。即使原始选择涵盖全部 CSV，也为原生 DAG 写明确的 selected IDs，保留没有边的独立节点。非评分节点仍参与依赖和作者提交流程；它们的输入/评分镜像需按 native watcher 的需要准备，不能从质量分母中排除后就丢掉其执行资源。
@@ -555,7 +557,9 @@ python -m ctxpress.harness.checks.mechanism \
 
 `--environment-snapshot` / `--grading-snapshot` 可分别绑定上述清单，`--via` / `--upstream` 声明传输设置，`--timeout` / `--compact-limit` 声明每次运行的超时与原生压缩阈值。方法自身的触发设置保留在计划里，不因修改原生阈值而一并改写。设置确认后加 `--run`，使用同一后台队列与结果格式。示例边界不自动创建镜像、下载历史或启动实验。
 
-连续派发由 `milestone.driver.execute` 经隔离 worker 调用 `milestone.runner`：先核对冻结输入/接口，再准备私有 itinerary、通过作者版本 gate、启动所属通信和容器，保存原生 trial metadata 后调用作者 TrialRunner。Agent 预算从首次调度开始，环境准备不消耗预算；`run.grading_timeout` 可覆盖退出时等待评分线程的期限，默认取作者配置 `evaluation_timeout`。退出后恢复 hook/信号，清理所属资源，再读官方成绩。父进程取消先请求 worker 退出，超时才终止进程组，确认终止后按 Agent、verifier、网络、通信通道顺序恢复。资源身份变化时保留日志并报错。新会话/恢复的请求日志合并到共同用量报告；离线替身验证、版本 gate 验证与旧提交的 773 项全套回归分别记录，不把它们混同为真实任务成绩。
+连续派发由 `milestone.driver.execute` 经隔离 worker 调用 `milestone.runner`：先核对冻结输入/接口，再准备私有 itinerary、通过作者版本 gate、启动所属通信和容器，保存原生 trial metadata 后调用作者 TrialRunner。Agent 预算从首次调度开始，环境准备不消耗预算；`run.grading_timeout` 限制累计等待官方评分的时间（包含恢复期间的多次等待和最终评分线程回收），默认取作者配置 `evaluation_timeout`。它不从首个后台 grader 启动时计时，也不是整个任务的墙钟上限；后台评分可与 Agent 执行重叠。等待证据 `ctxpress-grading-wait.json` 同时记录墙钟、单调时钟及剩余预算。退出后恢复 hook/信号，清理所属资源，再读官方成绩。父进程取消先请求 worker 退出，超时才终止进程组，确认终止后按 Agent、verifier、网络、通信通道顺序恢复。资源身份变化时保留日志并报错。新会话/恢复的请求日志合并到共同用量报告；离线替身验证、版本 gate 验证与旧提交的 773 项全套回归分别记录，不把它们混同为真实任务成绩。
+
+SWE-Milestone 的 `run.grading_workers` 可显式设为 1–4，默认保留作者的 4；这是单个完整作业内的评分并发，与评测队列的 `workers` 分别控制。每次评分命令启动前写入 `ctxpress-runner-state-*.json`，记录双时钟起点、超时设置；正常返回或异常时更新结束状态。只记录元数据，不记录命令或输出；若进程被强杀，残留的 `running` 状态不能代替实际进程存活检查。评分 runner 的非零退出会生成独立 `ctxpress-runner-exit-*.json`，只记录退出码、耗时、节点和作者明确给出的超时标记，不保存原始命令、环境或输出。统一成绩读取把它们收集到 `runner_diagnostics`，保留相对路径与 SHA256；缺少官方 summary 时也返回已有诊断。诊断读写错误单独报告，不改变官方评分有效性，诊断本身不能代替官方成绩。统一比较验收会重新核对已记录诊断文件的路径、SHA256 和内嵌内容；篡改或越界证据不能通过验收。旧冻结运行没有该字段时保持缺失，不伪造诊断。 Rust 的严格 ast-grep 解析失败另在本次作业的 `parser-diagnostics/` 保存临时输入 `input.rs` 与 `failure.json`（输入哈希、解析参数及耗时），便于针对同一份中间输入复查。此记录不改变作者的解析时限或失败判定，也不会自动重试。
 
 
 `benchmark: swe-polybench` 使用 [PolyBench 配置](../configs/polybench.example.json) 和同一 `eval tasks/plan/run/status/report` 入口。数据目录提供 `instances.jsonl`（或 JSON）及 `dataset_manifest.json`；manifest 中 `dataset` 必须是 `AmazonScience/SWE-PolyBench`、`AmazonScience/SWE-PolyBench_500` 或 `AmazonScience/SWE-PolyBench_Verified`，`revision` 与资源 release 相同。数据使用作者字段 `F2P/P2P`、`Dockerfile`、`language`、`task_category` 和 `modified_nodes`，不转换成 SWE-bench 的 Python TestSpec。目录扫描保留 Python/Java/JavaScript/TypeScript 及 Bug Fix/Feature/Refactoring；Python 接口的 `task_instances(data, languages=[...], categories=[...])` 可筛选，CLI 计划按明确 task IDs 选择。
@@ -593,3 +597,21 @@ Agent 只取得所选 prompt、entry_point 和 Complete 的公开代码起点，
 Agent 进程、凭据与容器清理完成后，独立 verifier 仅挂只读运行代码、官方输入和本次评分 payload，以及所属可写输出目录；不挂 Codex、模型通道或凭据。评分先用实际 `trusted_check` 运行参考答案并取得作者计时，参考答案失败使评分无效。随后实际 `untrusted_check` 运行样本，保留作者测试 details 和 pass/fail/timeout。参考答案与样本的子进程、资源限制和内部超时来自冻结作者代码；`run.grading_timeout` 是外层完整评分超时，默认 1800 秒，触发时是基础设施无效，不能冒充作者 sample timeout。
 
 原始结果保存在 `official-logs/outputs/sample-result.json`，`code-resources.json` 绑定样本、Agent/verifier 镜像及两个清理 journal 的哈希。报告重新读取这些原始证据，再按同一任务/方法的完整样本集合汇总；pass@k 使用实际作者 `estimate_pass_at_k` 在独立 verifier 中计算的冻结估计值。少于 k 个样本时该 k 保持未知，缺少计划样本或评分证据时整个方法的 pass@k 保持未知。每题 n、通过样本数、任务集合、calibration 和所选 k 分别保留，代码样本不进入仓库任务的解决率，也不能作为长上下文压缩证据。[官方 local evaluate 实现](https://github.com/bigcode-project/bigcodebench/blob/09dd993f46c3fbf3a799465bb96d524edcb0b199/bigcodebench/evaluate.py) 与 [官方 checker/估计器](https://github.com/bigcode-project/bigcodebench/blob/09dd993f46c3fbf3a799465bb96d524edcb0b199/bigcodebench/eval/__init__.py) 是协议依据；已取得一个原始任务的真实通过样本，仍不构成完整 benchmark 成绩；`real_run_verified` 静态目录标志保持 false。
+
+### SWE-Milestone 的 Rust 离线评分依赖
+
+Cargo vendor 模式的评分镜像必须包含 Agent 镜像中相同的 `/opt/vendor`、`/usr/local/cargo/config.toml`、`/usr/local/rustup` 和 `/usr/local/cargo/bin`。统一适配层的 `cargo_closure.evaluation_policy()` 在作者的内容寻址镜像配方中声明这些替换（包括解析 vendor manifest 所需的相同 Rust/Cargo 工具链）；准备镜像和执行前校验须使用同一函数。缺少这些路径的旧镜像会校验失败，不能仅改标签后复用。原作者策略文件、提交快照和测试保持不变；raw-cache 模式另外复制同一 Agent 闭包中的 registry/index、registry/src 和 git 目录，不引入 vendor 配置；两种模式均保留作者禁止缓存目标项目源码的规则。
+
+评分容器遵循作者的 `cargo_offline` 设置，不能借联网补依赖。vendor 闭包已复制 Agent 的 rustup 默认配置，运行时清空父评分镜像遗留的 `RUSTUP_TOOLCHAIN` 环境覆盖，使用所复制的默认工具链；raw-cache 和非 Cargo 评分不作此改动。已受缺依赖反馈影响的历史 Agent 轨迹仍须排除，修复后的离线重评分只作为诊断，不替代从头评测。
+
+### SWE-Milestone 源码删除策略
+
+SWE-Milestone 只有一种评分口径：评分 agent 自己的源码树。作者的评分器先检出参考答案 END 标签，再解开 agent 的快照；作者默认的残留清除（phase 1b）只删除 START 时存在、agent 已删除的源码，参考答案新增而快照中没有的源码会留在评分树里，并与 agent 自己对同一功能的实现冲突。例如 Navidrome 003 的参考迁移 `20250701010108_add_multi_library_support.go` 与 agent 自己的迁移同时存在，goose 报 duplicate version 或 table already exists，导入 `db/migrations` 的测试套件整组消失；参考答案独有的 `server/nativeapi/library.go` 也会与 agent 的实现编译冲突。因此每个试验都绑定作者文档中的 phase 2 语义：残留清除开启，并解除 START 来源限制（`residue_prune_scope: reference-added`）。删除范围沿用作者为每个仓库规定的扩展名和 keep-list（`metadata.json`，未规定时用作者默认值）；测试、生成文件、排除规则和未列出的扩展名照旧保留。有效配置写入试验冻结的 `repo_config.yaml` 并参与哈希，`preparation.json` 记录原始和有效配置哈希。没有可选开关。
+
+
+Pending method dispatch can be reordered with `ctxpress eval prioritize --directory RUN --methods LABEL1 LABEL2 ... --reason "evidence"`. Supply every frozen method label exactly once. The plan-bound operational metadata retains previous orders; running jobs, specifications and budgets are unchanged. `eval status` exposes the requested order. A scheduler frozen before this feature needs a controlled outer-dispatcher handoff; changing metadata alone does not upgrade an already running scheduler. Worker runtime and frozen inputs must remain unchanged.
+
+
+### Unbounded SWE-Milestone agent execution
+
+Set both `run.max_calls` and `run.timeout` to `null` to remove artificial agent call and elapsed-time limits. This is the paper protocol default. Explicit positive limits remain available for diagnostic runs. The plan reports a null timeout upper bound; recovery does not reinstate author invocation defaults. Cancellation, network timeouts, verifier timeouts, and method-internal compression thresholds remain separate. Never edit frozen runs to change these values: retain them as limited-budget evidence and create a new plan for any budget-exhausted rerun.

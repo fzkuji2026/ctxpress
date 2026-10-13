@@ -335,10 +335,15 @@ def test_parent_result_retains_optional_native_catalog_identity(tmp_path, monkey
     monkeypatch.setattr(milestone_driver.subprocess, 'run', lambda *args, **kwargs: None)
 
     class Process:
+        pid, returncode = 0, 0
+
         def __init__(self, *args, **kwargs):
             pass
 
-        def wait(self):
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
             state = {'stop': 'completed', 'calls': 0, 'cleanup_complete': True}
             if with_catalog:
                 state['model_catalog'] = metadata

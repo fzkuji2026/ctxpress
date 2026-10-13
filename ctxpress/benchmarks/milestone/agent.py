@@ -1,8 +1,30 @@
 """Scoped native Agent runtime: owned credentials, cumulative budget and groups."""
 from __future__ import annotations
-import contextlib
+import contextlib,math,subprocess
 from pathlib import Path
 from ctxpress.benchmarks.milestone.resources import docker
+
+
+class UnboundedProcess(subprocess.Popen):
+    """Translate the author's numeric timeout sentinel to a real unbounded wait."""
+    def wait(self, timeout=None):
+        return super().wait(timeout=None if timeout == math.inf else timeout)
+
+    def communicate(self, input=None, timeout=None):
+        return super().communicate(input=input, timeout=None if timeout == math.inf else timeout)
+
+
+class AgentSubprocess:
+    """Scoped to the author Agent module; verifier timeouts remain unchanged."""
+    Popen = UnboundedProcess
+
+    def __getattr__(self, name):
+        return getattr(subprocess, name)
+
+    def run(self, *args, **kwargs):
+        if kwargs.get('timeout') == math.inf:
+            kwargs['timeout'] = None
+        return subprocess.run(*args, **kwargs)
 
 
 def stop_invocation(owner):
@@ -59,6 +81,9 @@ def installed(code,owner,auth_file,budget):
 
     originals=[]
     try:
+        if budget.seconds is None:
+            originals.append((agent_runner,'subprocess',agent_runner.subprocess))
+            agent_runner.subprocess=AgentSubprocess()
         for module,name,value in ((agent_runner,'E2EAgentRunner',Agent),(run_e2e,'E2EAgentRunner',Agent),
                                   (run_e2e,'E2ETrialRunner',Trial)):
             originals.append((module,name,getattr(module,name)));setattr(module,name,value)

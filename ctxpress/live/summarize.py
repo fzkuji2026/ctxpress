@@ -166,8 +166,8 @@ class ResponsesSummarizer:
         envelope, data boundary or budget sentence is added. `model`: another model on the same upstream (e.g. a
         cheaper reflection model); its default effort/summary settings apply. The incoming
         reasoning context mode is retained because the upstream may require it."""
-        if not all(isinstance(x, str) and x.strip() for x in (system, user)):
-            raise ValueError("summary prompt needs nonempty system and user text")
+        if not isinstance(system, str) or not isinstance(user, str) or not user.strip():
+            raise ValueError("summary prompt needs string system and nonempty user text")
         if model is not None:
             payload = {"model": model}
             reasoning = self.request.get('reasoning')
@@ -179,19 +179,25 @@ class ResponsesSummarizer:
 
     def _send(self, payload, instructions, user, purpose):
         from ctxpress.live.proxy import find_usage, find_model
-        payload.update(instructions=instructions, input=[{"role": "user", "content": [{"type": "input_text",
+        payload.update(input=[{"role": "user", "content": [{"type": "input_text",
                        "text": user}]}], tools=[], stream=True, store=False)
+        if instructions:
+            payload["instructions"] = instructions
         # Codex upstreams also validate the explicit tool-concurrency mode.
         # No tools are exposed by this one-shot request, so retaining this
         # transport setting cannot enable model tool execution.
         parallel = self.request.get('parallel_tool_calls')
         if type(parallel) is bool:
             payload['parallel_tool_calls'] = parallel
+        from ctxpress.methods.experiment_context import check_auxiliary
+        context_check = check_auxiliary(self, payload, purpose)
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers = dict(self.headers, **{"Content-Length": str(len(body)), "Accept-Encoding": "identity"})
         connection = self.connect()
         started = time.time()
         info = dict(type="summary", purpose=purpose, model=payload.get('model'), t=started)
+        if context_check:
+            info["experiment_context"] = context_check
         context = (payload.get('reasoning') or {}).get('context')
         if context in ('auto', 'current_turn', 'all_turns'):
             info['reasoning_context'] = context

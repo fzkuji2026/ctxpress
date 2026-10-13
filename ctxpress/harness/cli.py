@@ -12,6 +12,10 @@ from ctxpress.harness.results import task_compare
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="command", required=True)
+    p = sub.add_parser('paper-methods', help='inspect the fixed paper cohort or prepare a new shared evaluation config; never run')
+    p.add_argument('--config', help='existing benchmark configuration to copy; original is untouched')
+    p.add_argument('--output', help='new configuration in the same directory, preserving relative paths')
+    p.add_argument('--pruner-url', help='real SWE-Pruner endpoint required when preparing all methods')
     p = sub.add_parser('benchmarks', help='list built-in benchmark adapters and their supported scope')
     p.add_argument('--start-mode', choices=tasks.MODES)
     p.add_argument('--evidence', action='append', default=[], help='review.json bundle; repeat to show bounded real-run evidence')
@@ -47,6 +51,9 @@ def main(argv=None):
     p = sub.add_parser("run"); p.add_argument("plan"); p.add_argument("--directory", required=True)
     p.add_argument("--background", action="store_true"); p.add_argument("--retry", action="store_true")
     p = sub.add_parser("status"); p.add_argument("--directory", required=True)
+    p = sub.add_parser('prioritize', help='change pending dispatch order without changing frozen jobs')
+    p.add_argument('--directory', required=True); p.add_argument('--methods', nargs='+', required=True)
+    p.add_argument('--reason', required=True)
     p = sub.add_parser("report"); p.add_argument("--directory", required=True)
     p = sub.add_parser('review', help='read-only quality, cost, exclusions, cleanup and process analysis bundle')
     p.add_argument('--directory', required=True); p.add_argument('--reference', required=True)
@@ -66,6 +73,27 @@ def main(argv=None):
     p = sub.add_parser("worker"); p.add_argument("--directory", required=True); p.add_argument("--retry", action="store_true")
     p = sub.add_parser("job"); p.add_argument("--directory", required=True); p.add_argument("--job", required=True); p.add_argument("--attempt", type=int, required=True)
     args = ap.parse_args(argv)
+    if args.command == 'paper-methods':
+        from ctxpress.methods.paper_catalog import describe, configure
+        if not args.config:
+            if args.output:
+                ap.error('--output requires --config')
+            print(json.dumps(describe(), indent=2, ensure_ascii=False))
+            return
+        if not args.output:
+            ap.error('--config requires --output')
+        source, target = Path(args.config).resolve(), Path(args.output).resolve()
+        if source.parent != target.parent:
+            ap.error('keep the new config in the source directory so relative resource paths remain valid')
+        if source == target or target.exists():
+            ap.error('output must be a new file; existing configurations are never overwritten')
+        config = configure(json.loads(source.read_text()), args.pruner_url)
+        with target.open('x', encoding='utf-8') as stream:
+            json.dump(config, stream, ensure_ascii=False, indent=2)
+            stream.write('\n')
+        print(json.dumps(dict(output=str(target), cohort=describe()['version'], methods=len(config['methods']),
+                              workers=1, started=False), ensure_ascii=False))
+        return
     if args.command == 'benchmarks':
         from ctxpress.harness.results.evidence import describe
         result = dict(benchmarks=describe(args.start_mode, args.evidence), family_count=len(benchmarks.FAMILIES),
@@ -164,6 +192,9 @@ def main(argv=None):
         result = evaluation.start(args.plan, args.directory, args.background, args.retry)
     elif args.command == "status":
         result = evaluation.state(args.directory)
+    elif args.command == 'prioritize':
+        from ctxpress.harness.jobs.priority import set_order
+        result = set_order(args.directory, args.methods, args.reason)
     elif args.command in ('cancel', 'recover', 'resume'):
         from ctxpress.harness.jobs import control as eval_control
         if args.command == 'resume':

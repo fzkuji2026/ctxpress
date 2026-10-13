@@ -133,3 +133,32 @@ def test_private_native_model_settings_cannot_bypass_the_owned_channel(change):
     with pytest.raises(ValueError):
         cls=framework(OfficialFixture,cfg)
         cls.set_model_relay('http://outside.invalid:1234' if change=='remote-relay' else 'http://127.0.0.1:70000')
+
+@pytest.mark.parametrize('unsafe', [False, True])
+def test_private_output_mounts_follow_agent_uid_and_preserve_host_group(tmp_path, unsafe):
+    import types
+    source = framework(OfficialFixture, private_settings())().get_container_init_script('codex')
+    block = next(node for node in ast.parse(source).body if isinstance(node, ast.For))
+    root = tmp_path / 'outputs'
+    root.mkdir()
+    (root / 'sessions').mkdir()
+    store = tmp_path / 'store'
+    store.mkdir()
+    mapping = {'/ctxpress-logs': root, '/ctxpress-logs/sessions': root / 'sessions', '/ctxpress-store': store}
+    if unsafe:
+        (root / 'sessions').rmdir()
+        (root / 'sessions').symlink_to(store, target_is_directory=True)
+    changed = []
+    fake_os = types.SimpleNamespace(chown=lambda path, uid, gid: changed.append(('owner', path, uid, gid)),
+                                    chmod=lambda path, mode: changed.append(('mode', path, mode)))
+    scope = {'Path': lambda path: mapping[path], 'os': fake_os, 'user': types.SimpleNamespace(pw_uid=1001)}
+    code = compile(ast.Module(body=[block], type_ignores=[]), '<native-init>', 'exec')
+    if unsafe:
+        with pytest.raises(RuntimeError, match='real directory'):
+            exec(code, scope)
+        assert not any(row[1] == root / 'sessions' for row in changed)
+    else:
+        exec(code, scope)
+        for path in mapping.values():
+            assert ('owner', path, 1001, path.stat().st_gid) in changed
+            assert ('mode', path, 0o2770) in changed

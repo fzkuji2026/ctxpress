@@ -62,3 +62,26 @@ def test_native_reader_refuses_malformed_or_foreign_results(tmp_path,monkeypatch
         try:file.symlink_to(source)
         except OSError:pytest.skip('platform cannot create symbolic links')
     with pytest.raises(ValueError):milestone_grade.read(found,code,trial)
+
+
+def test_missing_summary_still_exposes_exit_diagnostics(tmp_path, monkeypatch):
+    import hashlib
+    found, code, trial, _ = fixture(tmp_path, monkeypatch)
+    path = trial/'evaluation/M2/artifacts/1/ctxpress-runner-exit-example.json'
+    value = dict(schema='ctxpress.eval.milestone_runner_exit', version=1,
+                 milestone_id='M2', cause='timeout', returncode=-1, timeout_seconds=3600)
+    write(path, value)
+    actual = milestone_grade.read(found, code, trial)
+    row = actual['runner_diagnostics']['records'][0]
+    assert row['evidence'] == value
+    assert row['sha256'] == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert actual['resolved'] is None and actual['official_metrics_valid'] is False
+
+
+def test_malformed_diagnostics_do_not_replace_official_failure(tmp_path, monkeypatch):
+    found, code, trial, _ = fixture(tmp_path, monkeypatch)
+    write(trial/'evaluation/M2/ctxpress-runner-exit-bad.json', {'invalid': True})
+    actual = milestone_grade.read(found, code, trial)
+    assert actual['error'] == 'native summary missing'
+    assert actual['runner_diagnostics']['errors']
+    assert not actual['runner_diagnostics']['records']

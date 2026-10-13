@@ -122,7 +122,27 @@ class ControlReceipts:
         path = self.store/'control-receipts'/'history.json'
         if any(p.is_symlink() for p in [path, *path.parents]):
             raise ValueError('control history path is a symlink')
-        atomic_json(path, history)
+        # The host may compact away earlier call/output pairs. They are still
+        # part of the tool's executed state; never replace it with a window.
+        retained = self.history()
+        positions = {row['receipt']: i for i, row in enumerate(retained)}
+        previous = -1
+        appended = False
+        seen = set()
+        for row in history:
+            identity = row['receipt']
+            if identity in seen:
+                raise ValueError('duplicate control history receipt')
+            seen.add(identity)
+            if identity in positions:
+                index = positions[identity]
+                if appended or index <= previous or retained[index] != row:
+                    raise ValueError('control history conflicts with verified execution order')
+                previous = index
+            else:
+                retained.append(copy.deepcopy(row))
+                appended = True
+        atomic_json(path, retained)
 
     def history(self):
         path = self.store/'control-receipts'/'history.json'

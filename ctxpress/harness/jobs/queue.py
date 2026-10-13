@@ -124,6 +124,7 @@ def state(directory):
             row = connection.execute("SELECT value FROM metadata WHERE key='background'").fetchone()
             phase = "starting"
         control = eval_control.read(connection)
+        priority_row = connection.execute("SELECT value FROM metadata WHERE key='dispatch_priority'").fetchone()
     scheduler = json.loads(row[0]) if row else None
     if scheduler:
         scheduler["alive"] = processes.alive(scheduler["pid"], scheduler["identity"])
@@ -133,7 +134,10 @@ def state(directory):
         if job['pid']:
             job["alive"] = processes.alive(job["pid"], job["identity"])
         counts[job["status"]] = counts.get(job["status"], 0) + 1
-    return dict(directory=str(Path(directory).resolve()), scheduler=scheduler, control=control, counts=counts, jobs=jobs)
+    result = dict(directory=str(Path(directory).resolve()), scheduler=scheduler, control=control, counts=counts, jobs=jobs)
+    if priority_row:
+        result['dispatch_priority'] = json.loads(priority_row[0])
+    return result
 
 
 def set_result(directory, job_id, attempt, result=None, error=None):
@@ -218,6 +222,9 @@ def schedule(directory, retry=False, launch=None, interval=1.0):
                         connection.execute("UPDATE jobs SET status='interrupted',finished=?,error=? WHERE id=? AND status='running'",
                             (time.time(), "worker exited without a terminal result", row["id"]))
                 pending = [row for row in rows if row["status"] == "pending"]
+                from ctxpress.harness.jobs.priority import ordered
+                priority = connection.execute("SELECT value FROM metadata WHERE key='dispatch_priority'").fetchone()
+                pending = ordered(pending, json.loads(priority[0]) if priority else None, plan['sha256'])
             slots = max(0, plan["max_parallel"] - len(live))
             for row in _runnable(pending, live, slots):
                 _verified_plan(directory)

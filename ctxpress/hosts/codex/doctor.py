@@ -154,8 +154,12 @@ def main(argv=None):
     if args.offline_tools_check:
         from ctxpress.hosts.codex.toolcheck import check
         root = Path(args.directory or Path.cwd()/'runs'/'offline-tools').resolve()
-        checks = [check(args.codex_bin, root, method, model=args.model, model_catalog=args.model_catalog) for method in ('CWL', 'DTOC')]
+        checks = [check(args.codex_bin, root, method, model=args.model, model_catalog=args.model_catalog) for method in ('CWL', 'DTOC', 'AgentFoldSource', 'ContextFoldingTools', 'ACM', 'LongSeeker', 'ZipRL')]
         if args.model_catalog:
+            checks.extend(check(args.codex_bin, root/method.lower(), method, model=args.model,
+                                model_catalog=args.model_catalog) for method in ('TACO', 'CoMem'))
+            checks.append(check(args.codex_bin, root/'resum-native', 'ReSumSource', model=args.model,
+                                model_catalog=args.model_catalog))
             checks.append(check(args.codex_bin, root/'cwl-graduated', 'CWL', model=args.model,
                                 model_catalog=args.model_catalog, scenario='graduated'))
             checks.extend(check(args.codex_bin, root/(method.lower()+'-resume'), method, timeout=90, model=args.model,

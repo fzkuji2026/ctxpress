@@ -131,3 +131,28 @@ def test_async_cell_remains_pending_until_matching_native_wait_inventory():
     assert observation['method_tool_pending_cells'] == ['origin']
     adapter.adapt(dict(input=running + done), session_key='a', observation=observation)
     assert observation['method_tool_pending_cells'] == []
+
+
+def test_mcp_handler_exception_preserves_request_id(monkeypatch, capsys):
+    import io
+    import json
+    monkeypatch.setattr(mcp.sys, 'stdin', io.StringIO(
+        '{"jsonrpc":"2.0","id":17,"method":"tools/call"}\n'))
+    def fail(msg):
+        raise ValueError('verified control history cannot reproduce author tool state')
+    monkeypatch.setattr(mcp, 'handle', fail)
+    mcp.main()
+    reply = json.loads(capsys.readouterr().out)
+    assert reply['id'] == 17
+    assert reply['error']['code'] == -32603
+    assert 'verified control history' in reply['error']['message']
+
+
+def test_mcp_malformed_json_still_returns_parse_error(monkeypatch, capsys):
+    import io
+    import json
+    monkeypatch.setattr(mcp.sys, 'stdin', io.StringIO('{broken\n'))
+    mcp.main()
+    reply = json.loads(capsys.readouterr().out)
+    assert reply['id'] is None
+    assert reply['error']['code'] == -32700

@@ -64,6 +64,8 @@ response = client.responses.create(**request)
 `ctxpress list` 列出每个方法的来源、是否需要额外模型，以及与原实现的差别。
 
 ## 方法
+后续研究固定使用 **16 篇论文 / 18 个方法配置**，全部走统一接口。见[作者源码清单与适配差异](docs/paper-baselines.md)，或运行 `ctxpress eval paper-methods`。新论文协议拒绝旧近似版与项目自研候选。
+
 
 | 方法 | 类 | 来源 |
 |---|---|---|
@@ -80,70 +82,32 @@ response = client.responses.create(**request)
 | DTOC | `DTOC` | [arXiv:2609.26121](https://arxiv.org/abs/2609.26121) |
 | Pichay | `Pichay` | [arXiv:2603.09023](https://arxiv.org/abs/2603.09023) |
 | ClawVM | `ClawVM` | [arXiv:2604.10352](https://arxiv.org/abs/2604.10352) |
-| TokenPilot | `TokenPilot` | [arXiv:2606.17016](https://arxiv.org/abs/2606.17016) |
+| TokenPilot：闲置步数近似 / 模型驱动的生命周期适配 | `TokenPilot`、`TokenPilotLifecycle` | [arXiv:2606.17016](https://arxiv.org/abs/2606.17016) |
 | SWE-Pruner | `SWEPruner` | [arXiv:2601.16746](https://arxiv.org/abs/2601.16746) |
 | ARC | `ARC` | [arXiv:2607.25066](https://arxiv.org/abs/2607.25066) |
 | ACM | `ACM` | [arXiv:2607.23809](https://arxiv.org/abs/2607.23809) |
-| AgentFold | `AgentFold` | [arXiv:2510.24699](https://arxiv.org/abs/2510.24699) |
-| ACON | `ACON` | [arXiv:2510.00615](https://arxiv.org/abs/2510.00615) |
-| ReSum | `ReSum` | [arXiv:2509.13313](https://arxiv.org/abs/2509.13313) |
+| AgentFold：片段近似 / Agent 选择折叠范围的工具 | `AgentFold`、`AgentFoldTools`、`AgentFoldSource` | [arXiv:2510.24699](https://arxiv.org/abs/2510.24699) |
+| ACON：通用指南 / 作者公开 AppWorld 模板 | `ACON`、`ACONSource` | [arXiv:2510.00615](https://arxiv.org/abs/2510.00615) |
+| ReSum：周期近似 / 作者推理流程适配 | `ReSum`, `ReSumSource` | [arXiv:2509.13313](https://arxiv.org/abs/2509.13313) |
+| Context-Folding：分支/返回的宿主适配，非 FoldGRPO 训练复现 | `ContextFoldingTools` | [arXiv:2510.11967](https://arxiv.org/abs/2510.11967) |
+| FoldAct：作者推理窗口规则，使用宿主策略 | `FoldActSource` | [arXiv:2512.22733](https://arxiv.org/abs/2512.22733) |
 | 成本模型（固定参数或离线筛选的策略） | `CostModel`、`AutoCostModel` | 本项目 |
 | 打分方法基类 | `ScoredMethod` | 本项目 |
 
 包装器用于组合方法：`Composed`、`EntryTruncation`、`PinRequirements`、`WithMemory`、`Trigger`。各方法的参数、预算单位和与原实现的
 差别见 [docs/methods.md](docs/methods.md)；添加新方法通常只需一个打分函数，见 [docs/new_method.md](docs/new_method.md)。
 
-## 结果
+所有变体共用 `ctxpress codex`、`ctxpress claude`、Python API 和 `ctxpress eval` 接口。`repro/` 中的作者源码对照用于验证实现，不是独立 baseline 运行入口。离线对照通过不等于完整复现论文，也不能替代真实评测成绩；适配范围和未复现部分见 [方法说明](docs/methods.md#新增源码适配与统一入口)。
 
-以下是以 Codex 为宿主（模型 `gpt-6.1-sol`，推理强度 medium）的初步结果。每个作业都在容器中从原始任务从头执行，
-并由 benchmark 的官方评分程序打分。每个作业最多 100 次工具调用、30 分钟；宿主原生压缩阈值为 230k token。费用按
-2026-10-04 核对的声明费率估算（每百万 token：输入 $2.00、缓存读 $0.10、输出 $10.00）。“费用比”是与不压缩的配对比值，
-只统计两边都有完整用量的任务。重复次数少（1–3 次），数字仅作描述。
+## 重跑状态
 
-**SWE-Milestone，Navidrome 里程碑链**：官方指标 `score_1000`，每个方法 3 次的平均
+固定 **16 篇论文 / 18 个方法配置**，全部按新配置重新评测：
 
-| 方法 | 平均分 | 每次费用 | 费用比 | 最大输入 | 缓存读取占比 | 历史缩减 |
-|---|---:|---:|---:|---:|---:|---:|
-| 不压缩 | 42.0 | $1.78 | 1.00 | 199k | 0.98 | 0% |
-| Codex 自动压缩（230k） | 42.0 | $2.08 | 1.17 | 226k | 0.98 | 0% |
-| DTOC | 42.0 | $1.65 | **0.93** | 117k | 0.94 | 37% |
-| Complexity Trap（摘要）† | 42.0 | $2.04 | 1.15 | 86k | 0.92 | 54% |
-| AutoCostModel † | 42.0 | $2.50 ‡ | 1.37 | 219k | 0.97 | 12% |
-| KeepLastTokens | 42.0 | $4.30 | 2.42 | 99k | 0.73 | 44% |
-| Complexity Trap（混合）† | 41.9 | $6.92 | 3.88 | 62k | 0.30 | 62% |
-| Complexity Trap（观察遮蔽） | 38.3 | $7.35 | 4.12 | 73k | 0.27 | 52% |
-| CWL | 34.6 | $2.15 ‡ | 1.21 | 104k | 0.92 | 20% |
-| ARC | 34.6 | $6.51 ‡ | 3.70 | 76k | 0.28 | 54% |
-| Pichay | 30.3 | $4.95 ‡ | 2.74 | 69k | 0.42 | 59% |
-| AgentDiet § | 27.1 | $2.10 ‡ | 1.15 | 52k | 0.73 | 75% |
-| ClawVM | 21.4 | $2.12 | 1.19 | 66k | 0.79 | 56% |
-
-**SWE-bench Verified，10 题**：每个方法 1 次
-
-| 方法 | 解决 | 10 题费用 | 费用比 | 最大输入（均值） | 缓存读取占比 |
-|---|---:|---:|---:|---:|---:|
-| 不压缩 | 8/10 | $1.17 | 1.00 | 28.4k | 0.83 |
-| Codex 自动压缩（230k） | 8/10 | $1.31 | 1.12 | 28.4k | 0.79 |
-| AutoCostModel † | 8/10 | $1.07 | **0.92** | 26.9k | 0.85 |
-| Complexity Trap（摘要） | 8/10 | $1.15 | 0.99 | 26.6k | 0.81 |
-| CWL | 8/10 | $1.17（9 题）‡ | 1.08 | 27.3k | 0.87 |
-| KeepLastTokens | 8/10 | $1.27 | 1.09 | 29.0k | 0.84 |
-| DTOC | 8/10 | $1.42 | 1.22 | 28.0k | 0.81 |
-| AgentDiet | 8/10 | $1.63 | 1.40 | 20.3k | 0.76 |
-| Complexity Trap（观察遮蔽） | 8/10 | $1.58（9 题）‡ | 1.46 | 25.5k | 0.76 |
-| Complexity Trap（混合） | 8/10 | $1.92 | 1.65 | 25.4k | 0.75 |
-| ARC | 8/10 | $2.15 | 1.85 | 23.2k | 0.63 |
-| Pichay | 8/10 | $2.30 | 1.98 | 22.7k | 0.68 |
-| ClawVM | 8/10 | $2.79 | 2.39 | 22.2k | 0.76 |
-
-† 修复 AutoCostModel 的启动缺陷和“摘要丢失工具目录”的缺陷后，在 ctxpress 1.0.1 上重跑；其余各行来自上一轮，其他设置相同。
-‡ 部分运行缺少完整用量；费用只按用量完整的运行平均，未知费用不按零计；过程指标用同样的运行。§ 2 次的平均：第 3 次的请求日志缺号，已排除。
-
-- **短任务区分不了方法。**Verified 上所有方法都解决同样的 8/10，上下文只有约 2.8 万 token；在这里动作的方法只会增加费用。
-- **改写早期历史会打断提示缓存。**Complexity Trap 观察遮蔽把历史缩短了 52%，但缓存读取占比从 0.98 降到 0.27，费用是不压缩的
-  4.1 倍。保持前缀稳定的方法（DTOC、Complexity Trap 摘要）费用接近不压缩；DTOC 是唯一比不压缩便宜、且三次都保持基线分数的方法。
-- **本轮受预算限制。**100 次工具调用只够完成 9 个里程碑中的 3 个，不压缩时最大输入为 199k，没有达到 230k 的原生压缩阈值。
-  让上下文真正撑满窗口的长预算比较已列入计划（[ROADMAP.md](ROADMAP.md)）。
+- **输入设计上限：**128000 token；按整体上下文长度触发的方法使用 **102400 token 触发参考线**。这是实验窗口设置，实际输入合规仍需逐请求核验。
+- **Agent 执行：**无总请求预算及运行总时长预算；保留取消、网络故障处理和评分测试超时。
+- **调度：**单作业串行，覆盖执行、官方评分与资源清理；全部结束后才进入下一作业，评分并发为 1。
+- **状态：**用户要求暂停，等待评测代码修复。初始化作业及其余队列已取消，自动跟进已暂停；暂无已完成的新成绩。
+- **费用口径：**API 费用估算在本地按记录用量计算，采用本轮配置中声明的模型费率；缺失用量或价格时费用保持未知，不能按零计。本地 GPU 成本另列且未定价。
 
 ## 工作方式
 

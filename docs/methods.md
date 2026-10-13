@@ -6,6 +6,10 @@
 
 | 方法 | 类 | 来源 | 要点 |
 |---|---|---|---|
+| TACO | `TACO(summary_model, freeze_rules, rules_file)` | 2604.19572 | 作者规则规划/过滤/反馈演化；辅助模型统一计费，默认任务内规则池 |
+| CoMem | `CoMem(interval, lag, summary_model)` | 2605.30842 | 作者全历史异步k步摘要；保护追加历史，退出排空辅助调用 |
+| LongSeeker | `LongSeeker` | 2605.05191 | 作者五种上下文操作，统一宿主MCP，保护用户修正和工具配对 |
+| ZipRL | `ZipRL` | 2605.28069 | 作者五级摘要提示与解析；统一zip_context工具，未加载训练策略 |
 | 宿主默认 | `HostDefault` | Codex / Claude Code | 对照：不改写请求，也不覆盖宿主的原生压缩设置；评测计划里该作业的 `compact_limit` 为空，启动器不传 `model_auto_compact_token_limit` |
 | 不压缩 | `NoCompaction` | | 关闭宿主压缩，窗口满了就停 |
 | Codex auto-compact | `CodexAutoCompact(t)` | Codex CLI | 超过 t 整体摘要；t = 230k 即标准 |
@@ -66,3 +70,21 @@ ctxpress smoke --method AgentFoldTools --method TokenPilotLifecycle --method ACO
 | `ACM` | 作者源码对照：500 次规范化上下文、127 份归档；固定版本及文件哈希见 `repro/reference_sources.json` | 同一假摘要、明确的信封/空范围错误文本归一化；未比较真实摘要、提示词、查询、训练后 9B 策略或原 benchmark 成绩 |
 
 以上新增对照是离线逻辑证据，不是新的正式评测成绩。无依赖安装或独立 baseline 服务；作者文件只在对照测试中执行，并先校验固定哈希。引用 ARC 作者代码时使用“尚未找到公开实现”，不把检索结果当成不存在的证明。TokenPilot 原论文本身讨论缓存效率，不能将“考虑缓存”单独作为本项目的新颖性依据。
+
+## 固定论文清单与新增折叠适配
+
+后续研究使用 [12 篇论文 / 14 个配置清单](paper-baselines.md)，统一通过 `ctxpress eval paper-methods`
+检查或准备配置。新协议为 `configs/paper-context.protocol.json`；旧协议与历史近似方法继续保留，
+不进入新队列。所有新方法均已注册到 `ctxpress.methods.build`，共用代理、宿主工具和评测入口。
+
+- `AgentFoldSource`：在已有完整范围/工具配对检查后，执行作者步骤替换和格式化核心；宿主
+  `fold_context` 工具代替作者四块输出。没有重建作者整个推理循环或加载 AgentFold-30B 权重。
+- `FoldActSource`：从最近摘要到最近信息轮选取上下文，超预算时从末尾保留完整轮次；每次可从
+  保存的完整历史重建。只识别 assistant 可见文本里的摘要标签，用户及工具内容不会伪装成摘要。
+  宿主 token/轮次与有效观察映射有差异，不包含作者训练损失或过长观察的截断强制模式。
+- `ContextFoldingTools`：子任务继承父上下文，调用 `context_return` 后删除完整子轨迹，将返回摘要
+  写回起始分支的工具结果。不支持嵌套；用户修正、媒体、未完成或跨界工具调用会阻止折叠。
+  作者独立分支生成器、自动超时/强制返回与 FoldGRPO 权重不在该适配内。
+
+源码对照采用确定性替身；详细范围、固定版本和未复现部分都在清单和 `repro/reference_sources.json`。
+这些检查不能替代真实模型与官方评分；SWE-Pruner 的模型服务仍须在正式执行前配置。

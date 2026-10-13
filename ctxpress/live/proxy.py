@@ -23,6 +23,7 @@ import argparse, http.client, json, os, re, socketserver, sys, threading, time, 
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from ctxpress.live.rewrite import Rewriter
 from ctxpress.live.contract import HostContractError
+from ctxpress.methods.experiment_context import ContextLimitError
 from ctxpress.core.params import DEFAULT
 
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding",
@@ -171,11 +172,25 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                     if info is not None:
                         info.update(model=j.get('model'), dialect=dialect)
                         body = json.dumps(j, ensure_ascii=False).encode("utf-8")
+                except ContextLimitError as e:
+                    record(dict(type='experiment_context_limit', t=time.time(), status=400,
+                                reason=str(e), upstream_sent=False,
+                                input_tokens_estimate=e.tokens, context_profile=e.profile))
+                    error = json.dumps({'error': {'type': 'invalid_request_error',
+                        'code': 'ctxpress_experiment_context_limit', 'message': str(e)}}).encode()
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(error)))
+                    self.end_headers(); self.wfile.write(error); return
                 except HostContractError as e:
                     record(dict(type='host_contract_failed', t=time.time(), status=422,
                                 reason=str(e), upstream_sent=False))
                     self.send_error(422, 'ctxpress host contract failed'); return
                 except Exception as e:
+                    if rewriter.context_profile(key) is not None:
+                        record(dict(type='experiment_context_rewrite_failed', t=time.time(), status=422,
+                                    reason=type(e).__name__, upstream_sent=False))
+                        self.send_error(422, 'ctxpress experiment context rewrite failed'); return
                     info = None
                     record(dict(t=time.time(), error=f"rewrite failed: {e!r}"))
             elif method == "POST" and incoming.path.rstrip("/").endswith("/v1/messages") and body:
@@ -194,11 +209,25 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                     if info is not None:
                         info.update(model=j.get('model'), dialect=dialect)
                         body = json.dumps(j, ensure_ascii=False).encode("utf-8")
+                except ContextLimitError as e:
+                    record(dict(type='experiment_context_limit', t=time.time(), status=400,
+                                reason=str(e), upstream_sent=False,
+                                input_tokens_estimate=e.tokens, context_profile=e.profile))
+                    error = json.dumps({'error': {'type': 'invalid_request_error',
+                        'code': 'ctxpress_experiment_context_limit', 'message': str(e)}}).encode()
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(error)))
+                    self.end_headers(); self.wfile.write(error); return
                 except HostContractError as e:
                     record(dict(type='host_contract_failed', t=time.time(), status=422,
                                 reason=str(e), upstream_sent=False))
                     self.send_error(422, 'ctxpress host contract failed'); return
                 except Exception as e:                       # other rewrite errors retain legacy fallback
+                    if rewriter.context_profile(key) is not None:
+                        record(dict(type='experiment_context_rewrite_failed', t=time.time(), status=422,
+                                    reason=type(e).__name__, upstream_sent=False))
+                        self.send_error(422, 'ctxpress experiment context rewrite failed'); return
                     info = None
                     record(dict(t=time.time(), error=f"rewrite failed: {e!r}"))
             elif responses and not compact and body:
@@ -222,11 +251,25 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                         info.update(route_observation)
                         info['model'] = j.get('model')
                     body = json.dumps(j, ensure_ascii=False).encode("utf-8")
+                except ContextLimitError as e:
+                    record(dict(type='experiment_context_limit', t=time.time(), status=400,
+                                reason=str(e), upstream_sent=False,
+                                input_tokens_estimate=e.tokens, context_profile=e.profile))
+                    error = json.dumps({'error': {'type': 'invalid_request_error',
+                        'code': 'ctxpress_experiment_context_limit', 'message': str(e)}}).encode()
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(error)))
+                    self.end_headers(); self.wfile.write(error); return
                 except HostContractError as e:
                     record(dict(type='host_contract_failed', t=time.time(), status=422,
                                 reason=str(e), upstream_sent=False))
                     self.send_error(422, 'ctxpress host contract failed'); return
                 except Exception as e:
+                    if rewriter.context_profile(key) is not None:
+                        record(dict(type='experiment_context_rewrite_failed', t=time.time(), status=422,
+                                    reason=type(e).__name__, upstream_sent=False))
+                        self.send_error(422, 'ctxpress experiment context rewrite failed'); return
                     from ctxpress.live.method_tools import MethodToolRouteError
                     if isinstance(e, MethodToolRouteError):
                         record(dict(type='method_tool_route_failed', t=time.time(), status=400,
@@ -360,6 +403,10 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                     info['response_model'] = chat.find_model(tail.decode("utf-8", "ignore"))
                 if compact:
                     info['completed'] = 200 <= r.status < 300 and not info.get('stream_error')
+                # Only ordinary Responses prompts currently have paired full
+                # wire sizing; adapter projections are not token calibration.
+                if not compact and dialect not in ('anthropic', 'chat'):
+                    rewriter.observe_response(info)
                 record(info)
             elif passthrough is not None:
                 text = tail.decode("utf-8", "ignore")
@@ -467,6 +514,13 @@ def serve(method_factory, port, upstream, via=None, log=None, params=DEFAULT, ho
                                   chat_session=chat_session, chat_volatile=chat_volatile,
                                   allow_native_compaction=sample.allow_native_compaction,
                                   compact_prompt=sample.codex_config.get('compact_prompt') if not sample.allow_native_compaction else None))
+    original_close = srv.server_close
+    def close_with_memory():
+        try:
+            rw.close()
+        finally:
+            original_close()
+    srv.server_close = close_with_memory
     return srv, rw
 
 

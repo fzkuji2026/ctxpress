@@ -19,6 +19,7 @@ an upper bound). The small model's reading cost is charged as overhead.
 """
 from __future__ import annotations
 import json, re, urllib.request
+from pathlib import Path
 from ctxpress.methods.base import Method
 from ctxpress.core.trace import content_type, shell_command
 
@@ -52,6 +53,10 @@ class HTTPPruner:
     def __call__(self, query, code, threshold, chunk_overlap_tokens):
         body = json.dumps(dict(query=query, code=code, threshold=threshold, always_keep_first_frags=False,
                                chunk_overlap_tokens=chunk_overlap_tokens)).encode()
+        channel = Path('/ctxpress-channel/model.sock')
+        if channel.exists():
+            from ctxpress.methods.pruner_channel import request
+            return request(body, self.timeout, channel)
         req = urllib.request.Request(self.url, body, {"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
             return json.loads(r.read())

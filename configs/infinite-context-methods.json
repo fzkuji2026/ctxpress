@@ -1,0 +1,6 @@
+[
+  {"class": "CliffCompaction", "label": "cliff-100k", "args": {"t": 100000}},
+  {"class": "PinRequirements", "label": "cliff-100k-spec", "args": {"inner": {"class": "CliffCompaction", "args": {"t": 100000}}}},
+  {"class": "infinite-context-rules", "label": "infinite-context-batch-spec", "args": {"t": 100000, "target": 50000, "emergency": 200000, "work_turns": 0, "predictor_mode": "off"}},
+  {"class": "infinite-context-rules", "label": "infinite-context-batch-work", "args": {"t": 100000, "target": 50000, "emergency": 200000, "work_turns": 3, "predictor_mode": "off"}}
+]

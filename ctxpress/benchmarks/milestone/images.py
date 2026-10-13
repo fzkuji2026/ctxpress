@@ -1,6 +1,7 @@
 """Preserve native evaluator-cache validation while forbidding image preparation."""
 from __future__ import annotations
 import contextlib,json,subprocess,types
+from ctxpress.benchmarks.milestone.cargo_closure import evaluation_policy
 from ctxpress.benchmarks.milestone.resources import docker, image_id
 
 
@@ -75,7 +76,7 @@ class PreparedImages:
                 expected_closure_image_id and image_id('sha256:'+expected_closure_image_id.removeprefix('sha256:'))!=self.agent['id']):
             raise ValueError('native evaluator source/closure differs from the frozen itinerary')
         result=self.native(repo_name=repo_name,milestone_id=milestone_id,milestone_image=milestone_image,
-            quarantine_config=quarantine_config,expected_closure_image_id=expected_closure_image_id)
+            quarantine_config=evaluation_policy(quarantine_config),expected_closure_image_id=expected_closure_image_id)
         if result[0]!=self.grading[milestone_id]['id'] or 'sha256:'+result[3]!=self.grading[milestone_id]['id']:
             raise ValueError('native effective evaluator differs from its prepared image binding')
         return result

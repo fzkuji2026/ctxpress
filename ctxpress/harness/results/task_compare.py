@@ -206,6 +206,57 @@ def _verified(spec, result, folder, evidence):
     return {'resolved': grade['resolved']}, dict(kind='boolean_issue_outcome')
 
 
+def _milestone_config_digest(spec, folder, trial, evidence):
+    sibling = spec['task']['initial_state'].get('sibling_repo_config_sha256')
+    request = _read(folder / 'milestone-execute-request.json', folder, evidence)
+    from ctxpress.benchmarks.milestone.source_policy import bound_config
+    if not sibling:
+        return sibling
+    # Dispatch settings were already checked against the frozen plan. Rebuild
+    # the expected bytes from its hash-bound original, never trust a new hash
+    # merely because the run recorded it.
+    import yaml
+    original = _read(folder / 'native-preparation' / 'native-inputs' / 'config' /
+                     (spec['task']['id'] + '.yaml'), folder, evidence, sibling, document=False)
+    native = folder / 'native-preparation'
+    preparation = _read(native / 'preparation.json', folder, evidence)
+    entry = (preparation.get('inputs') or {}).get(spec['task']['id'] + '/metadata.json')
+    if not isinstance(entry, dict) or not entry.get('sha256'):
+        raise ValueError('the grading source policy requires the frozen metadata hash')
+    metadata = _read(native / 'native-inputs' / spec['task']['id'] / 'metadata.json', folder, evidence, entry['sha256'])
+    config = bound_config(yaml.safe_load(original), metadata)
+    expected = hashlib.sha256(yaml.safe_dump(config, sort_keys=True, allow_unicode=True).encode('utf-8')).hexdigest()
+    _read(trial / 'repo_config.yaml', folder, evidence, expected, document=False)
+    return expected
+
+
+def _milestone_diagnostics(grade, trial, folder, evidence):
+    diagnostics = grade.get('runner_diagnostics')
+    if diagnostics is None:
+        return None  # older frozen runs did not capture supplemental evidence
+    if (not isinstance(diagnostics, dict) or not isinstance(diagnostics.get('records'), list)
+            or not isinstance(diagnostics.get('errors'), list)):
+        raise ValueError('invalid native runner diagnostics')
+    seen = set()
+    for row in diagnostics['records']:
+        if not isinstance(row, dict) or not isinstance(row.get('path'), str):
+            raise ValueError('invalid native diagnostic record')
+        relative = Path(row['path'])
+        if (relative.is_absolute() or '..' in relative.parts or not relative.parts
+                or relative.parts[0] != 'evaluation'
+                or not re.fullmatch(r'ctxpress-runner-exit-[A-Za-z0-9_-]+\.json', relative.name)
+                or row['path'] in seen):
+            raise ValueError('native diagnostic path differs or is duplicated')
+        seen.add(row['path'])
+        if not isinstance(row.get('sha256'), str):
+            raise ValueError('native diagnostic hash missing')
+        raw = _read(trial / relative, folder, evidence, row['sha256'])
+        if (raw != row.get('evidence') or raw.get('schema') != 'ctxpress.eval.milestone_runner_exit'
+                or raw.get('version') != 1):
+            raise ValueError('native diagnostic content differs')
+    return diagnostics
+
+
 def _milestone(spec, result, folder, evidence):
     grade = _object(result.get('grade'))
     if (grade.get('quality_kind') != 'milestone' or grade.get('official_metrics_valid') is not True or
@@ -222,13 +273,14 @@ def _milestone(spec, result, folder, evidence):
             metadata.get('reasoning_effort') != result['reasoning'] or
             metadata.get('image') != spec['resources']['images']['agent']['id']):
         raise ValueError('actual native Agent image/model/reasoning differs')
-    sibling = spec['task']['initial_state'].get('sibling_repo_config_sha256')
+    sibling = _milestone_config_digest(spec, folder, trial, evidence)
     if sibling and (metadata.get('repo_config_binding') or {}).get('sha256') != sibling:
         raise ValueError('actual native repository config differs')
     if _path(result['official_report'], folder) != folder / 'native-grade.json':
         raise ValueError('native grade report is not from this attempt')
     if _read(result['official_report'], folder, evidence) != grade:
         raise ValueError('native grade report differs from recorded grade')
+    diagnostics = _milestone_diagnostics(grade, trial, folder, evidence)
     records = grade.get('reports')
     documents = _records(records, folder, evidence)
     if any(_object(json.loads(raw)).get('test_only') for name, raw in documents.items() if name.startswith('evaluation/')):
@@ -253,7 +305,7 @@ def _milestone(spec, result, folder, evidence):
     metrics = grade['official_metrics']
     if (set(outcomes) != set(active) or coverage.get('grading_errors') != {} or coverage.get('infra_invalid') != [] or
             coverage.get('graded') != len(graded) or metrics.get('graded') != len(graded) or
-            metrics.get('total_milestones') != len(active) or metrics.get('infra_invalid') != 0):
+            metrics.get('total_milestones') != len(graded) or metrics.get('infra_invalid') != 0):
         raise ValueError('native denominator/coverage evidence differs')
     served = set()
     for mid, outcome in outcomes.items():
@@ -293,7 +345,7 @@ def _milestone(spec, result, folder, evidence):
             raise ValueError('official score missing or nonnumeric: ' + name)
         values['milestone.' + name] = value
     return values, dict(kind='author_milestone_scores', official_metrics=metrics,
-                        official_metrics_valid=True, coverage=coverage,
+                        official_metrics_valid=True, coverage=coverage, runner_diagnostics=diagnostics,
                         submission_complete=grade.get('submission_complete'), scoring_complete=grade.get('scoring_complete'))
 
 

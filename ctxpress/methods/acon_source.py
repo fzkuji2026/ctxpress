@@ -48,11 +48,14 @@ class ACONSource(Method):
     framework = dict(L1="作者指南压缩观察", L2="无", L3="作者指南压缩历史，保留最近轮次",
                      cross="固定指令和用户消息保留", memory="无", decider="作者阈值与提示词协议")
 
-    def __init__(self, t_hist=4096, t_obs=256, keep_turns=1, summary_model=None):
+    def __init__(self, t_hist=4096, t_obs=256, keep_turns=1, summary_model=None, trigger_tokens=None):
         if any(type(t) is not int or t < -1 for t in (t_hist, t_obs)):
             raise ValueError("thresholds must be non-negative integers or -1 (always)")
         if type(keep_turns) is not int or keep_turns < 0:
             raise ValueError("keep_turns must be a non-negative integer")
+        if trigger_tokens is not None and (type(trigger_tokens) is not int or trigger_tokens <= 0):
+            raise ValueError("trigger_tokens must be a positive integer or None")
+        self.trigger_tokens = trigger_tokens
         self.t_hist, self.t_obs, self.keep_turns, self.summary_model = t_hist, t_obs, keep_turns, summary_model
 
     @staticmethod
@@ -106,7 +109,11 @@ class ACONSource(Method):
             return
         history = self._history(sim, selected)
         count = getattr(sim, "tokens", lambda text: max(1, len(text) // 4) if text else 0)
-        if not needs_summary(history, self.t_hist, count, previous):
+        if self.trigger_tokens is not None:
+            from ctxpress.methods.experiment_context import context_tokens
+            if context_tokens(sim) < self.trigger_tokens:
+                return
+        elif not needs_summary(history, self.t_hist, count, previous):
             return
         result = self._ask(sim, acon_prompts.HISTORY, history_args(self._task(sim), history, previous),
                            "# History Summary", "history")

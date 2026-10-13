@@ -52,6 +52,10 @@ class Registry:
                 self.network=dict(schema=NETWORK_SCHEMA,version=1,project=self.project,label=self.label,
                     daemon_id=self.daemon,name=name,cleaned=False,phase='creating',pid=os.getpid(),identity=processes.identity(os.getpid()))
                 self.persist_network()
+            if self.network.get('phase') == 'creating':
+                # A failed create must not poison every later grader. Recheck
+                # absence before another attempt; an occupied name stays fatal.
+                name=self.network['name']
                 # A foreign/stale name is an error; no reuse and no force-removal.
                 if docker('network','ls','-q','--filter','name=^'+name+'$').split():
                     raise ValueError('native grading network name is already occupied')

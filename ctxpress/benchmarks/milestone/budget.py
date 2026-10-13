@@ -13,8 +13,8 @@ class Limit(KeyboardInterrupt):
 
 class Budget:
     def __init__(self,sessions,seconds,max_calls,defer_start=False):
-        eval_plan._positive(seconds,'native total timeout',integer=False)
-        eval_plan._positive(max_calls,'native tool call budget',integer=True)
+        if seconds is not None:eval_plan._positive(seconds,'native total timeout',integer=False)
+        if max_calls is not None:eval_plan._positive(max_calls,'native tool call budget',integer=True)
         if type(defer_start) is not bool:raise ValueError('native deferred budget must be boolean')
         self.seconds,self.max_calls=seconds,max_calls;self.started=None if defer_start else time.monotonic()
         self.progress=CallProgress(sessions);self.count=0;self.complete=False;self.reason=None
@@ -24,15 +24,16 @@ class Budget:
         with self.lock:
             self.count,self.complete=self.progress.update()
             if self.reason is None:
-                if self.started is not None and time.monotonic()-self.started>=self.seconds:self.reason='timeout'
-                elif self.count>=self.max_calls and self.complete:self.reason='max_calls'
+                if self.seconds is not None and self.started is not None and time.monotonic()-self.started>=self.seconds:self.reason='timeout'
+                elif self.max_calls is not None and self.count>=self.max_calls and self.complete:self.reason='max_calls'
             return self.reason
 
     def remaining_ms(self,requested):
-        if type(requested) is not int or requested<=0:raise ValueError('native invocation timeout must be positive milliseconds')
+        if requested != math.inf and (type(requested) is not int or requested<=0):raise ValueError('native invocation timeout must be positive milliseconds')
         self.begin()
         self.poll()
         if self.reason:raise Limit(self.reason)
+        if self.seconds is None:return math.inf
         return min(requested,max(1,math.ceil((self.seconds-(time.monotonic()-self.started))*1000)))
 
     def write(self,path):
@@ -74,7 +75,8 @@ class Budget:
         signal.signal(signal.SIGALRM,interrupt)
         try:
             if self.poll():raise Limit(self.reason)
-            signal.setitimer(signal.ITIMER_REAL,max(0.001,self.seconds-(time.monotonic()-self.started)))
+            if self.seconds is not None:
+                signal.setitimer(signal.ITIMER_REAL,max(0.001,self.seconds-(time.monotonic()-self.started)))
             thread.start()
             yield self
         finally:

@@ -1,0 +1,1507 @@
+{
+ "method": {
+  "class": "infinite-context",
+  "args": {
+   "version": 5,
+   "t": 100000,
+   "tool_dialect": "full",
+   "entry": true,
+   "segment": true,
+   "topic": true,
+   "reuse_profile": {
+    "schema": "ctxpress.reuse-memory",
+    "version": 1,
+    "attrs": {
+     "task": "navidrome_navidrome_v0.57.0_v0.58.0",
+     "task_type": "milestone-chain",
+     "lang": "go"
+    },
+    "sessions": 240,
+    "H": 20,
+    "N0": 50,
+    "tables": {
+     "*|call|1": [
+      24170,
+      0
+     ],
+     "*|call|13": [
+      21826,
+      0
+     ],
+     "*|call|2": [
+      23944,
+      0
+     ],
+     "*|call|21": [
+      20622,
+      0
+     ],
+     "*|call|3": [
+      23779,
+      0
+     ],
+     "*|call|34": [
+      18953,
+      0
+     ],
+     "*|call|5": [
+      23387,
+      0
+     ],
+     "*|call|55": [
+      16443,
+      0
+     ],
+     "*|call|8": [
+      22736,
+      0
+     ],
+     "*|call|89": [
+      12633,
+      0
+     ],
+     "*|command|1": [
+      7378,
+      183
+     ],
+     "*|command|13": [
+      6445,
+      60
+     ],
+     "*|command|2": [
+      7208,
+      131
+     ],
+     "*|command|21": [
+      6072,
+      41
+     ],
+     "*|command|3": [
+      7091,
+      111
+     ],
+     "*|command|34": [
+      5578,
+      25
+     ],
+     "*|command|5": [
+      6927,
+      88
+     ],
+     "*|command|55": [
+      4796,
+      6
+     ],
+     "*|command|8": [
+      6735,
+      67
+     ],
+     "*|command|89": [
+      3677,
+      9
+     ],
+     "*|edit|1": [
+      302,
+      0
+     ],
+     "*|edit|13": [
+      42,
+      0
+     ],
+     "*|edit|2": [
+      295,
+      0
+     ],
+     "*|edit|21": [
+      27,
+      0
+     ],
+     "*|edit|3": [
+      227,
+      0
+     ],
+     "*|edit|34": [
+      18,
+      0
+     ],
+     "*|edit|5": [
+      149,
+      0
+     ],
+     "*|edit|55": [
+      15,
+      0
+     ],
+     "*|edit|8": [
+      91,
+      0
+     ],
+     "*|edit|89": [
+      13,
+      0
+     ],
+     "*|patch|1": [
+      312,
+      51
+     ],
+     "*|patch|13": [
+      13,
+      2
+     ],
+     "*|patch|2": [
+      274,
+      36
+     ],
+     "*|patch|21": [
+      8,
+      0
+     ],
+     "*|patch|3": [
+      182,
+      19
+     ],
+     "*|patch|34": [
+      7,
+      0
+     ],
+     "*|patch|5": [
+      78,
+      8
+     ],
+     "*|patch|55": [
+      7,
+      0
+     ],
+     "*|patch|8": [
+      29,
+      2
+     ],
+     "*|patch|89": [
+      6,
+      0
+     ],
+     "*|read|1": [
+      8838,
+      97
+     ],
+     "*|read|13": [
+      3172,
+      0
+     ],
+     "*|read|2": [
+      6977,
+      53
+     ],
+     "*|read|21": [
+      2611,
+      0
+     ],
+     "*|read|3": [
+      5995,
+      26
+     ],
+     "*|read|34": [
+      2128,
+      0
+     ],
+     "*|read|5": [
+      4802,
+      5
+     ],
+     "*|read|55": [
+      1653,
+      0
+     ],
+     "*|read|8": [
+      3856,
+      1
+     ],
+     "*|read|89": [
+      1023,
+      0
+     ],
+     "*|search|1": [
+      1210,
+      129
+     ],
+     "*|search|13": [
+      933,
+      17
+     ],
+     "*|search|2": [
+      1157,
+      83
+     ],
+     "*|search|21": [
+      833,
+      14
+     ],
+     "*|search|3": [
+      1125,
+      55
+     ],
+     "*|search|34": [
+      750,
+      16
+     ],
+     "*|search|5": [
+      1087,
+      34
+     ],
+     "*|search|55": [
+      654,
+      2
+     ],
+     "*|search|8": [
+      1017,
+      22
+     ],
+     "*|search|89": [
+      518,
+      1
+     ],
+     "*|spec|1": [
+      2388,
+      112
+     ],
+     "*|spec|13": [
+      670,
+      7
+     ],
+     "*|spec|2": [
+      1341,
+      94
+     ],
+     "*|spec|21": [
+      530,
+      7
+     ],
+     "*|spec|3": [
+      1192,
+      64
+     ],
+     "*|spec|34": [
+      388,
+      3
+     ],
+     "*|spec|5": [
+      1013,
+      31
+     ],
+     "*|spec|55": [
+      279,
+      0
+     ],
+     "*|spec|8": [
+      851,
+      12
+     ],
+     "*|spec|89": [
+      217,
+      1
+     ],
+     "lang|go|call|1": [
+      13631,
+      0
+     ],
+     "lang|go|call|13": [
+      12542,
+      0
+     ],
+     "lang|go|call|2": [
+      13545,
+      0
+     ],
+     "lang|go|call|21": [
+      11799,
+      0
+     ],
+     "lang|go|call|3": [
+      13459,
+      0
+     ],
+     "lang|go|call|34": [
+      10596,
+      0
+     ],
+     "lang|go|call|5": [
+      13282,
+      0
+     ],
+     "lang|go|call|55": [
+      8733,
+      0
+     ],
+     "lang|go|call|8": [
+      13006,
+      0
+     ],
+     "lang|go|call|89": [
+      5904,
+      0
+     ],
+     "lang|go|command|1": [
+      3774,
+      142
+     ],
+     "lang|go|command|13": [
+      3339,
+      38
+     ],
+     "lang|go|command|2": [
+      3707,
+      91
+     ],
+     "lang|go|command|21": [
+      3108,
+      26
+     ],
+     "lang|go|command|3": [
+      3655,
+      73
+     ],
+     "lang|go|command|34": [
+      2784,
+      12
+     ],
+     "lang|go|command|5": [
+      3589,
+      54
+     ],
+     "lang|go|command|55": [
+      2237,
+      1
+     ],
+     "lang|go|command|8": [
+      3495,
+      41
+     ],
+     "lang|go|command|89": [
+      1481,
+      3
+     ],
+     "lang|go|read|1": [
+      5579,
+      0
+     ],
+     "lang|go|read|13": [
+      2105,
+      0
+     ],
+     "lang|go|read|2": [
+      4480,
+      0
+     ],
+     "lang|go|read|21": [
+      1749,
+      0
+     ],
+     "lang|go|read|3": [
+      3871,
+      0
+     ],
+     "lang|go|read|34": [
+      1433,
+      0
+     ],
+     "lang|go|read|5": [
+      3136,
+      0
+     ],
+     "lang|go|read|55": [
+      1111,
+      0
+     ],
+     "lang|go|read|8": [
+      2548,
+      0
+     ],
+     "lang|go|read|89": [
+      607,
+      0
+     ],
+     "lang|go|search|1": [
+      480,
+      97
+     ],
+     "lang|go|search|13": [
+      359,
+      14
+     ],
+     "lang|go|search|2": [
+      442,
+      64
+     ],
+     "lang|go|search|21": [
+      332,
+      11
+     ],
+     "lang|go|search|3": [
+      417,
+      40
+     ],
+     "lang|go|search|34": [
+      282,
+      10
+     ],
+     "lang|go|search|5": [
+      394,
+      24
+     ],
+     "lang|go|search|55": [
+      238,
+      1
+     ],
+     "lang|go|search|8": [
+      382,
+      18
+     ],
+     "lang|go|search|89": [
+      169,
+      1
+     ],
+     "lang|go|spec|1": [
+      1219,
+      0
+     ],
+     "lang|go|spec|13": [
+      345,
+      0
+     ],
+     "lang|go|spec|2": [
+      691,
+      0
+     ],
+     "lang|go|spec|21": [
+      267,
+      0
+     ],
+     "lang|go|spec|3": [
+      617,
+      0
+     ],
+     "lang|go|spec|34": [
+      194,
+      0
+     ],
+     "lang|go|spec|5": [
+      545,
+      0
+     ],
+     "lang|go|spec|55": [
+      144,
+      0
+     ],
+     "lang|go|spec|8": [
+      457,
+      0
+     ],
+     "lang|go|spec|89": [
+      111,
+      0
+     ],
+     "phase|explore|call|1": [
+      5331,
+      0
+     ],
+     "phase|explore|call|13": [
+      3925,
+      0
+     ],
+     "phase|explore|call|2": [
+      5106,
+      0
+     ],
+     "phase|explore|call|21": [
+      3763,
+      0
+     ],
+     "phase|explore|call|3": [
+      4877,
+      0
+     ],
+     "phase|explore|call|34": [
+      3644,
+      0
+     ],
+     "phase|explore|call|5": [
+      4485,
+      0
+     ],
+     "phase|explore|call|55": [
+      3464,
+      0
+     ],
+     "phase|explore|call|8": [
+      4153,
+      0
+     ],
+     "phase|explore|call|89": [
+      2805,
+      0
+     ],
+     "phase|explore|command|1": [
+      918,
+      26
+     ],
+     "phase|explore|command|13": [
+      1155,
+      4
+     ],
+     "phase|explore|command|2": [
+      882,
+      12
+     ],
+     "phase|explore|command|21": [
+      1270,
+      3
+     ],
+     "phase|explore|command|3": [
+      886,
+      12
+     ],
+     "phase|explore|command|34": [
+      1118,
+      2
+     ],
+     "phase|explore|command|5": [
+      953,
+      8
+     ],
+     "phase|explore|command|55": [
+      1085,
+      2
+     ],
+     "phase|explore|command|8": [
+      1043,
+      6
+     ],
+     "phase|explore|command|89": [
+      854,
+      4
+     ],
+     "phase|explore|edit|21": [
+      2,
+      0
+     ],
+     "phase|explore|edit|34": [
+      4,
+      0
+     ],
+     "phase|explore|edit|55": [
+      7,
+      0
+     ],
+     "phase|explore|edit|89": [
+      4,
+      0
+     ],
+     "phase|explore|patch|21": [
+      1,
+      0
+     ],
+     "phase|explore|patch|34": [
+      2,
+      0
+     ],
+     "phase|explore|patch|55": [
+      4,
+      0
+     ],
+     "phase|explore|patch|89": [
+      1,
+      0
+     ],
+     "phase|explore|read|1": [
+      1759,
+      31
+     ],
+     "phase|explore|read|13": [
+      426,
+      0
+     ],
+     "phase|explore|read|2": [
+      1305,
+      16
+     ],
+     "phase|explore|read|21": [
+      523,
+      0
+     ],
+     "phase|explore|read|3": [
+      1028,
+      5
+     ],
+     "phase|explore|read|34": [
+      460,
+      0
+     ],
+     "phase|explore|read|5": [
+      702,
+      1
+     ],
+     "phase|explore|read|55": [
+      350,
+      0
+     ],
+     "phase|explore|read|8": [
+      481,
+      0
+     ],
+     "phase|explore|read|89": [
+      246,
+      0
+     ],
+     "phase|explore|search|1": [
+      412,
+      38
+     ],
+     "phase|explore|search|13": [
+      230,
+      0
+     ],
+     "phase|explore|search|2": [
+      388,
+      24
+     ],
+     "phase|explore|search|21": [
+      254,
+      2
+     ],
+     "phase|explore|search|3": [
+      337,
+      14
+     ],
+     "phase|explore|search|34": [
+      252,
+      1
+     ],
+     "phase|explore|search|5": [
+      262,
+      5
+     ],
+     "phase|explore|search|55": [
+      217,
+      1
+     ],
+     "phase|explore|search|8": [
+      220,
+      1
+     ],
+     "phase|explore|search|89": [
+      178,
+      0
+     ],
+     "phase|explore|spec|1": [
+      447,
+      35
+     ],
+     "phase|explore|spec|13": [
+      152,
+      2
+     ],
+     "phase|explore|spec|2": [
+      341,
+      35
+     ],
+     "phase|explore|spec|21": [
+      94,
+      3
+     ],
+     "phase|explore|spec|3": [
+      351,
+      33
+     ],
+     "phase|explore|spec|34": [
+      68,
+      0
+     ],
+     "phase|explore|spec|5": [
+      329,
+      9
+     ],
+     "phase|explore|spec|55": [
+      48,
+      0
+     ],
+     "phase|explore|spec|8": [
+      247,
+      4
+     ],
+     "phase|explore|spec|89": [
+      47,
+      0
+     ],
+     "phase|work|call|1": [
+      18839,
+      0
+     ],
+     "phase|work|call|13": [
+      17901,
+      0
+     ],
+     "phase|work|call|2": [
+      18838,
+      0
+     ],
+     "phase|work|call|21": [
+      16859,
+      0
+     ],
+     "phase|work|call|3": [
+      18902,
+      0
+     ],
+     "phase|work|call|34": [
+      15309,
+      0
+     ],
+     "phase|work|call|5": [
+      18902,
+      0
+     ],
+     "phase|work|call|55": [
+      12979,
+      0
+     ],
+     "phase|work|call|8": [
+      18583,
+      0
+     ],
+     "phase|work|call|89": [
+      9828,
+      0
+     ],
+     "phase|work|command|1": [
+      6460,
+      157
+     ],
+     "phase|work|command|13": [
+      5290,
+      56
+     ],
+     "phase|work|command|2": [
+      6326,
+      119
+     ],
+     "phase|work|command|21": [
+      4802,
+      38
+     ],
+     "phase|work|command|3": [
+      6205,
+      99
+     ],
+     "phase|work|command|34": [
+      4460,
+      23
+     ],
+     "phase|work|command|5": [
+      5974,
+      80
+     ],
+     "phase|work|command|55": [
+      3711,
+      4
+     ],
+     "phase|work|command|8": [
+      5692,
+      61
+     ],
+     "phase|work|command|89": [
+      2823,
+      5
+     ],
+     "phase|work|edit|1": [
+      302,
+      0
+     ],
+     "phase|work|edit|13": [
+      42,
+      0
+     ],
+     "phase|work|edit|2": [
+      295,
+      0
+     ],
+     "phase|work|edit|21": [
+      25,
+      0
+     ],
+     "phase|work|edit|3": [
+      227,
+      0
+     ],
+     "phase|work|edit|34": [
+      14,
+      0
+     ],
+     "phase|work|edit|5": [
+      149,
+      0
+     ],
+     "phase|work|edit|55": [
+      8,
+      0
+     ],
+     "phase|work|edit|8": [
+      91,
+      0
+     ],
+     "phase|work|edit|89": [
+      9,
+      0
+     ],
+     "phase|work|patch|1": [
+      312,
+      51
+     ],
+     "phase|work|patch|13": [
+      13,
+      2
+     ],
+     "phase|work|patch|2": [
+      274,
+      36
+     ],
+     "phase|work|patch|21": [
+      7,
+      0
+     ],
+     "phase|work|patch|3": [
+      182,
+      19
+     ],
+     "phase|work|patch|34": [
+      5,
+      0
+     ],
+     "phase|work|patch|5": [
+      78,
+      8
+     ],
+     "phase|work|patch|55": [
+      3,
+      0
+     ],
+     "phase|work|patch|8": [
+      29,
+      2
+     ],
+     "phase|work|patch|89": [
+      5,
+      0
+     ],
+     "phase|work|read|1": [
+      7079,
+      66
+     ],
+     "phase|work|read|13": [
+      2746,
+      0
+     ],
+     "phase|work|read|2": [
+      5672,
+      37
+     ],
+     "phase|work|read|21": [
+      2088,
+      0
+     ],
+     "phase|work|read|3": [
+      4967,
+      21
+     ],
+     "phase|work|read|34": [
+      1668,
+      0
+     ],
+     "phase|work|read|5": [
+      4100,
+      4
+     ],
+     "phase|work|read|55": [
+      1303,
+      0
+     ],
+     "phase|work|read|8": [
+      3375,
+      1
+     ],
+     "phase|work|read|89": [
+      777,
+      0
+     ],
+     "phase|work|search|1": [
+      798,
+      91
+     ],
+     "phase|work|search|13": [
+      703,
+      17
+     ],
+     "phase|work|search|2": [
+      769,
+      59
+     ],
+     "phase|work|search|21": [
+      579,
+      12
+     ],
+     "phase|work|search|3": [
+      788,
+      41
+     ],
+     "phase|work|search|34": [
+      498,
+      15
+     ],
+     "phase|work|search|5": [
+      825,
+      29
+     ],
+     "phase|work|search|55": [
+      437,
+      1
+     ],
+     "phase|work|search|8": [
+      797,
+      21
+     ],
+     "phase|work|search|89": [
+      340,
+      1
+     ],
+     "phase|work|spec|1": [
+      1941,
+      77
+     ],
+     "phase|work|spec|13": [
+      518,
+      5
+     ],
+     "phase|work|spec|2": [
+      1000,
+      59
+     ],
+     "phase|work|spec|21": [
+      436,
+      4
+     ],
+     "phase|work|spec|3": [
+      841,
+      31
+     ],
+     "phase|work|spec|34": [
+      320,
+      3
+     ],
+     "phase|work|spec|5": [
+      684,
+      22
+     ],
+     "phase|work|spec|55": [
+      231,
+      0
+     ],
+     "phase|work|spec|8": [
+      604,
+      8
+     ],
+     "phase|work|spec|89": [
+      170,
+      1
+     ],
+     "task_type|milestone-chain|call|1": [
+      22949,
+      0
+     ],
+     "task_type|milestone-chain|call|13": [
+      21502,
+      0
+     ],
+     "task_type|milestone-chain|call|2": [
+      22833,
+      0
+     ],
+     "task_type|milestone-chain|call|21": [
+      20520,
+      0
+     ],
+     "task_type|milestone-chain|call|3": [
+      22717,
+      0
+     ],
+     "task_type|milestone-chain|call|34": [
+      18929,
+      0
+     ],
+     "task_type|milestone-chain|call|5": [
+      22481,
+      0
+     ],
+     "task_type|milestone-chain|call|55": [
+      16443,
+      0
+     ],
+     "task_type|milestone-chain|call|8": [
+      22115,
+      0
+     ],
+     "task_type|milestone-chain|call|89": [
+      12633,
+      0
+     ],
+     "task_type|milestone-chain|command|1": [
+      7036,
+      183
+     ],
+     "task_type|milestone-chain|command|13": [
+      6411,
+      60
+     ],
+     "task_type|milestone-chain|command|2": [
+      6962,
+      131
+     ],
+     "task_type|milestone-chain|command|21": [
+      6071,
+      41
+     ],
+     "task_type|milestone-chain|command|3": [
+      6884,
+      111
+     ],
+     "task_type|milestone-chain|command|34": [
+      5578,
+      25
+     ],
+     "task_type|milestone-chain|command|5": [
+      6783,
+      88
+     ],
+     "task_type|milestone-chain|command|55": [
+      4796,
+      6
+     ],
+     "task_type|milestone-chain|command|8": [
+      6647,
+      67
+     ],
+     "task_type|milestone-chain|command|89": [
+      3677,
+      9
+     ],
+     "task_type|milestone-chain|edit|1": [
+      17,
+      0
+     ],
+     "task_type|milestone-chain|edit|13": [
+      17,
+      0
+     ],
+     "task_type|milestone-chain|edit|2": [
+      17,
+      0
+     ],
+     "task_type|milestone-chain|edit|21": [
+      17,
+      0
+     ],
+     "task_type|milestone-chain|edit|3": [
+      17,
+      0
+     ],
+     "task_type|milestone-chain|edit|34": [
+      17,
+      0
+     ],
+     "task_type|milestone-chain|edit|5": [
+      17,
+      0
+     ],
+     "task_type|milestone-chain|edit|55": [
+      15,
+      0
+     ],
+     "task_type|milestone-chain|edit|8": [
+      17,
+      0
+     ],
+     "task_type|milestone-chain|edit|89": [
+      13,
+      0
+     ],
+     "task_type|milestone-chain|patch|1": [
+      15,
+      0
+     ],
+     "task_type|milestone-chain|patch|13": [
+      10,
+      0
+     ],
+     "task_type|milestone-chain|patch|2": [
+      14,
+      0
+     ],
+     "task_type|milestone-chain|patch|21": [
+      8,
+      0
+     ],
+     "task_type|milestone-chain|patch|3": [
+      14,
+      0
+     ],
+     "task_type|milestone-chain|patch|34": [
+      7,
+      0
+     ],
+     "task_type|milestone-chain|patch|5": [
+      11,
+      0
+     ],
+     "task_type|milestone-chain|patch|55": [
+      7,
+      0
+     ],
+     "task_type|milestone-chain|patch|8": [
+      11,
+      0
+     ],
+     "task_type|milestone-chain|patch|89": [
+      6,
+      0
+     ],
+     "task_type|milestone-chain|read|1": [
+      8376,
+      4
+     ],
+     "task_type|milestone-chain|read|13": [
+      3161,
+      0
+     ],
+     "task_type|milestone-chain|read|2": [
+      6640,
+      2
+     ],
+     "task_type|milestone-chain|read|21": [
+      2606,
+      0
+     ],
+     "task_type|milestone-chain|read|3": [
+      5716,
+      1
+     ],
+     "task_type|milestone-chain|read|34": [
+      2127,
+      0
+     ],
+     "task_type|milestone-chain|read|5": [
+      4657,
+      0
+     ],
+     "task_type|milestone-chain|read|55": [
+      1653,
+      0
+     ],
+     "task_type|milestone-chain|read|8": [
+      3798,
+      0
+     ],
+     "task_type|milestone-chain|read|89": [
+      1023,
+      0
+     ],
+     "task_type|milestone-chain|search|1": [
+      1014,
+      121
+     ],
+     "task_type|milestone-chain|search|13": [
+      863,
+      17
+     ],
+     "task_type|milestone-chain|search|2": [
+      968,
+      80
+     ],
+     "task_type|milestone-chain|search|21": [
+      810,
+      14
+     ],
+     "task_type|milestone-chain|search|3": [
+      939,
+      52
+     ],
+     "task_type|milestone-chain|search|34": [
+      744,
+      16
+     ],
+     "task_type|milestone-chain|search|5": [
+      912,
+      32
+     ],
+     "task_type|milestone-chain|search|55": [
+      654,
+      2
+     ],
+     "task_type|milestone-chain|search|8": [
+      896,
+      22
+     ],
+     "task_type|milestone-chain|search|89": [
+      518,
+      1
+     ],
+     "task_type|milestone-chain|spec|1": [
+      2274,
+      36
+     ],
+     "task_type|milestone-chain|spec|13": [
+      666,
+      7
+     ],
+     "task_type|milestone-chain|spec|2": [
+      1243,
+      34
+     ],
+     "task_type|milestone-chain|spec|21": [
+      527,
+      7
+     ],
+     "task_type|milestone-chain|spec|3": [
+      1121,
+      30
+     ],
+     "task_type|milestone-chain|spec|34": [
+      388,
+      3
+     ],
+     "task_type|milestone-chain|spec|5": [
+      993,
+      23
+     ],
+     "task_type|milestone-chain|spec|55": [
+      279,
+      0
+     ],
+     "task_type|milestone-chain|spec|8": [
+      845,
+      10
+     ],
+     "task_type|milestone-chain|spec|89": [
+      217,
+      1
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|call|1": [
+      9732,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|call|13": [
+      8822,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|call|2": [
+      9661,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|call|21": [
+      8198,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|call|3": [
+      9590,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|call|34": [
+      7187,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|call|5": [
+      9443,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|call|55": [
+      5638,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|call|8": [
+      9212,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|call|89": [
+      3316,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|command|1": [
+      2659,
+      133
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|command|13": [
+      2300,
+      33
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|command|2": [
+      2595,
+      85
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|command|21": [
+      2105,
+      23
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|command|3": [
+      2557,
+      70
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|command|34": [
+      1832,
+      8
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|command|5": [
+      2504,
+      50
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|command|55": [
+      1386,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|command|8": [
+      2426,
+      36
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|command|89": [
+      777,
+      2
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|read|1": [
+      4085,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|read|13": [
+      1502,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|read|2": [
+      3280,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|read|21": [
+      1217,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|read|3": [
+      2811,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|read|34": [
+      966,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|read|5": [
+      2288,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|read|55": [
+      705,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|read|8": [
+      1848,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|read|89": [
+      295,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|search|1": [
+      394,
+      94
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|search|13": [
+      279,
+      13
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|search|2": [
+      358,
+      62
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|search|21": [
+      256,
+      9
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|search|3": [
+      335,
+      40
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|search|34": [
+      214,
+      9
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|search|5": [
+      312,
+      24
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|search|55": [
+      178,
+      1
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|search|8": [
+      300,
+      17
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|search|89": [
+      127,
+      1
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|spec|1": [
+      685,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|spec|13": [
+      204,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|spec|2": [
+      355,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|spec|21": [
+      150,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|spec|3": [
+      323,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|spec|34": [
+      88,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|spec|5": [
+      293,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|spec|55": [
+      50,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|spec|8": [
+      252,
+      0
+     ],
+     "task|navidrome_navidrome_v0.57.0_v0.58.0|spec|89": [
+      33,
+      0
+     ]
+    },
+    "built_from": {
+     "index": "runs/repro/rollout_index.jsonl",
+     "before": "2026-10-12T10-00-00",
+     "sessions": 240,
+     "same_task": 78
+    }
+   }
+  },
+  "label": "infinite-v5-reuse-100k"
+ },
+ "note": "three operators (entry shorten, segment placeholder, topic summary) + Cliff size summary at 100k, plus long/short-term reuse memory; profile from 240 sessions started before 2026-10-12T10-00-00 (78 Navidrome)"
+}

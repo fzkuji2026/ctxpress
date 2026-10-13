@@ -59,7 +59,7 @@ def check_images(payload):
         'XDG_RUNTIME_DIR','SYSTEMROOT','WINDIR','TEMP','TMP','HOME') if key in os.environ}
     with (folder/'milestone-images.log').open('wb') as output:
         subprocess.run(command,env=environment,stdin=subprocess.DEVNULL,stdout=output,
-            stderr=subprocess.STDOUT,check=True,timeout=60)
+            stderr=subprocess.STDOUT,check=True,timeout=600)
     return json.loads((folder/'native-images.json').read_text(encoding='utf-8'))
 
 
@@ -131,6 +131,30 @@ def recover_attempt(folder,label):
     for path in sorted(journals,key=lambda value:(order(value),value.name)):recover(path,label)
 
 
+def _stop_execution(process):
+    if process.poll() is None:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    process.wait()
+
+
+def _wait_execution(process, folder):
+    # A failed native finally block has persisted its terminal state, but
+    # Python may still wait forever for executor threads during interpreter exit.
+    while True:
+        try:
+            return process.wait(timeout=0.25)
+        except subprocess.TimeoutExpired:
+            state_path = Path(folder) / 'native-execution.json'
+            if state_path.exists():
+                state = json.loads(state_path.read_text(encoding='utf-8'))
+                if state.get('error_type') or state.get('cleanup_complete') is False:
+                    _stop_execution(process)
+                    return process.returncode or 1
+
+
 def execute(adapter,task,entry,config,job,*,paths,folder,label):
     folder=Path(folder).resolve();folder.mkdir(parents=True,exist_ok=True)
     payload,runtime,auth=prepare_execution(task,entry,config,job,folder,label)
@@ -147,16 +171,12 @@ def execute(adapter,task,entry,config,job,*,paths,folder,label):
             stdout=output,stderr=subprocess.STDOUT,check=True,timeout=60)
         process=subprocess.Popen(command+['--execute'],env=child_env,stdin=subprocess.DEVNULL,
             stdout=output,stderr=subprocess.STDOUT,start_new_session=True)
-        try:code=process.wait()
+        try:code=_wait_execution(process,folder)
         except BaseException:
-            if process.poll() is None:
-                try:os.killpg(process.pid,signal.SIGTERM)
-                except ProcessLookupError:pass
-            try:process.wait(timeout=45)
-            except subprocess.TimeoutExpired:
-                try:os.killpg(process.pid,signal.SIGKILL)
-                except ProcessLookupError:pass
-                process.wait()
+            # The outer cancellation controller can kill this parent before a
+            # separate native session's graceful shutdown completes. Stop that
+            # owned session immediately, then recover journals only after exit.
+            _stop_execution(process)
             raise
         finally:recover_attempt(folder,label)
     if code:raise RuntimeError('official native milestone worker failed; see milestone-execute.log')

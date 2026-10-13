@@ -4,10 +4,16 @@ so wrappers take other entries as arguments:
     {"class": "Composed", "args": {"methods": [{"class": "EntryTruncation", ...}, {"class": "Pichay"}]}}
 `METHODS` lists every method with its paper, whether it needs a model of its own, whether it runs for real
 (through ctxpress.live.proxy) and how it differs from the original implementation (`ctxpress list`)."""
+from ctxpress.methods.taco import TACO
+from ctxpress.methods.comem import CoMem
+from ctxpress.methods.longseeker import LongSeeker
+from ctxpress.methods.ziprl import ZipRL
 from ctxpress.methods.budget import resolve_wrapper_budget
 from ctxpress.methods.native import HostDefault, NoCompaction, CodexAutoCompact, ClaudeCode, SlidingWindow
 from ctxpress.methods.masking import ComplexityTrap, KeepLastTokens
 from ctxpress.methods.cliff import CliffCompaction
+from ctxpress.methods.infinite_context import InfiniteContext
+from ctxpress.methods.infinite_rules import InfiniteContextRules
 from ctxpress.methods.pichay import Pichay
 from ctxpress.methods.clawvm import ClawVM
 from ctxpress.methods.tokenpilot import TokenPilot
@@ -20,6 +26,10 @@ from ctxpress.methods.dtoc import DTOC
 from ctxpress.methods.acm import ACM
 from ctxpress.methods.agentfold_tools import AgentFoldTools
 from ctxpress.methods.acon_source import ACONSource
+from ctxpress.methods.agentfold_source import AgentFoldSource
+from ctxpress.methods.foldact_source import FoldActSource
+from ctxpress.methods.context_folding import ContextFoldingTools
+from ctxpress.methods.resum_source import ReSumSource
 from ctxpress.methods.tokenpilot_lifecycle import TokenPilotLifecycle
 from ctxpress.methods.workingview import WorkingView
 from ctxpress.methods.legacy import ClearThenSummarize, PichayApprox, ClawVMApprox
@@ -28,15 +38,24 @@ from ctxpress.methods.scored import ScoredMethod
 from ctxpress.methods.wrappers import Composed, EntryTruncation, PinRequirements, WithMemory, Trigger
 from ctxpress.methods.auto_cost import AutoCostModel
 
-REGISTRY = {c.__name__: c for c in [HostDefault, NoCompaction, CodexAutoCompact, ClaudeCode, CliffCompaction, ClearThenSummarize, SlidingWindow,
+REGISTRY = {c.__name__: c for c in [TACO, CoMem, LongSeeker, ZipRL, HostDefault, NoCompaction, CodexAutoCompact, ClaudeCode, CliffCompaction, ClearThenSummarize, SlidingWindow,
                                     ComplexityTrap, KeepLastTokens, Pichay, PichayApprox, ClawVM, ClawVMApprox, TokenPilot, SWEPruner, ARC,
                                     ComplexityTrapSummary, ComplexityTrapHybrid, AgentDiet, CWL, DTOC, ACM, AgentFold, ACON, ReSum, WorkingView, CostModel, ScoredMethod,
                                     Composed, EntryTruncation, PinRequirements, WithMemory, Trigger, AutoCostModel,
-                                    AgentFoldTools, ACONSource, TokenPilotLifecycle]}
+                                    AgentFoldTools, ACONSource, TokenPilotLifecycle, ReSumSource, ContextFoldingTools, AgentFoldSource, FoldActSource]}
+REGISTRY["infinite-context"] = InfiniteContext
+REGISTRY["infinite-context-rules"] = InfiniteContextRules
 NEEDS_TRAINING = {"CostModel"}
 
 # name: (paper / source, needs a model of its own, runs for real through the proxy, differences from the original)
 METHODS = {
+    "TACO": ("arXiv 2604.19572", True, True, "作者规则过滤、生成与反馈修正规则；任务内规则池，未复现跨任务演化实验；辅助模型走统一计费。"),
+    "CoMem": ("arXiv 2605.30842", True, True, "作者提示词与异步k步摘要；统一宿主消息与计数适配，未复现训练及推理引擎预填优化。"),
+    "LongSeeker": ("arXiv 2605.05191", False, True, "作者五种上下文操作；统一宿主工具接口与调用配对保护，未加载训练权重。"),
+    "ZipRL": ("arXiv 2605.28069", False, True, "作者摘要等级提示词与解析器；原搜索循环适配为宿主工具，未复现RL训练与权重。"),
+
+    "infinite-context": ("本项目：待验证", True, True, "version=5 为统一模型：每个因素一个开关（触发、范围与保护、各类内容变换、机械/模型/混合写替换、旧替换处理、总是/成本门槛决策含上下文长度质量代价、原文读回），默认开关即 CliffCompaction，repro/infinite_v5_cliff_compare.py 逐请求核对；policy 版本 2-4：历史分组拟合参数、原文校验和恢复、缓存与恢复成本比较；可选 Agent 候选；无策略或验证失败则保留原文；回放不能证明真实质量收益"),
+    "infinite-context-rules": ("本项目：待验证", True, True, "机械批处理、规格原文保护、临时工作集合和冷却间隔；可选独立模型预测候选代价与质量损失；off 不调用模型，shadow 仅记录，control 筛选候选；预测未经校准，不保证质量或软目标容量"),
     "ACONSource": ("arXiv 2510.00615", True, True, "移植公开 AppWorld 指南、提示词参数、输出标记解析和阈值语义；共用实际模型调用与记账；宿主历史序列化、token 计数和保留规则有适配，未复现指南优化、蒸馏或训练权重"),
     "TokenPilotLifecycle": ("arXiv 2606.17016", True, True, "模型批量更新任务生命周期；选择核心按 LightRSI 源码移植；使用自定义估计提示词、按请求批次调度、输出块和入口截断；额外保留最新输出及混合活动任务块，未复现完整 LightRSI 运行时"),
     "AgentFoldTools": ("arXiv 2510.24699", False, True, "自主折叠工具适配：宿主 Agent 写摘要并选择完整步骤范围，可合并之前的折叠；固定指令、媒体、用户消息和调用配对受保护；工具协议替代原文四块响应协议，未加载作者训练策略，未与作者运行代码对照"),
@@ -64,6 +83,10 @@ METHODS = {
     "ARC": ("arXiv 2607.25066", False, True, "尚未找到作者公开实现，未与原实现比对；按最近 N 条输出替换为引用是机制近似；原文写进挂载目录，占位符给出路径，Agent 用普通读文件取回"),
     "AgentFold": ("arXiv 2510.24699", True, True, "可调用当前 Agent 的模型写段摘要和深度摘要；按规则分段触发，可配置摘要指南，未复现原文训练或模型自主折叠决策"),
     "ACON": ("arXiv 2510.00615", True, True, "可调用当前 Agent 的模型压缩观察和历史；两种操作可分别配置指南，默认通用续接提示词，未复现原文优化流程、指南或效果"),
+    "AgentFoldSource": ("arXiv 2510.24699", False, True, "作者步骤替换和格式化函数移植；通过统一工具选择完整范围；保留宿主用户/媒体/工具配对保护；工具协议代替原四块输出，未复现训练权重或整轮提示重建"),
+    "FoldActSource": ("arXiv 2512.22733", False, True, "作者推理窗口选择器；识别宿主可见摘要标签，按最近摘要/信息轮及长度预算选择，完整历史可重建；宿主轮次/token/有效工具映射有差异；未移植观察截断强制模式、批张量类型、训练损失和权重"),
+    "ContextFoldingTools": ("arXiv 2510.11967", False, True, "作者 branch/return 机制的统一宿主工具适配；继承父上下文，返回时删除完整子轨迹并保留返回摘要；不支持嵌套；保留用户修正和完整工具配对；未复现 FoldGRPO、独立分支模型、强制超时返回或训练效果"),
+    "ReSumSource": ("arXiv 2509.13313", True, True, "作者固定版本提示词、摘要解析、阈值或周期触发及续接模板；统一宿主保留用户指令与完整工具配对；token计数、轮次和服务参数不同，未复现训练或ReSumTool权重"),
     "ReSum": ("arXiv 2509.13313", True, True, "可按周期调用当前 Agent 的模型摘要；提示词依据 v3 附录 C 改写，只整理有依据的信息，不强制计划或缺口清单；保留周期触发近似，未复现原文提示词全文、续接模板、训练或效果"),
     "WorkingView": ("本项目此前的方法", True, True, "原实现在 adapters/codex（Rust）里；这里是规则近似，经代理真实运行"),
     "CostModel": ("本文", False, True, "可加载 ctxpress fit 生成的固定再用曲线接入真实代理；λ、价格、找回与重新探索参数仍需明确配置，真实任务效果尚未评测"),
@@ -82,6 +105,7 @@ def build(entry, train=None, **extra):
     from ctxpress.core import metrics
     cls = REGISTRY[entry["class"]]
     args = dict(entry.get("args") or {}); args.update(extra)
+    context_profile = args.pop("context_profile", None)
     args = resolve_wrapper_budget(cls, args)
     if isinstance(args.get("harm"), str):
         args["harm"] = metrics.HARM[args["harm"]]
@@ -96,6 +120,9 @@ def build(entry, train=None, **extra):
         m = cls(train, **args)
     else:
         m = cls(**args)
+    if context_profile is not None:
+        from ctxpress.methods.experiment_context import attach
+        attach(m, context_profile)
     if entry.get("label"):
         m.name = entry["label"]
     return m

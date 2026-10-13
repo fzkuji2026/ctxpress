@@ -1,6 +1,6 @@
 """Reviewable experiment plans. Compiling a plan never starts Docker or a model."""
 from __future__ import annotations
-import hashlib, json, math
+import errno, hashlib, json, math, time
 from pathlib import Path
 from ctxpress import benchmarks
 
@@ -13,8 +13,22 @@ def file_sha256(path):
     if Path(path).resolve().name.lower() == "auth.json":
         raise ValueError("credential files cannot be evaluation inputs")
     digest = hashlib.sha256()
-    with open(path, 'rb') as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b''):
+    # DrvFS can transiently fail large reads with ENOMEM despite available RAM.
+    # Restore the exact offset before retrying; never hash a block twice.
+    with open(path, 'rb', buffering=0) as stream:
+        while True:
+            position = stream.tell()
+            for attempt in range(6):
+                try:
+                    stream.seek(position)
+                    block = stream.read(64 * 1024)
+                    break
+                except OSError as error:
+                    if error.errno != errno.ENOMEM or attempt == 5:
+                        raise
+                    time.sleep(0.05 * 2 ** attempt)
+            if not block:
+                break
             digest.update(block)
     return digest.hexdigest()
 

@@ -171,6 +171,7 @@ def history_keys(items):
 class Session:
     def __init__(self, method_factory, params, store_dir=None, store_prefix=None, store_namespace=None, retrieve_tool=None,
                  summarizer=None):
+        self.retired_methods = []
         self.ctx = LiveContext(method_factory(), params, store_dir=store_dir, store_prefix=store_prefix,
                                store_namespace=store_namespace, retrieve_tool=retrieve_tool, summarizer=summarizer)
         self.ids = {}                    # occurrence key -> context item id
@@ -195,6 +196,9 @@ class Session:
                 and keys[:len(before)] == before):
             # The last request was a one-off fork of the conversation (Claude Code's next-prompt suggestion: the
             # whole history plus one instruction, its answer discarded). Continue from the state before it.
+            if getattr(ctx.method, "isolate_history_epochs", False):
+                ctx.method.retire()
+                self.retired_methods.append(ctx.method)
             self.history, self.ids, self.ctx, self.views = self.saved
             ctx, rebased = self.ctx, False
             self.forks += 1
@@ -202,6 +206,12 @@ class Session:
             # The host has superseded our active history. A fresh method epoch
             # prevents obsolete summaries, eviction indexes and pinning from
             # leaking into the new history. Archives keep their original IDs.
+            if getattr(ctx.method,'isolate_history_epochs',False):
+                old=ctx.method
+                replacement=copy.deepcopy(old)
+                old.retire()
+                self.retired_methods.append(old)
+                ctx.method=replacement
             ctx.reset_history()
             self.ids.clear()
             self.history_epoch += 1
@@ -218,6 +228,11 @@ class Session:
         ctx.n_input = len(inp)
         if body is not None:
             ctx.fixed_chars = billable_chars(dict(body, input=[]))
+            # Request metadata is local context, never injected into wire input.
+            # A physical model window must come from explicit configuration,
+            # not from arbitrary conversation text or a fitted working target.
+            ctx.request_model = body.get('model')
+            ctx.request_output_limit = body.get('max_output_tokens')
         for k, item in zip(keys, inp):
             if k in self.ids:
                 continue
@@ -248,6 +263,26 @@ class Session:
                 text = reasoning_text(item) if t == "reasoning" else None
                 self.ids[k] = ctx.add_other(t, host["chars"] // 4, text=text, **host)
         self.history = keys
+        if getattr(ctx.method, 'requires_host_view', False):
+            # V3 archives all original wire items, not just tool output strings.
+            by_id = {s['id']: s for s in ctx.sent()}
+            for k, item in zip(keys, inp):
+                seg = by_id.get(self.ids.get(k))
+                if seg is not None:
+                    seg['host_wire'] = copy.deepcopy(item)
+            def measure_history(items):
+                saved_ctx, saved_contract = ctx.ctx, getattr(self,'host_contract',None)
+                try:
+                    ctx.ctx = items
+                    rendered, _, _ = self.render(inp, keys, ctx.view())
+                    return billable_chars(dict(body or {}, input=rendered)) / 4
+                finally:
+                    ctx.ctx, self.host_contract = saved_ctx, saved_contract
+            ctx.measure_history = measure_history
+        profile = getattr(ctx.method, "context_profile", None)
+        if profile:
+            from ctxpress.methods.experiment_context import context_tokens
+            context_before = context_tokens(ctx)
         order = ctx.before_request()
         out, changed, dropped = self.render(inp, keys, order)
         self.n += 1
@@ -259,7 +294,13 @@ class Session:
                     forms=ctx.form_counts(), method_overhead_estimate=ctx.last_overhead_estimate,
                     operations=operation_delta(ctx, before_operations),
                     **{key: ctx.M[key] - previous_usage[key] for key in meters})
+        if profile:
+            info["experiment_context_before"] = dict(input_tokens_estimate=context_before,
+                trigger_reached=context_before >= profile["compression_trigger_tokens"])
         received = item_view(inp)[0]
+        decision = getattr(ctx.method, "last_decision", None)
+        if isinstance(decision, dict) and decision.get("request") == ctx.r - 1:
+            info["method_decision"] = copy.deepcopy(decision)
         info.update(self.process(received, out, fixed_digest(body)), rewrite_seconds=round(time.perf_counter() - started, 6))
         return out, info
 
@@ -303,7 +344,8 @@ class Session:
             out.append(item)
         for sv in pending:
             out.append(self.host.message(sv["text"], role=sv.get("role") or "user")); changed += 1
-        instr = getattr(ctx.method, "instructions", None)
+        from ctxpress.methods.experiment_context import instructions
+        instr = instructions(ctx.method)
         if instr:                                  # what the method asks the agent to do (same text every request)
             at = 0
             while at < len(out) and out[at].get("type", "message") == "message" and out[at].get("role") in ("developer", "system"):
@@ -334,7 +376,7 @@ class Rewriter:
         self.summarizer = summarizer
         self.lock = threading.Lock()
 
-    def rewrite_body(self, body, session_key, summarizer=None, *, allow_forks=False):
+    def rewrite_body(self, body, session_key, summarizer=None, *, allow_forks=False, check_context=True):
         inp = body.get("input")
         if not isinstance(inp, list):
             return body, None
@@ -348,6 +390,13 @@ class Rewriter:
                 s = self.sessions[session_key] = Session(self.factory, self.params, directory, prefix, namespace, self.retrieve_tool,
                                                          self.summarizer)
         with s.lock:
+            prepare = getattr(s.ctx.method, 'prepare_request', None)
+            if prepare is not None:
+                s.ctx.request_output_source = 'request' if body.get('max_output_tokens') is not None else 'configured_enforced'
+                body = prepare(body)
+            active_summarizer = summarizer if summarizer is not None else s.ctx.summarizer
+            if active_summarizer is not None and getattr(s.ctx.method, "context_profile", None):
+                active_summarizer.context_profile = dict(s.ctx.method.context_profile)
             previous = s.ctx.summarizer
             if summarizer is not None:
                 s.ctx.summarizer = summarizer
@@ -359,11 +408,84 @@ class Rewriter:
             finally:
                 s.ctx.summarizer = previous
         body = dict(body, input=new)
-        info.update(session=session_key, t=time.time())
+        info.update(session=session_key, t=time.time(), request_model=body.get('model'),
+                    request_output_limit=body.get('max_output_tokens'),
+                    rendered_prompt_tokens=billable_chars(body)/4)
+        if check_context:
+            self.check_context(body, info)
         if self.log:
             with open(self.log, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(info, ensure_ascii=False) + "\n")
         return body, info
+
+    def context_profile(self, session_key):
+        session = self.sessions.get(session_key)
+        return getattr(session.ctx.method, "context_profile", None) if session else None
+
+    def check_context(self, body, info):
+        """Check the final host body; adapters call again after unflattening."""
+        if not info:
+            return
+        profile = self.context_profile(info.get("session"))
+        if profile:
+            from ctxpress.methods.experiment_context import check_body
+            info["experiment_context"] = check_body(body, profile)
+
+    def observe_response(self, info):
+        """Deliver paired provider usage; absent usage never becomes zero."""
+        if (not isinstance(info, dict) or info.get('status') != 200 or
+                info.get('stream_error') or not isinstance(info.get('usage'), dict)):
+            return False
+        with self.lock:
+            session = self.sessions.get(info.get('session'))
+        if session is None:
+            return False
+        with session.lock:
+            from ctxpress.core.context_budget import TokenCalibration
+            model = info.get('response_model') or info.get('request_model')
+            rendered = info.get('rendered_prompt_tokens')
+            used = info['usage'].get('input_tokens')
+            profile = getattr(session.ctx.method, 'context_profile', None)
+            if profile and type(used) is int:
+                info['experiment_context_provider_check'] = dict(
+                    input_tokens=used, max_context_tokens=profile['max_context_tokens'],
+                    within_limit=used <= profile['max_context_tokens'])
+            if (not isinstance(model, str) or not model or
+                    type(rendered) not in (int, float) or type(used) is not int or
+                    rendered <= 0 or used <= 0):
+                return False
+            # Store by actual served model when provided: an alias must not
+            # silently pool different model tokenizers or context capacities.
+            calibrations = getattr(session.ctx, 'token_calibrations', None)
+            if calibrations is None:
+                calibrations = session.ctx.token_calibrations = {}
+            calibration = calibrations.setdefault(model, TokenCalibration())
+            try:
+                learned = calibration.observe(
+                    (info.get('history_epoch'), info.get('request'), info.get('http_attempt', 0)),
+                    rendered, used)
+            except ValueError:
+                return False
+            requested = info.get('request_model')
+            if learned and isinstance(requested, str) and requested:
+                aliases = getattr(session.ctx, 'observed_model_aliases', None)
+                if aliases is None:
+                    aliases = session.ctx.observed_model_aliases = {}
+                # A late response cannot overwrite a newer routing observation.
+                previous = aliases.get(requested)
+                identity = (info.get('history_epoch', 0), info.get('request', 0), info.get('http_attempt', 0))
+                if previous is None or identity >= previous['identity']:
+                    aliases[requested] = dict(model=model, identity=identity)
+            hook = getattr(session.ctx.method, 'observe_response', None)
+            if hook is not None and learned:
+                hook(session.ctx, copy.deepcopy(info))
+            return learned
+
+    def close(self):
+        for session in self.sessions.values():
+            for method in [session.ctx.method,*session.retired_methods]:
+                close=getattr(method,'close',None)
+                if close:close()
 
     def retry_body(self, original, rejected, info, summarizer=None):
         """Offer an explicit length rejection to the method for this exact request.
@@ -380,6 +502,9 @@ class Rewriter:
             if session.n != info["request"] or session.history != history_keys(original["input"]):
                 return None
             ctx = session.ctx
+            prepare = getattr(ctx.method, 'prepare_request', None)
+            if prepare is not None:
+                original = prepare(original)
             meters = ("pruner_calls", "pruner_input_tokens", "pruner_usage_unknown")
             before_usage = {key: ctx.M[key] for key in meters}
             before_operations = operation_counts(ctx)
@@ -402,9 +527,13 @@ class Rewriter:
                 ctx.M["cost"] += overhead
             process = session.process(session.views[0], out, session.views[2])
             updated = dict(info, **process, host_contract=session.host_contract, kept=len(out), changed=changed, dropped=dropped, forms=ctx.form_counts(),
+                rendered_prompt_tokens=billable_chars(body)/4,
                 operations=operation_delta(ctx, before_operations),
                 tokens_after=sum(len(json.dumps(x, ensure_ascii=False)) for x in out)//4,
                 summary_failed=ctx.M["summary_failed"], summary_skipped=ctx.M["summary_skipped"],
                 summary_guidance_skipped=ctx.M["summary_guidance_skipped"],
                 method_overhead_estimate=overhead, t=time.time(), **{key:ctx.M[key]-before_usage[key] for key in meters})
+            decision = getattr(ctx.method, "last_decision", None)
+            if isinstance(decision, dict) and decision.get("request") == ctx.r - 1:
+                updated["method_decision"] = copy.deepcopy(decision)
             return body, updated

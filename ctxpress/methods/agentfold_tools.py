@@ -24,7 +24,9 @@ class AgentFoldTools(Method):
         "AgentFold; it does not load the authors' trained folding policy.")
     framework = dict(L1="无", L2="Agent 自主写摘要并选择折叠范围", L3="可再次合并完整旧折叠",
                      cross="固定指令与用户消息保留", memory="无", decider="宿主 Agent，未训练策略")
+    # This control edits the model's context view, not the external workspace.
     agent_tools = (dict(name="fold_context", description="Replace a complete range of past AgentFold steps with your summary.",
+                       annotations=dict(readOnlyHint=True, destructiveHint=False, openWorldHint=False),
                        inputSchema=dict(type="object", properties=dict(
                            start_step=dict(type="integer", minimum=1),
                            end_step=dict(type="integer", minimum=1),
@@ -51,6 +53,9 @@ class AgentFoldTools(Method):
     @staticmethod
     def _span(item):
         return item.get("fold_span", (item.get("turn", 0), item.get("turn", 0)))
+
+    def _fold_text(self, lo, hi, summary, items=()):
+        return f"[AgentFold steps {lo}-{hi}]\n{summary}"
 
     def _fold(self, sim, call, args):
         lo, hi = args["start_step"], args["end_step"]
@@ -86,7 +91,7 @@ class AgentFoldTools(Method):
         outputs = {s.get("call_id") for s in selected if s["seg"] == "out"}
         if calls != outputs:
             return "Error: range contains an unfinished tool call."
-        text = f"[AgentFold steps {lo}-{hi}]\n{args['summary']}"
+        text = self._fold_text(lo, hi, args['summary'], selected)
         new = sim.summarize_segment(selected, text=text, billed=False, model_written=True,
                                     role="assistant", fold_span=(lo, hi))
         return f"Folded steps {lo}-{hi}." if new is not None else "Error: nothing was folded."

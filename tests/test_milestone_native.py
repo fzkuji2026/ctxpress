@@ -1,5 +1,5 @@
 """Native itinerary layout/config contracts; no models, containers or installs."""
-import copy, json, shutil, sys
+import copy, dataclasses, json, shutil, sys
 from pathlib import Path
 from types import ModuleType,SimpleNamespace
 import pytest
@@ -142,9 +142,14 @@ def test_actual_native_api_preparation_uses_author_binders_and_preserves_all_mil
         events.append('author-dag');return SimpleNamespace(all_milestones=set(selected_ids_file.read_text(encoding='utf-8').split()))
     dag.DAGManager=construct
     repo=module('repo_config_binding');policy=module('runtime_policy_binding');evaluator=module('evaluator')
+    @dataclasses.dataclass(frozen=True)
+    class Repo:
+        config:dict
+        sha256:str
+        raw_bytes:bytes
     def resolve_repo(identity,workspace,project_root):
         selected=workspace.parent/'config'/(identity+'.yaml');events.append(('repo',selected.read_text(encoding='utf-8')))
-        return SimpleNamespace(config={'evaluation_post_snapshot_script':'scripts/post_snapshot.py'},sha256='a'*64)
+        return Repo({'evaluation_post_snapshot_script':'scripts/post_snapshot.py'},'a'*64,b'')
     repo.resolve_repo_config=resolve_repo;repo.freeze_repo_config=lambda trial,resolved:resolved
     policy.resolve_runtime_policy=lambda identity,code:SimpleNamespace(mode='protected',sha256='b'*64)
     policy.freeze_runtime_policy=lambda trial,resolved:resolved
@@ -154,6 +159,7 @@ def test_actual_native_api_preparation_uses_author_binders_and_preserves_all_mil
     assert actual['dag'].all_milestones=={'M1','M2'}
     assert actual['audit']['graded_milestones']==['M2'] and actual['audit']['model_calls']==actual['audit']['containers_started']==0
     assert actual['audit']['repo_config_sha256']=='a'*64 and actual['audit']['runtime_policy_mode']=='protected'
+    assert actual['audit']['grading_policy']=='agent-source-tree'
     assert events[0][0]=='repo' and events[1]=='author-dag'
     assert not actual['audit']['execution_supported']
 
@@ -177,3 +183,12 @@ def test_frozen_task_cannot_change_itinerary_semantics_even_with_unchanged_insta
     if change=='file-hash':moved['inputs'][0]['sha256']='a'*64
     if change=='count':moved['inputs'].pop()
     with pytest.raises(ValueError,match='remapped task'):task.verify_remap(original,moved)
+
+
+def test_native_plan_explicit_unbounded_agent_limits(tmp_path):
+    cfg, root = enriched(tmp_path)
+    cfg.setdefault('run', {}).update(max_calls=None, timeout=None)
+    plan = eval_plan.compile_plan(cfg)
+    assert plan['config']['run']['max_calls'] is None
+    assert plan['config']['run']['timeout'] is None
+    assert plan['agent_timeout_seconds_upper_bound'] is None

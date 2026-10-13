@@ -156,9 +156,19 @@ def main():
         if not line:
             continue
         try:
-            reply = handle(json.loads(line))
-        except Exception as e:
+            msg = json.loads(line)
+        except ValueError as e:
             reply = dict(jsonrpc="2.0", id=None, error={"code": -32700, "message": repr(e)})
+        else:
+            try:
+                reply = handle(msg)
+            except Exception as e:
+                # Preserve request identity so the host receives the failure
+                # immediately instead of waiting until tools/call times out.
+                mid = msg.get("id") if isinstance(msg, dict) else None
+                reply = (dict(jsonrpc="2.0", id=mid,
+                              error={"code": -32603, "message": repr(e)})
+                         if mid is not None else None)
         if reply is not None:
             sys.stdout.write(json.dumps(reply, ensure_ascii=False) + "\n"); sys.stdout.flush()
 

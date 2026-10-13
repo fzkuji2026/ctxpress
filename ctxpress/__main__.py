@@ -12,6 +12,9 @@
   python -m ctxpress methods [--html]                           framework table: every method x every layer
   python -m ctxpress params                                      every parameter with its source
   python -m ctxpress curves [--manifest ...]                     reuse curves p_k(a), m_k(a) per type
+  python -m ctxpress infinite-fit --help                         group-validated context policy fitting
+  python -m ctxpress infinite-candidates --help                  export experiment-only policies
+  python -m ctxpress infinite-select --help                      select policies from complete real task outcomes
   python -m ctxpress fit --manifest ... --output profile.json    freeze historical cost-model statistics
   python -m ctxpress tune --manifest ... --lambdas ... --output policy.json  offline-screen a deployable cost policy
   python -m ctxpress coverage [--manifest ...]                   how often truncation / structure still covers an edit
@@ -32,6 +35,15 @@ def main(argv=None):
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "infinite-select":
+        from ctxpress.replay.infinite_select import main as select_main
+        return select_main(arguments[1:])
+    if arguments and arguments[0] == "infinite-candidates":
+        from ctxpress.replay.infinite_candidates import main as candidates_main
+        return candidates_main(arguments[1:])
+    if arguments and arguments[0] == "infinite-fit":
+        from ctxpress.replay.infinite_fit import main as infinite_main
+        return infinite_main(arguments[1:])
     if arguments and arguments[0] == 'eval':
         from ctxpress.harness.cli import main as eval_main
         return eval_main(arguments[1:])

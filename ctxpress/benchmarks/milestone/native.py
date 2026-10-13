@@ -4,7 +4,7 @@ Container ownership and Agent/grading dispatch are deliberately separate from
 this module. Import it in the isolated worker after verifying official trees.
 """
 from __future__ import annotations
-import shutil, sys
+import json, shutil, sys
 from pathlib import Path
 from ctxpress.benchmarks.milestone.protocol import metadata_source
 from ctxpress.harness.jobs import plan as eval_plan, trees as eval_trees
@@ -72,6 +72,9 @@ def prepare(task,code,directory):
     directory.mkdir(parents=True)
     workspace=materialize(task,directory/'native-inputs');trial=directory/'trial';trial.mkdir()
     repo=resolve_repo_config(task['id'],workspace,project_root=code)
+    original_repo_sha256=repo.sha256
+    from ctxpress.benchmarks.milestone.source_policy import bind
+    repo=bind(repo,json.loads((workspace/'metadata.json').read_text(encoding='utf-8')))
     policy=resolve_runtime_policy(task['id'],code)
     errors=runtime_policy_coverage_errors(policy) if policy.mode=='protected' else []
     if errors:raise ValueError('native runtime policy does not meet author coverage: '+task['id'])
@@ -106,6 +109,7 @@ def prepare(task,code,directory):
     audit=dict(schema='ctxpress.eval.milestone_preparation',version=1,task_id=task['id'],
         repository=task['initial_state']['repo'],active_milestones=task['evaluation']['active_milestones'],
         graded_milestones=task['evaluation']['graded_milestones'],
+        original_repo_config_sha256=original_repo_sha256,grading_policy='agent-source-tree',
         repo_config_sha256=config_binding.sha256,runtime_policy_sha256=policy_binding.sha256,runtime_policy_mode=policy_binding.mode,
         e2e_config_sha256=eval_plan.file_sha256(config_path),
         inputs={name:dict(path=str(directory/'native-inputs'/name),sha256=item['sha256'],role=item['role']) for name,item in layout(task).items()},

@@ -70,10 +70,12 @@ def compile_plan(config, base_dir=None):
     if not isinstance(settings, dict) or set(settings) - run_fields:
         raise ValueError('invalid task-start run settings')
     settings = dict(max_calls=100, timeout=1800, compact_limit=230000, grade=True) | settings
-    eval_plan._positive(settings['max_calls'], 'max_calls')
+    if settings['max_calls'] is not None or config['benchmark'] != 'swe-milestone':
+        eval_plan._positive(settings['max_calls'], 'max_calls')
     if settings['compact_limit'] is not None:           # None: every method keeps the host's default threshold
         eval_plan._positive(settings['compact_limit'], 'compact_limit')
-    eval_plan._positive(settings['timeout'], 'timeout', integer=False)
+    if settings['timeout'] is not None or config['benchmark'] != 'swe-milestone':
+        eval_plan._positive(settings['timeout'], 'timeout', integer=False)
     if 'grading_timeout' in settings:
         if (config['benchmark'] not in ('swe-bench','swe-bench-lite','swe-bench-verified','swe-milestone','swe-polybench','swe-bench-pro','bigcodebench') or
                 config['benchmark']=='swe-bench-pro' and any(task['initial_state'].get('pro_version')!='v1' for task in selected)):
@@ -169,7 +171,7 @@ def compile_plan(config, base_dir=None):
                 benchmark=description, code_sha256=eval_plan.fingerprint(),
                 context_evidence='fresh task; initial context is not a recorded long-boundary measurement',
                 run_count=len(jobs), max_parallel=min(config['workers'], len(jobs)),
-                agent_timeout_seconds_upper_bound=len(jobs) * settings['timeout'],
+                agent_timeout_seconds_upper_bound=None if settings['timeout'] is None else len(jobs) * settings['timeout'],
                 cost_evidence='report actual observed token usage; no total bill estimate',
                 missing_environment_files=missing)
     if lock is not None:

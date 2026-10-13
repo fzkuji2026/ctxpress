@@ -93,7 +93,7 @@ def fixture(tmp_path, name='swe-bench-verified', repeats=1, tasks=1, prices=True
                          dict(milestone_id='M2', resolved=True, test_summary={'total': 1}))
             metrics = dict(error=False, graded=1, submitted=1, evaluated=1, scoreable=1, infra_invalid=0,
                            resolved=1, resolve_pct=100., score_1000=700., score_full=.7, score_reliable=.9,
-                           precision=.8, recall=.6, total_milestones=2, cost=None)
+                           precision=.8, recall=.6, total_milestones=1, cost=None)
             reports = {str(p.relative_to(trial)): dict(path=str(p), sha256=eval_plan.file_sha256(p)) for p in (summary, cell)}
             grade = dict(quality_kind='milestone', official_metrics_valid=True, infra_invalid=False,
                 collector='harness.e2e.collect_results', official_metrics=metrics, raw_summary=raw, reports=reports,
@@ -716,12 +716,13 @@ def test_changed_plan_hash_is_rejected_before_any_artifact_read(tmp_path, monkey
 
 
 
-@pytest.mark.parametrize('fault', ['boolean-denominator', 'duplicate-unsubmitted', 'scoring-coverage', 'submission-coverage'])
+@pytest.mark.parametrize('fault', ['boolean-denominator', 'includes-non-graded', 'duplicate-unsubmitted', 'scoring-coverage', 'submission-coverage'])
 def test_native_counter_and_coverage_flags_must_be_consistent(tmp_path, fault):
     data = fixture(tmp_path, 'swe-milestone');_, jobs, directory = data
     def modify(v):
         grade = v['grade']
         if fault == 'boolean-denominator':grade['official_metrics']['graded'] = True
+        elif fault == 'includes-non-graded':grade['official_metrics']['total_milestones'] = 2
         elif fault == 'duplicate-unsubmitted':grade['coverage']['unsubmitted'] = ['M1', 'M1']
         elif fault == 'scoring-coverage':grade['scoring_complete'] = False
         else:grade['submission_complete'] = False
@@ -746,3 +747,56 @@ def test_legacy_static_prices_cannot_hide_missing_cache_write_observation(tmp_pa
     cost = result['pairs'][0]['candidate']['bill']
     assert not cost['api_cost_complete'] and cost['api_cost_at_declared_rates_usd'] is None
     assert cost['usage_by_model']['main']['api_cost_at_declared_rates_usd'] is None
+
+
+@pytest.mark.parametrize('fault',[None,'original','effective','metadata'])
+def test_milestone_source_policy_hash_is_reconstructed(tmp_path,fault):
+    import hashlib,yaml
+    from dataclasses import dataclass
+    from ctxpress.benchmarks.milestone.source_policy import bind
+    folder=tmp_path.resolve();trial=folder/'trial';trial.mkdir()
+    original=b'repo_src_dirs: [crates]\ntest_dirs: [tests]\n'
+    native=folder/'native-preparation';path=native/'native-inputs/config/fixture.yaml';path.parent.mkdir(parents=True);path.write_bytes(original)
+    metadata=native/'native-inputs/fixture/metadata.json';write(metadata,{'prune_extensions':['.rs']})
+    write(native/'preparation.json',{'inputs':{'fixture/metadata.json':{'sha256':hashlib.sha256(metadata.read_bytes()).hexdigest()}}})
+    spec={'task':{'id':'fixture','initial_state':{'sibling_repo_config_sha256':hashlib.sha256(original).hexdigest()}}}
+    @dataclass
+    class Repo:
+        config:dict
+        raw_bytes:bytes
+    effective=bind(Repo(yaml.safe_load(original),original),{'prune_extensions':['.rs']}).raw_bytes
+    (trial/'repo_config.yaml').write_bytes(effective)
+    write(folder/'milestone-execute-request.json',{'execution':{'run':{}}})
+    if fault=='original':path.write_bytes(original+b'extra: true\n')
+    if fault=='effective':(trial/'repo_config.yaml').write_bytes(effective+b'extra: true\n')
+    if fault=='metadata':write(metadata,{'prune_extensions':['.py']})
+    if fault:
+        with pytest.raises(ValueError):eval_task_compare._milestone_config_digest(spec,folder,trial,[])
+    else:assert eval_task_compare._milestone_config_digest(spec,folder,trial,[])==hashlib.sha256(effective).hexdigest()
+
+
+@pytest.mark.parametrize('change', ['none', 'tamper-file', 'tamper-inline', 'escape', 'duplicate', 'missing-hash'])
+def test_milestone_diagnostic_evidence_is_bound_to_trial(tmp_path, change):
+    import hashlib
+    trial = tmp_path/'trial'
+    path = trial/'evaluation/M2/artifacts/ctxpress-runner-exit-probe.json'
+    value = dict(schema='ctxpress.eval.milestone_runner_exit', version=1, returncode=-1, cause='timeout')
+    write(path, value)
+    row = dict(path=str(path.relative_to(trial)), sha256=hashlib.sha256(path.read_bytes()).hexdigest(), evidence=value.copy())
+    diagnostics = dict(records=[row], errors=[dict(error='OSError')])
+    if change == 'tamper-file': write(path, dict(value, returncode=2))
+    if change == 'tamper-inline': row['evidence']['returncode']=2
+    if change == 'escape': row['path']='../outside.json'
+    if change == 'duplicate': diagnostics['records'].append(row.copy())
+    if change == 'missing-hash': row.pop('sha256')
+    evidence=[]
+    if change == 'none':
+        assert eval_task_compare._milestone_diagnostics({'runner_diagnostics':diagnostics}, trial, tmp_path, evidence) == diagnostics
+        assert len(evidence)==1  # nonfatal capture errors are retained, not turned into grade errors
+    else:
+        with pytest.raises(ValueError):
+            eval_task_compare._milestone_diagnostics({'runner_diagnostics':diagnostics}, trial, tmp_path, evidence)
+
+
+def test_legacy_milestone_diagnostics_absence_is_not_fabricated(tmp_path):
+    assert eval_task_compare._milestone_diagnostics({}, tmp_path/'trial', tmp_path, []) is None

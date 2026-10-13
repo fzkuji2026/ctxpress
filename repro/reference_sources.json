@@ -25,5 +25,153 @@
       "src/history.py": "40c7687413bbec16d041ec516dbfc31183b0f0efcd909161979d54c9b6a9ceec",
       "src/runner.py": "4514b4cb65b31d1eeaa954fe1b7e0690563507dbdf9faba6d89095fb0fe42a00"
     }
+  },
+  "resum": {
+    "repository": "https://github.com/Alibaba-NLP/DeepResearch",
+    "revision": "f72f75d8c3eb842f2bbbab096a12206ff66e270f",
+    "sha256_lf": {
+      "prompt.py": "443103568ae36d64617ba8a3df46e9079e4d4a4de876f551a1504c01ad81c2ee",
+      "summary_utils.py": "e3d8b99a4eaa8bd61b18387aa82a2760bd3aa149c119440a8eedd92e90a886da",
+      "react_agent.py": "22631a8de74c0a32690689286f3532ff4714fd5ec69b5ca9ea6d72ba06bc8a7c"
+    }
+  },
+  "context_folding": {
+    "repository": "https://github.com/MiaoLu3/Context_Folding",
+    "revision": "81626e97bb5f4eaa79edca045528829ce8850f5b",
+    "sha256_lf": {
+      "verl/experimental/agent_loop/FoldAgent/fold_agent_loop.py": "1a54ca8b87fc121a48baf8f90fac474de3f137f106af7735bde5a1888af173e9",
+      "verl/experimental/agent_loop/FoldAgent/agents/tool_spec.py": "11bbe9d309415bdd1b8b9ccc1d9cc1895626e5077aa5dc4b6e4d3772dfd0b07c",
+      "verl/experimental/agent_loop/FoldAgent/agents/prompts.py": "f0e68fdf6f24a712531b9eea81d073004600dd6d2d4536c6c6c18b27cd463ffc"
+    },
+    "comparison_status": "Completed-branch tool-history projection checked; separate author generation/timeout/fallback and trained policy not reproduced"
+  },
+  "agentfold": {
+    "repository": "https://github.com/Alibaba-NLP/DeepResearch",
+    "revision": "f72f75d8c3eb842f2bbbab096a12206ff66e270f",
+    "upstream_path": "WebAgent/AgentFold/infer.py",
+    "sha256_lf": {
+      "infer.py": "be7940c7d7b3561e2f3f141398092de2447fbefc506fda12ed7b5f06ba7b66c6"
+    }
+  },
+  "foldact": {
+    "repository": "https://github.com/SHAO-Jiaqi757/FoldAct",
+    "revision": "138a54dc6c2dce04ff8fccc92690aea8cd259368",
+    "sha256_lf": {
+      "run_inference.py": "48d456ea2e28630768e0d9e2e9872a4c11d52c9616260a686514c49a5117bb98",
+      "search_r1/llm_agent/generation.py": "b6ee8743529ec371a03ed8094be5628ab543a3b4d7975a4d0e6495155772f583",
+      "agent_system/multi_turn_rollout/rollout_loop.py": "8ad24eefb730a8a5f2bebeaca6beff01fe31087edfa3f70267deffb5958cffe3",
+      "LICENSE": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+    }
+  },
+  "agentdiet": {
+    "repository": "https://doi.org/10.6084/m9.figshare.30073654",
+    "revision": "figshare-file-62752558",
+    "sha256_lf": {
+      "artifact/code/trae_agent/agents/traj_analyzer.py": "f70f71418379a1bf5b0ee9f5af1b2e01d0c11e54b9c86dca8b9a2899e146545c",
+      "artifact/code/trae_agent/agents/expert.py": "c25f3c4ff7906f54790433a919c2594cf3750cbcc42891f21518d563cdb7dd0c"
+    }
+  },
+  "complexity_trap": {
+    "repository": "https://github.com/JetBrains-Research/the-complexity-trap",
+    "revision": "bf15b5fb7d279679035a007ac9a81084d6b9a89a",
+    "sha256_lf": {
+      "sweagent/agent/history_processors.py": "29bbfa5fc587a76698876b672410aab2e2ff5bb8d6f9f7356ede28ab359f8bdf"
+    }
+  },
+  "cwl": {
+    "repository": "https://github.com/Kiz8-Team/pi-cwl",
+    "revision": "cd2ea3f1a69cf23277462df2b5940f6ade5cae66",
+    "sha256_lf": {
+      "packages/coding-agent/src/core/context-filter.ts": "ea5ca74f785135e99280b446492268cf4ad8218700d7dba909e91ce5b4ded5cc",
+      "packages/coding-agent/src/core/chunk.ts": "5f61f3825c7372c0ab5374f0ca758c3a5340f00ee68fee161ddb1dadfed0d195",
+      "packages/coding-agent/src/core/compaction/compaction.ts": "a9ed111767f4b3ebbc9753f1ecdde9422bd77053f7df55be37e6d5041937caa7",
+      "packages/coding-agent/src/core/tools/delimiter.ts": "3ef06cccb08abf82f5a381e4a45fca40d6dfc5ad1207dab9e11e4d76c9d43e68"
+    }
+  },
+  "dtoc": {
+    "repository": "https://github.com/chaturvediabhay24/opencode",
+    "revision": "57bf2e171f084b4dc965785651e9394f818e04cc",
+    "sha256_lf": {
+      "packages/opencode/src/session/dtoc.ts": "6c9e0ceb18f31a7a342326f9c10669755522b653c9288b2e69d357dd17731cf9",
+      "packages/opencode/src/session/message-v2.ts": "ff99a38139e69292e705a66162f2ab0d0c3e7e1ec2b40c0d85f422b37b066f89",
+      "packages/opencode/src/tool/manage_context.ts": "baf69708e57a1f1d25c21f5d584ee9d286f65915aca9fdf5d5cd2d49454058e9",
+      "packages/opencode/src/tool/manage_context.txt": "004ea9c600ef3bb2082a34f6655a8e445441838a4a8479f66e92bd80ffbb7fae",
+      "packages/opencode/src/command/template/dtoc.txt": "357e1447614a7420de4d907b4dabd2c7bcb31e77909c41456831dad404c624bb"
+    }
+  },
+  "swe_pruner": {
+    "repository": "https://github.com/Ayanami1314/swe-pruner",
+    "revision": "96171b5f3ecaf89745cbeb436c8893b57f3400bd",
+    "sha256_lf": {
+      "downstream_eval/multi_turn/swebench/mini-swe-agent--with-pruning/src/minisweagent/agents/default.py": "bb604e47688af589714b43e4c641c77ab38ee4d0f6b791ef2d6ded23914e74c8",
+      "downstream_eval/multi_turn/swebench/mini-swe-agent--with-pruning/src/minisweagent/utils/pruner.py": "5d574df74a377b57da16b57e6af34cd12b5de99fb312695f203dec3995a86535",
+      "downstream_eval/multi_turn/swebench/mini-swe-agent--with-pruning/templates/pruner.yaml": "dcf29454aad5188fe10d282e0df01ac73d510fc038fe0838a70167a8b518df13"
+    }
+  },
+  "taco": {
+    "repository": "https://github.com/multimodal-art-projection/TACO",
+    "revision": "2b048988e77ea67e6165450c97ebe66ce23a033f",
+    "sha256": {
+      "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "README.md": "82eb77ca7b236814481ecea32a6f3d1d2faa9fa66ed2269b955e1a65704ec8ae",
+      "src/harbor/agents/terminus_2/compression/__init__.py": "2388b44d48b9e3b068a91f155a079cdc03f854f0b889fa23732325691baddace",
+      "src/harbor/agents/terminus_2/compression/dynamic_filter.py": "a741032bbb378d6ffcb7e98a9fddacc975efec85b551aa9606dd6252aa3b8631",
+      "src/harbor/agents/terminus_2/compression/evo_logger.py": "69aa012925ca6d60108bea9dacdd1d1cc859d4b17e7df93030d549bb10c3bce9",
+      "src/harbor/agents/terminus_2/compression/evolver.py": "dfd2730c50028c3d79939b69e57841615576d85c8a8d67384d27addfe9d4b42e",
+      "src/harbor/agents/terminus_2/compression/feedback.py": "1c6d64b1c3f91b83147d9f8842db9803fa5d2aa1fefd1b115c28da3f969f92ae",
+      "src/harbor/agents/terminus_2/compression/models.py": "1ff98cac35e0fd6831363a061ee030a20c80d746f4761b437d876fcb6d8864b0",
+      "src/harbor/agents/terminus_2/compression/planner.py": "76ed06e06795e873d91d9246de9bb78707400329360b1ed92f5713114dfb6504",
+      "src/harbor/agents/terminus_2/compression/rule_cache.py": "84878d35b07d559ee325a0b0889f2bb09c0fa79282cb1cfcc0580749c9e5823c",
+      "src/harbor/agents/terminus_2/compression/seed_rules.py": "d7669acfff738dfc57260e7562cb5d69d6244874a5d2fa8a6f888f1de19e49e7",
+      "src/harbor/agents/terminus_2/output_filter.py": "ba1c941a1bc131e3d2e6c6a3474fcf02251657528b6e4ca166107b05cc543360"
+    }
+  },
+  "comem": {
+    "repository": "https://github.com/horizon-llm/CoMem",
+    "revision": "bb552535dc3943c0822755a74926c7d31e6f9a9c",
+    "sha256": {
+      "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "README.md": "52038168dca883162b63bd61be925dbc349f4abc5ecd41d7456c36527930094d",
+      "evaluation/scripts/memagent_iterative_proxy.py": "f608be0a510ce0b2e05af8e95257b66fc047d7b6dee172b4478f53ff48a65c85",
+      "evaluation/src/r2egym/agenthub/agent/comem_agent_kso.py": "97f21c75529990e55d65eab34b487f79f9a51d977bdff614d5d9e352d6b55e7f",
+      "evaluation/src/r2egym/agenthub/agent/comem_agent_kso_openai.py": "c1f9802429038e6eb69a59c96b9f0cadfca891f05c0b847d26b7c8e3385fac47",
+      "evaluation/src/r2egym/agenthub/agent/comem_agent_openai.py": "e24410cd51afba6dbe2e629d72f93b839fa777576ce553a9b4e97e9d665872ff",
+      "training/agent_system/environments/prompts/__init__.py": "2e87b94ff7182dae87577c2c0a27251da885ced78c4b06fd344bda29cadc78d0",
+      "training/agent_system/environments/prompts/alfworld.py": "322988a1be1e6ceb04929c1184ef894ed298537f0e917f1471357156d2a0a26e",
+      "training/agent_system/environments/prompts/appworld.py": "c3a8adcc4acdb62282278c980ff20e8917c47304f2e882fbdebe841199449b77",
+      "training/agent_system/environments/prompts/babyai.py": "70b16094e974035870471e6898be4786fc1b5e17151fe5de94fd23731bcaa6f8",
+      "training/agent_system/environments/prompts/gym_cards.py": "6d0e8d0790fe6737da0a15e0c000498c22c114afe961f52ffe232a25505f1acd",
+      "training/agent_system/environments/prompts/sciworld.py": "e481172cc35c6f3c6d215b04a2afb0fb86b17d38527f577b3a12e74c8647d20f",
+      "training/agent_system/environments/prompts/search.py": "b91861c382222d9c5df83035b8ebb6e353c08a92fee6763c0863d85be3fd56c4",
+      "training/agent_system/environments/prompts/sokoban.py": "ebea644532d2c90571edfb2fdc0304cfce0b3fb5012775ccb41c189cafe45c81",
+      "training/agent_system/environments/prompts/textcraft.py": "80b29019eb396f1ec1588d2d35ee5039ddef4a86359a4f67779f1a9b208267e6",
+      "training/agent_system/environments/prompts/webshop.py": "c7411b8a8fe1f8d587a5585a57ce3ae85ab87bbd7a021f2e39c03f97e214b738"
+    }
+  },
+  "longseeker": {
+    "repository": "https://github.com/PolarSeeker/LongSeeker",
+    "revision": "1fc30b70cd51ac1a0ee13b6303371ad8b43bf1da",
+    "sha256": {
+      "README.md": "1334bd3dfeedbf4fac6924cb9e3dd78e108a944449a94989d48364d8594ee9bd",
+      "context.py": "0fa4c8f8e9de164257c5f4b39c50658757feec83ccb4bd7e5293c6e0d32210e4",
+      "main_separate.py": "46277b34569271dee59be65dd034b86692f066da404fb5cff100a55e02ffe047",
+      "prompts/prompt.py": "8942549d5cf86d0d7a2c098653850d9d7812561c14bdb9a65c5cd30cfecb9ea4",
+      "tools/meta_tool/compress.py": "2a986bb984fbee1c013f9d78833f96e24a4cc17046f34824b2be94e24a161658",
+      "tools/meta_tool/delete.py": "1d4dd4939da6d10604e65db74f041cebd2e009dd12f6b95926799cddc23b6266",
+      "tools/meta_tool/rollback.py": "0a343679ba4a498b50cd5d4d1bd7b2189c5d135fd93a9d2de149d05de9fc2c07",
+      "tools/meta_tool/skip.py": "50e4fbd8171e377ce8cbb486ac6c8039faf7101ce44ff2a321ec6417229d5787",
+      "tools/meta_tool/snippet.py": "c68b2c3f4b8d78e31ca4107ab9297dc2a8b01ce421fee4db11061238bd2c6053"
+    }
+  },
+  "ziprl": {
+    "repository": "https://github.com/huzhexin/ZipRL",
+    "revision": "8617f204ab241ae89076f29fcc6bb6e02eb94944",
+    "sha256": {
+      "README.md": "4ad43c620e1ac1656ae79363bc6fb77088604104ad2e20d0d182b086d3a7db3c",
+      "verl/context_zip_util/compression_parser.py": "078c13cc12fcdb27e0332b62d5c1b50380c3753a3572b87287df7540a4384640",
+      "verl/experimental/agent_loop/context_zip_agent_loop.py": "4919fdafd97ef0a2ed09e44b22e64fec46b897f64a8eaa3abf005590f816bdb8",
+      "verl/prompts/context_zip_prompts.py": "6c5df33739106e692c00bcc7aa5c828239bf41e531b66cdd52c89c47f1b5b9ba",
+      "verl/tools/context_zip_tools.py": "40f2b81e3b0557dd71b683477b3f0ac2cab7baedfd0cc118a09977ae9b9191fc"
+    }
   }
 }

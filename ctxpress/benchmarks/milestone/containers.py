@@ -6,6 +6,16 @@ from ctxpress.benchmarks.milestone import images as milestone_images
 from ctxpress.benchmarks.milestone.resources import docker
 
 
+def check_prepared_tools(container):
+    """Report missing offline prerequisites without installing during a run."""
+    missing = docker('exec', container, 'sh', '-c',
+        'for tool in python3 sudo git bash tar; do '
+        'command -v "$tool" >/dev/null 2>&1 || printf "%s\\n" "$tool"; done').split()
+    if missing:
+        raise RuntimeError('prepared milestone Agent image lacks required tools: '
+                           + ', '.join(missing) + '; prepare and freeze a new image before retrying')
+
+
 def prepared_initialization(source):
     """Remove the one author sudo installer, preserving user/cache/git setup."""
     tree=ast.parse(source);found=[]
@@ -19,7 +29,10 @@ def prepared_initialization(source):
 
 
 class Boundary:
-    def __init__(self,owner,stage,service_gateway=None):self.owner,self.stage,self.service_gateway=owner,stage,service_gateway
+    def __init__(self,owner,stage,service_gateway=None,*,cargo_offline=False,cargo_toolchain_default=False):
+        self.owner,self.stage,self.service_gateway=owner,stage,service_gateway
+        self.cargo_offline=cargo_offline
+        self.cargo_toolchain_default=cargo_toolchain_default
     def __getattr__(self,name):
         if name not in ('DEVNULL','PIPE','STDOUT','TimeoutExpired'):
             raise ValueError('native container start requested an unsupported subprocess operation')
@@ -78,6 +91,12 @@ class Boundary:
                 if self.stage!='verifier':raise ValueError('native service API is reserved for its verifier')
                 env.update(DOCKER_HOST='unix:///ctxpress-services-api/docker.sock',TESTCONTAINERS_HOST_OVERRIDE='127.0.0.1',
                     TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/ctxpress-services-api/docker.sock',TESTCONTAINERS_RYUK_DISABLED='true')
+            if self.stage=='verifier' and self.cargo_offline:
+                env['CARGO_NET_OFFLINE']='true'
+                if self.cargo_toolchain_default:
+                    # Vendor overlays copy the Agent's rustup installation and
+                    # default. Do not let a parent image select an absent toolchain.
+                    env['RUSTUP_TOOLCHAIN']=''
             extra={'service_gateway':self.service_gateway} if self.service_gateway is not None else {}
             owner.create(mounts=mounts,environment=env,cpus=cpus,**extra)
             return subprocess.CompletedProcess(command,0,owner.record['container_id'], '')
@@ -117,7 +136,7 @@ def installed(code,registry,repo,agent,grading,initialize_agent=None):
             if self.ctxpress_owner.existing():raise ValueError('native fresh Agent container is already occupied')
             return False
         def _ensure_python3(self):
-            docker('exec',self.container_name,'sh','-c','set -e; command -v python3; command -v sudo; command -v git; command -v bash; command -v tar')
+            check_prepared_tools(self.container_name)
         def _get_base_init_script(self):return prepared_initialization(super()._get_base_init_script())
         def _wait_for_fakeroot(self,*args,**kwargs):
             if not super()._wait_for_fakeroot(*args,**kwargs):raise RuntimeError('native fakeroot user was not prepared')
@@ -155,8 +174,22 @@ def installed(code,registry,repo,agent,grading,initialize_agent=None):
             self.container_name=self.ctxpress_owner.record['container']
             self.ctxpress_services=registry.service_gateway(self.ctxpress_owner) if self.needs_docker_socket else None
         def start_container(self):
-            return bound(original_eval.start_container,Boundary(self.ctxpress_owner,'verifier',self.ctxpress_services),
+            offline=isinstance(self.quarantine_config,dict) and self.quarantine_config.get('cargo_offline') is True
+            policy=self.quarantine_config if isinstance(self.quarantine_config,dict) else {}
+            vendor=('cargo' in policy.get('ecosystem',[]) and
+                    (policy.get('closure') or {}).get('cargo_mechanism','vendor')=='vendor')
+            return bound(original_eval.start_container,Boundary(self.ctxpress_owner,'verifier',self.ctxpress_services,cargo_offline=offline,cargo_toolchain_default=vendor),
                 ensure_internal_evaluation_network=registry.grading_network)(self)
+        def run_tests(self):
+            from ctxpress.benchmarks.milestone.grading_diagnostics import bind
+            return bind(original_eval.run_tests)(self)
+        def _maybe_prune_residue(self,base_suffix):
+            # source_policy binds every trial to residue_prune_scope=reference-added: the author's START provenance guard is
+            # lifted (documented phase 2); a repo config without it keeps the author's own pass.
+            if (self.repo_config or {}).get('residue_prune_scope')!='reference-added':
+                return original_eval._maybe_prune_residue(self,base_suffix)
+            from ctxpress.benchmarks.milestone.source_policy import lifted
+            return lifted(original_eval._maybe_prune_residue)(self,base_suffix)
         def cleanup(self):
             if self.ctxpress_services is not None:self.ctxpress_services.stop()
             self.ctxpress_owner.cleanup()

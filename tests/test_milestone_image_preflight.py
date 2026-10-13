@@ -35,7 +35,7 @@ def test_image_check_isolated_runtime_and_environment_have_no_provider_credentia
         assert json.loads(Path(command[5]).read_text(encoding='utf-8')) == payload
         assert not {'OPENAI_API_KEY','CTXPRESS_CODEX_AUTH_FILE','SWE_MILESTONE_IMAGE_TAG'} & options['env'].keys()
         assert options['env']['DOCKER_HOST'] == 'unix:///declared/socket'
-        assert options['check'] is True and options['timeout'] == 60
+        assert options['check'] is True and options['timeout'] == 600
         (tmp_path/'native-images.json').write_text(json.dumps(expected), encoding='utf-8')
     monkeypatch.setattr(milestone_driver.subprocess, 'run', invoke)
     assert milestone_driver.check_images(payload) == expected

@@ -38,9 +38,12 @@ def validate(request):
         raise ValueError('invalid native execution settings')
     run=settings['run']
     if not isinstance(run,dict):raise ValueError('invalid native execution budget')
+    if 'grading_workers' in run:
+        from ctxpress.benchmarks.milestone.grading_concurrency import validate_workers
+        validate_workers(run['grading_workers'])
     milestone_resources.identity(settings['project'],settings['label'])
     for name in ('timeout','max_calls'):
-        eval_plan._positive(run.get(name),name,integer=name!='timeout')
+        if run.get(name) is not None:eval_plan._positive(run.get(name),name,integer=name!='timeout')
     if settings['compact_limit'] is not None:eval_plan._positive(settings['compact_limit'],'compact_limit',integer=True)
     if 'grading_timeout' in run:eval_plan._positive(run['grading_timeout'],'grading_timeout',integer=False)
     if run.get('grade') is not True:raise ValueError('native itinerary execution requires its dependency grading')
@@ -90,10 +93,19 @@ def run(request, source):
     previous={number:signal.getsignal(number) for number in (signal.SIGTERM,signal.SIGINT)}
     policy_scope=contextlib.ExitStack()
     try:
+        from ctxpress.benchmarks.milestone.grading_concurrency import installed as grading_concurrency
+        policy_scope.enter_context(grading_concurrency(run_e2e, source, run.get('grading_workers')))
         policy_scope.enter_context(activated_policy(run_e2e,prepared['runtime_policy_binding']))
         images=lock['tasks'][task['id']]['images']
         registry=milestone_resources.Registry(settings['project'],settings['label'],folder,images.get('services'))
-        channel=milestone_transport.Channel(registry,settings['upstream'],settings.get('via'))
+        method = settings['method']
+        aux = (method.get('class') == 'infinite-context' and
+               method.get('args', {}).get('agent_model') == 'deepseek-flash' and
+               method.get('args', {}).get('agent_mode') in ('shadow', 'control'))
+        channel_options = {'auxiliary_deepseek': True} if aux else {}
+        if method.get('class') == 'SWEPruner':
+            channel_options['pruner_endpoint'] = method.get('args', {}).get('url')
+        channel=milestone_transport.Channel(registry,settings['upstream'],settings.get('via'), **channel_options)
         socket=channel.open()
         private=dict(runtime=request['package'],bindir=settings['bindir'],logs=str(logs),store=str(store),
             method=settings['method'],binary_version=settings['binary_version'],compact_limit=settings['compact_limit'],
@@ -133,6 +145,8 @@ def run(request, source):
                     repo_config_binding=prepared['repo_config_binding'].to_metadata(trial),
                     runtime_policy_binding=prepared['runtime_policy_binding'].to_metadata(trial),
                     **{name:metadata.get(name,[]) for name in ('repo_src_dirs','test_dirs','exclude_patterns','generated_patterns','modifiable_test_patterns')})
+                author_metadata['ctxpress_grading_workers'] = run.get('grading_workers', 4)
+                author_metadata['ctxpress_grading_workers_override'] = 'grading_workers' in run
                 if catalog_metadata is not None:author_metadata['ctxpress_model_catalog']=catalog_metadata
                 artifact_io.atomic_json(trial/'trial_metadata.json',author_metadata)
                 owner=native.container_setup.ctxpress_owner
@@ -140,7 +154,7 @@ def run(request, source):
                 with milestone_agent.installed(source,owner,auth,budget), milestone_trial.installed(source,owner,drain_seconds):
                     instance=run_e2e.E2ETrialRunner(orchestrator=native,agent_output_dir=trial/'log',workdir='/testbed',
                         repo_src_dirs=metadata['repo_src_dirs'],agent_name='codex',model=settings['model'],
-                        timeout_ms=max(1,math.ceil(run['timeout']*1000)),prompt_version='v2',copy_testbed=True,
+                        timeout_ms=math.inf if run['timeout'] is None else max(1,math.ceil(run['timeout']*1000)),prompt_version='v2',copy_testbed=True,
                         remove_container=False,reasoning_effort=settings['reasoning'],force=False)
                     success=instance.run()
     except BaseException as failure:

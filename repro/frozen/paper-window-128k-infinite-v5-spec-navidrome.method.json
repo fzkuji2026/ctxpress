@@ -1,0 +1,24 @@
+{
+  "method": {
+    "class": "infinite-context",
+    "args": {
+      "version": 5,
+      "t": 102400,
+      "tool_dialect": "wire",
+      "entry": true,
+      "segment": true,
+      "topic": true,
+      "guard": true,
+      "hold": "value",
+      "supersede": true,
+      "spec_keep_frac": 0.1,
+      "context_profile": {
+        "version": 1,
+        "max_context_tokens": 128000,
+        "compression_trigger_tokens": 102400
+      }
+    },
+    "label": "infinite-v5-spec-128k"
+  },
+  "note": "V5 spec config (guard + value hold + supersede + resident spec <=10% t) under the shared paper context protocol paper-context-128k-20261013-v1: 128k input limit, 102400 trigger, medium reasoning, no native compaction"
+}

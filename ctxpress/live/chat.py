@@ -196,10 +196,13 @@ def rewrite_chat(rewriter, body, key=None, summarizer=None, volatile=None):
     if not rewritable(body):
         return body, None
     flat, refs = flatten(body, volatile)
-    rewritten, info = rewriter.rewrite_body({"input": flat}, key or session_key(body), summarizer=summarizer)
+    rewritten, info = rewriter.rewrite_body(dict({k: v for k, v in body.items() if k != "messages"}, input=flat),
+                                            key or session_key(body), summarizer=summarizer, check_context=False)
     if info is None:
         return body, None
-    return unflatten(body, refs, flat, rewritten["input"], volatile), info
+    result = unflatten(body, refs, flat, rewritten["input"], volatile)
+    rewriter.check_context(result, info)
+    return result, info
 
 
 def _events(text):
@@ -272,9 +275,13 @@ class ChatSummarizer:
     def _send(self, model, system, user, purpose):
         payload = dict(model=model, max_tokens=8192, stream=False,
                        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}])
+        from ctxpress.methods.experiment_context import check_auxiliary
+        context_check = check_auxiliary(self, payload, purpose)
         raw = json.dumps(payload, ensure_ascii=False).encode()
         headers = dict(self.headers, **{"Content-Length": str(len(raw)), "Accept-Encoding": "identity"})
         info = dict(type="summary", purpose=purpose, t=time.time(), model=model, dialect="chat")
+        if context_check:
+            info["experiment_context"] = context_check
         connection = self.connect()
         try:
             connection.request("POST", self.path, body=raw, headers=headers)

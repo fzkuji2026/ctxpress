@@ -21,6 +21,7 @@ def test_cliff_port_identical():
 
 @need("pichay")
 def test_pichay_port_identical():
+    pytest.importorskip("httpx", reason="the original pichay proxy imports httpx")
     sys.path.insert(0, os.path.join(REPRO, "pichay", "src"))
     import pichay_compare
     r = pichay_compare.compare(SESSION[0], 4)

@@ -6,6 +6,23 @@ from ctxpress.benchmarks.milestone.containers import Boundary, prepared_initiali
 from test_milestone_resources import fixture,IMAGE
 
 
+@pytest.mark.parametrize('missing', ['', 'python3\n', 'python3\nsudo\n'])
+def test_prepared_tools_report_missing_dependencies_without_installing(monkeypatch, missing):
+    from ctxpress.benchmarks.milestone import containers
+    calls = []
+    def checked(*args):
+        calls.append(args)
+        return missing
+    monkeypatch.setattr(containers, 'docker', checked)
+    if missing:
+        with pytest.raises(RuntimeError, match='lacks required tools: ' + ', '.join(missing.split())):
+            containers.check_prepared_tools('owned-agent')
+    else:
+        containers.check_prepared_tools('owned-agent')
+    assert len(calls) == 1 and calls[0][:4] == ('exec', 'owned-agent', 'sh', '-c')
+    assert 'apt-get' not in calls[0][-1] and 'apk' not in calls[0][-1]
+
+
 @pytest.mark.skipif(sys.platform!='linux',reason='native Unix service socket')
 def test_author_testcontainers_socket_is_replaced_by_owned_api_and_cleaned_after_verifier(tmp_path,monkeypatch):
     from ctxpress.harness.runtime import service_gateway, service_resources
@@ -38,6 +55,16 @@ def test_author_testcontainers_socket_is_replaced_by_owned_api_and_cleaned_after
 def launch(owner,output):
     return ['docker','run','--pull=never','-d','--init','--name',owner.record['container'],'--cpus','2',
         '--ulimit','nofile=65535:65535','-v',str(output)+':/output',IMAGE,'tail','-f','/dev/null']
+
+
+@pytest.mark.skipif(sys.platform!='linux',reason='native mounts require Linux paths')
+@pytest.mark.parametrize('offline', [False, True])
+def test_cargo_offline_policy_reaches_verifier_without_opening_network(tmp_path,monkeypatch,offline):
+    registry,docker=fixture(tmp_path,monkeypatch);owner=registry.owner('verifier',IMAGE)
+    Boundary(owner,'verifier',cargo_offline=offline).run(launch(owner,tmp_path))
+    create=next(call for call in docker.calls if call[0]=='create')
+    assert ('CARGO_NET_OFFLINE=true' in create) is offline
+    assert create[create.index('--network')+1]==registry.project+'-grade'
 
 
 @pytest.mark.skipif(sys.platform!='linux',reason='native mount projection requires Linux paths')
@@ -101,3 +128,17 @@ def test_native_combined_host_gateway_is_removed_only_from_agent_launch(tmp_path
     assert not any('host.docker.internal' in str(value) for call in docker.calls for value in call)
     verifier=registry.owner('verifier',IMAGE);command[command.index('--name')+1]=verifier.record['container']
     with pytest.raises(ValueError,match='host gateway'):Boundary(verifier,'verifier').run(command)
+
+
+@pytest.mark.parametrize('stage,offline,vendor,expected',[
+    ('verifier',True,True,True),('verifier',True,False,False),
+    ('verifier',False,True,False),('agent',True,True,False),
+])
+def test_vendor_grader_uses_copied_rustup_default_only(tmp_path,monkeypatch,stage,offline,vendor,expected):
+    registry,docker=fixture(tmp_path,monkeypatch);owner=registry.owner(stage,IMAGE)
+    command=launch(owner,tmp_path)
+    command[2:2]=['-e','RUSTUP_TOOLCHAIN=1.85.0']
+    Boundary(owner,stage,cargo_offline=offline,cargo_toolchain_default=vendor).run(command)
+    create=next(call for call in docker.calls if call[0]=='create')
+    assert ('RUSTUP_TOOLCHAIN=' in create) is expected
+    assert ('RUSTUP_TOOLCHAIN=1.85.0' in create) is (not expected)

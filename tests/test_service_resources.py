@@ -173,3 +173,51 @@ def test_live_verifier_keeps_services_and_mounted_channel_available(tmp_path):
     before=len(engine.calls)
     with pytest.raises(services.Rejected,match='verifier must be removed'):current.cleanup()
     assert not any(method=='DELETE' for method,_,_,_ in engine.calls[before:])
+
+
+def test_dockerode_mirrored_create_options_use_normal_policy(tmp_path):
+    from urllib.parse import urlencode
+    current,engine=scope(tmp_path)
+    payload={'name':'sdk-service','Image':'redis:7','Cmd':['true'],'Tty':False,
+             'HostConfig':{'PublishAllPorts':True},'ExposedPorts':{'6379/tcp':{}}}
+    query=urlencode({k:v if isinstance(v,str) else json.dumps(v,separators=(',',':')) for k,v in payload.items()})
+    identifier=current.dispatch('POST','/containers/create?'+query,json.dumps(payload).encode()).value()['Id']
+    row=current.inspect('containers',identifier)[2].value()
+    assert row['Image']==IMAGE
+    assert row['HostConfig']['PortBindings']['6379/tcp'][0]['HostIp']=='127.0.0.1'
+    created=next(call for call in engine.calls if call[0]=='POST' and call[1]=='/containers/create')
+    assert set(created[2])=={'name'}
+    current.cleanup();assert all(not rows for rows in engine.objects.values())
+
+
+@pytest.mark.parametrize('query,payload',[
+    ('Image=other',{'Image':'redis:7'}),
+    ('unknown=1',{'Image':'redis:7'}),
+    ('name=one',{'Image':'redis:7','name':'two'}),
+    ('HostConfig=%7B%22Privileged%22%3Atrue%7D',{'Image':'redis:7','HostConfig':{'Privileged':True}}),
+])
+def test_dockerode_query_cannot_bypass_body_checks(tmp_path,query,payload):
+    current,engine=scope(tmp_path)
+    with pytest.raises(services.Rejected):
+        current.dispatch('POST','/containers/create?'+query,json.dumps(payload).encode())
+    assert not engine.objects['containers']
+
+
+def test_testcontainers_numeric_ports_and_ephemeral_host_binding(tmp_path):
+    current,engine=scope(tmp_path)
+    payload={'Image':'redis:7','ExposedPorts':{'6379':{}},
+             'HostConfig':{'PortBindings':{'6379':[{'HostPort':'0'}]}}}
+    identifier=current.dispatch('POST','/containers/create',json.dumps(payload).encode()).value()['Id']
+    ports=current.inspect('containers',identifier)[2].value()['HostConfig']['PortBindings']
+    assert ports=={'6379/tcp':[{'HostIp':'127.0.0.1','HostPort':'0'}]}
+
+
+@pytest.mark.parametrize('ports',[
+    {'6379':[], '6379/tcp':[]}, {'0':[{'HostPort':'0'}]},
+    {'65536':[{'HostPort':'0'}]}, {'6379':[{'HostPort':'65536'}]},
+    {'6379':[{'HostPort':'-1'}]}, {'6379':[{'HostIp':'192.0.2.1','HostPort':'0'}]},
+])
+def test_numeric_port_normalization_preserves_boundary(tmp_path,ports):
+    current,engine=scope(tmp_path)
+    with pytest.raises(services.Rejected):create(current,PortBindings=ports)
+    assert not engine.objects['containers']

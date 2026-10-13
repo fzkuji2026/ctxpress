@@ -3,8 +3,7 @@ from collections import Counter
 import json
 
 
-class HostContractError(ValueError):
-    """Do not send a request whose rewrite discarded protected host state."""
+from ctxpress.core.host_contract import HostContractError  # noqa: F401  (re-exported)
 
 
 def _key(item):

@@ -34,7 +34,10 @@ def sse(message_id, blocks, stop):
 
 
 def check(binary, method, directory=None, timeout=120):
-    script = steps(method)
+    script = ([("Bash", {"command": "printf comem-fixture-evidence"})] * 3 if method == "CoMem" else steps(method))
+    if method == 'TACO':
+        command = "printf '%s\\n' 'git fetch' " + "'remote: Counting objects: 100% (5/5)' " * 80
+        script = [('Bash', {'command': command}), script[1]]
     agent_turns, side, errors = [], [], []
 
     class API(BaseHTTPRequestHandler):
@@ -53,19 +56,32 @@ def check(binary, method, directory=None, timeout=120):
                 self.end_headers(); self.wfile.write(raw); return
             names = [t.get("name", "") for t in body.get("tools") or []]
             n = len(agent_turns)
-            if not anthropic.rewritable(body) or not any(name.startswith("mcp__ctxpress__") for name in names):
-                side.append(body.get("model")); blocks, stop = [dict(type="text", text="ok")], "end_turn"
+            if not anthropic.rewritable(body) or not (any(name.startswith("mcp__ctxpress__") for name in names) or method == "CoMem" and "Bash" in names):
+                side.append(body.get("model")); blocks, stop = [dict(type="text", text="Synthetic archived finding." if method == "CoMem" else "ok")], "end_turn"
+                if method == 'TACO':
+                    from ctxpress.methods._paper_sources.taco.seed_rules import get_seed_rules
+                    blocks = [dict(type='text', text=json.dumps({'selected_rule_ids': [r.rule_id for r in get_seed_rules()]}))]
             else:
                 agent_turns.append(body)
                 if n < len(script):
                     tool, args = script[n]
-                    name = next((x for x in names if x == f"mcp__ctxpress__{tool}"), None)
+                    if tool == 'taco_feedback':
+                        import re
+                        match = re.search(r'\[TACO output_id=([^;]+);', json.dumps(body))
+                        args = dict(args, output_id=match.group(1) if match else 'missing')
+                    name = next((x for x in names if x == (tool if tool == "Bash" else f"mcp__ctxpress__{tool}")), None)
                     if name is None:
                         errors.append(f"tool {tool} not offered"); blocks, stop = [dict(type="text", text="missing tool")], "end_turn"
                     else:
                         blocks, stop = [dict(type="tool_use", id=f"fixture_{n}", name=name, input=args)], "tool_use"
                 else:
                     blocks, stop = [dict(type="text", text="fixture completed")], "end_turn"
+            if body.get('stream') is False:
+                raw = json.dumps(dict(id=f'msg_aux_{len(side)}', type='message', role='assistant', model='fixture-model',
+                    content=blocks, stop_reason=stop, usage=dict(input_tokens=50, output_tokens=5))).encode()
+                self.send_response(200); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(raw)))
+                self.end_headers(); self.wfile.write(raw)
+                return
             raw = sse(f"msg_{len(agent_turns)}_{len(side)}", blocks, stop)
             self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.send_header("Content-Length", str(len(raw)))
             self.end_headers(); self.wfile.write(raw)
@@ -87,6 +103,9 @@ def check(binary, method, directory=None, timeout=120):
             command = [sys.executable, "-m", "ctxpress", "claude", "--method", method, "--args", json.dumps(entry["args"]),
                        "--upstream", endpoint, "--claude-bin", binary, "--quiet", "--",
                        "-p", "Follow the fixture.", "--model", "fixture-model", "--max-turns", str(len(script) + 2)]
+            if method in ('CoMem', 'TACO'):
+                # Only the read-only printf fixture is allowed in this isolated test home.
+                command += ['--allowedTools', 'Bash(printf *)']
             env["PYTHONPATH"] = os.pathsep.join(p for p in (str(Path(__file__).resolve().parents[3]), env.get("PYTHONPATH", "")) if p)
             try:
                 result = subprocess.run(command, env=env, cwd=work, stdin=subprocess.DEVNULL, capture_output=True, text=True,
@@ -100,6 +119,8 @@ def check(binary, method, directory=None, timeout=120):
     finally:
         server.shutdown(); server.server_close()
     requests = [{"input": anthropic.flatten(body)[0]} for body in agent_turns]
+    (root/(method.lower()+'-requests.json')).write_text(json.dumps(agent_turns, ensure_ascii=False, indent=2), encoding='utf-8')
+    (root/(method.lower()+'-proxy.json')).write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding='utf-8')
     checks = observe(method, requests)
     instructions = all(method_mark(method) in json.dumps(body.get("system")) for body in agent_turns)
     logged = [r for r in rows if "request" in r]
@@ -116,13 +137,13 @@ def check(binary, method, directory=None, timeout=120):
 
 
 def method_mark(method):
-    return {"CWL": "delimiter tool", "DTOC": "manage_context"}[method]
+    return {"TACO":"taco_feedback", "CoMem":"", "LongSeeker":"longseeker_compress", "ZipRL":"zip_context", "CWL": "delimiter tool", "DTOC": "manage_context", "AgentFoldSource": "fold_context", "ContextFoldingTools": "context_branch", "ACM": "manage_context"}[method]
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--claude-bin", default=shutil.which("claude") or "claude")
-    ap.add_argument("--method", choices=["CWL", "DTOC"], required=True)
+    ap.add_argument("--method", choices=["CWL", "DTOC", "AgentFoldSource", "ContextFoldingTools", "ACM", "TACO", "CoMem", "LongSeeker", "ZipRL"], required=True)
     ap.add_argument("--directory"); ap.add_argument("--output")
     a = ap.parse_args(argv)
     result = check(a.claude_bin, a.method, a.directory)

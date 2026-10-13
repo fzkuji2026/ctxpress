@@ -49,11 +49,22 @@ class SWEMilestone:
         return str(SCRIPTS)
 
     def compile_plan(self, config, base_dir=None):
+        if 'grading_workers' in config.get('run', {}) and config.get('start_mode') != 'task_start':
+            raise ValueError('grading_workers requires task_start native execution')
         if config.get('start_mode') == 'task_start':
             from ctxpress.benchmarks.task_plan import compile_plan
         else:
             from ctxpress.benchmarks.checkpoint import compile_plan
         return compile_plan(config, base_dir)
+
+    def run_fields(self):
+        return {"grading_workers"}
+
+    def normalize_run(self, settings, repeats):
+        if "grading_workers" in settings:
+            from ctxpress.benchmarks.milestone.grading_concurrency import validate_workers
+            validate_workers(settings["grading_workers"])
+        return settings
 
     def task_instances(self, data):
         from ctxpress.benchmarks.milestone.data import tasks

@@ -248,15 +248,25 @@ class Scope:
         host['NetworkMode']=mode
         ports=host.get('PortBindings') or {}
         if not isinstance(ports,dict):raise Rejected('invalid service port bindings')
+        # testcontainers uses bare numeric keys (Docker defaults to TCP)
+        # and HostPort="0" to request an ephemeral host port.
+        normalized={}
+        for port,bindings in ports.items():
+            if isinstance(port,str) and port.isascii() and port.isdigit():port+='/tcp'
+            if port in normalized:raise Rejected('duplicate service port declaration')
+            normalized[port]=bindings
+        ports=normalized
         if host.get('PublishAllPorts'):
-            for port in value.get('ExposedPorts') or {}:ports.setdefault(port,[{'HostPort':''}])
+            for port in value.get('ExposedPorts') or {}:
+                if isinstance(port,str) and port.isascii() and port.isdigit():port+='/tcp'
+                ports.setdefault(port,[{'HostPort':''}])
         for port,bindings in ports.items():
             if not re.fullmatch(r'\d+/(tcp|udp)',port) or not 1<=int(port.split('/')[0])<=65535 or not isinstance(bindings,list):
                 raise Rejected('invalid service port declaration')
             for binding in bindings:
                 if (not isinstance(binding,dict) or set(binding)-{'HostIp','HostPort'} or binding.get('HostIp') not in (None,'','0.0.0.0','127.0.0.1') or
                         not isinstance(binding.get('HostPort',''),str) or binding.get('HostPort','') and
-                        (not binding['HostPort'].isdigit() or not 1<=int(binding['HostPort'])<=65535)):
+                        (not binding['HostPort'].isdigit() or not 0<=int(binding['HostPort'])<=65535)):
                     raise Rejected('invalid service host port')
                 binding['HostIp']='127.0.0.1'
         host.update(PublishAllPorts=False,PortBindings=ports)
@@ -289,7 +299,22 @@ class Scope:
         value['HostConfig']=host;return value
 
     def create_container(self,value,query):
-        if set(query)-{'name','platform'}:raise Rejected('unsupported service create query')
+        if not isinstance(value,dict):raise Rejected('invalid service container configuration')
+        # dockerode sends create options in both the JSON body and query.
+        # Strip only matching copies; all actual configuration still passes
+        # through the same ownership and privilege checks below.
+        query=dict(query);value=copy.deepcopy(value)
+        for key in set(query)-{'name','platform'}:
+            if key not in value:raise Rejected('unsupported service create query')
+            item=value[key]
+            encoded=(item if isinstance(item,str) else '' if item is None else
+                     json.dumps(item,separators=(',',':'),ensure_ascii=False))
+            if query[key]!=encoded:raise Rejected('conflicting service create query')
+            del query[key]
+        for key in ('name','platform'):
+            if key in value:
+                if key not in query or value[key]!=query[key]:raise Rejected('conflicting service create query')
+                del value[key]
         value=self.container_config(value);name=self.plan_object('containers',query.get('name',''),value['Image'])
         response=self.json('POST',url('/containers/create',dict(query,name=name)),value)
         identifier=response.value().get('Id')
@@ -351,7 +376,14 @@ class Scope:
             kind,reference,action=match.groups();action=action or ''
             name,row,inspection=self.inspect(kind,reference)
             target=prefix+'/'+kind+'/'+quote(row.get('id') or name,safe='')+action
-            if method=='GET' and action==('/json' if kind=='containers' else ''):return inspection
+            if method=='GET' and action==('/json' if kind=='containers' else ''):
+                if kind=='containers':
+                    from ctxpress.harness.runtime.service_ports import publish
+                    return Response.json(publish(self,inspection.value()))
+                return inspection
+            if kind=='containers' and (method=='DELETE' and not action or method=='POST' and action in ('/stop','/kill','/restart')):
+                from ctxpress.harness.runtime.service_ports import stop
+                stop(self,row['id'])
             if method=='DELETE' and not action:
                 response=self.backend.request('DELETE',url(target,{'force':'1','v':'1'} if kind=='containers' else {}))
                 if response.status<400:row.update(removed=True,phase='removed');self.persist()

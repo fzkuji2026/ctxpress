@@ -50,10 +50,13 @@ def read(task, code, trial):
             raise ValueError('native resolved outcome must be boolean')
         if 'infra_invalid' in raw and type(raw['infra_invalid']) is not bool:
             raise ValueError('native infrastructure outcome must be boolean')
+    from ctxpress.benchmarks.milestone.grading_diagnostics import collect
+    runner_diagnostics=collect(trial)
     summary_file=trial/'evaluation/summary.json'
     if not summary_file.is_file():
         return dict(resolved=None,infra_invalid=False,failure_kind='grading_error',
             error='native summary missing',official_metrics=None,quality_kind='milestone',
+            runner_diagnostics=runner_diagnostics,
             official_metrics_valid=False,scoring_complete=False,submission_complete=False)
     # Native APIs expect workspace/e2e_trial/<trial>. Stage selected result
     # documents there rather than expose original grading paths to the collector.
@@ -147,4 +150,5 @@ def read(task, code, trial):
                 grading_errors=grading_errors,infra_invalid=infra_invalid),
             official_metrics=metrics,milestones=outcomes,result_type_counts=types,
             reports=evidence,raw_summary=raw,collector='harness.e2e.collect_results',
+            runner_diagnostics=runner_diagnostics,
             model_calls=0,containers_started=0,real_run_verified=False)

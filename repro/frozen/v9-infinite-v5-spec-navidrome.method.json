@@ -1,0 +1,19 @@
+{
+  "method": {
+    "class": "infinite-context",
+    "args": {
+      "version": 5,
+      "t": 100000,
+      "tool_dialect": "wire",
+      "entry": true,
+      "segment": true,
+      "topic": true,
+      "guard": true,
+      "hold": "value",
+      "supersede": true,
+      "spec_keep_frac": 0.1
+    },
+    "label": "infinite-v5-spec-100k"
+  },
+  "note": "three operators (entry shorten, segment placeholder, topic summary) + Cliff size summary at 100k, plus long/short-term reuse memory; profile from 240 sessions started before 2026-10-12T10-00-00 (78 Navidrome)"
+}

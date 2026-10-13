@@ -160,3 +160,49 @@ def test_new_mcp_process_rebuilds_author_state_before_accepting_next_control(tmp
     action = dict(action='start', name='work', type='act', dependencies=['look'])
     reply = mcp.handle(dict(id=2, method='tools/call', params=dict(name='delimiter', arguments=action)))['result']
     assert not reply['isError'] and reply['content'][0]['text'] == 'start [act] work dep=look'
+
+
+def test_compacted_control_window_preserves_state_for_live_and_restarted_mcp(tmp_path, monkeypatch):
+    from ctxpress.live import mcp
+    receipts, body, log = fixture(tmp_path)
+    adapter = MethodTools(CWL(), receipts=receipts)
+    adapter.adapt(body)
+    monkeypatch.setenv('CTXPRESS_CONTROL_RECEIPTS', '1')
+    monkeypatch.setenv('CTXPRESS_STORE_DIR', str(receipts.store))
+    monkeypatch.setenv('CTXPRESS_LOG_PATH', str(log))
+    monkeypatch.setenv('CTXPRESS_METHOD_CONFIG', json.dumps({'class': 'CWL'}))
+    monkeypatch.setattr(mcp, '_METHOD', [])
+    monkeypatch.setattr(mcp, '_METHOD_RECEIPTS', [])
+    end = dict(action='end', description='looked at source')
+    reply = mcp.handle(dict(id=1, method='tools/call', params=dict(name='delimiter', arguments=end)))['result']
+    # Actual failure shape: the start was removed, only the end survives.
+    window = dict(input=[dict(type='function_call', namespace='mcp__ctxpress', name='delimiter',
+                             call_id='end', arguments=json.dumps(end)),
+                         dict(type='function_call_output', call_id='end', output=[
+                             dict(type='input_text', text=p['text']) for p in reply['content']])])
+    adapter.adapt(window)
+    assert len(receipts.history()) == 2
+    mcp.synchronize_control_history(receipts)
+    adapter.adapt(dict(input=[]))
+    assert len(receipts.history()) == 2
+    mcp._METHOD.clear(); mcp._METHOD_RECEIPTS.clear()
+    action = dict(action='start', name='work', type='act', dependencies=['look'])
+    result = mcp.handle(dict(id=2, method='tools/call', params=dict(name='delimiter', arguments=action)))['result']
+    assert not result['isError']
+    assert result['content'][0]['text'] == 'start [act] work dep=look'
+    # Retrying a stale request cannot erase already verified history.
+    adapter.adapt(body)
+    assert len(receipts.history()) == 2
+
+
+def test_control_history_reordering_or_changes_fail_without_overwrite(tmp_path):
+    receipts, _, _ = fixture(tmp_path)
+    rows = [dict(receipt=str(i), name='delimiter', arguments={}, output=str(i)) for i in range(3)]
+    receipts.publish_history(rows)
+    for invalid in ([rows[2], rows[0]], [dict(rows[0], output='changed')],
+                    [dict(rows[0], receipt='new'), rows[1]], [rows[0], rows[0]]):
+        with pytest.raises(ValueError):
+            receipts.publish_history(invalid)
+        assert receipts.history() == rows
+    receipts.publish_history(rows[1:])
+    assert receipts.history() == rows

@@ -3,19 +3,23 @@ from collections import Counter
 import copy
 import json
 from tempfile import TemporaryDirectory
+from contextlib import ExitStack
 
 from ctxpress.live.rewrite import Rewriter
 from ctxpress.methods import build
 
 # Only implementations whose IO is supplied by the harness, never remote pruners.
-SUPPORTED = {'NoCompaction', 'CodexAutoCompact', 'ComplexityTrap', 'ComplexityTrapSummary',
+SUPPORTED = {'TACO', 'CoMem', 'LongSeeker', 'ZipRL', 'NoCompaction', 'CodexAutoCompact', 'ComplexityTrap', 'ComplexityTrapSummary',
              'ComplexityTrapHybrid', 'KeepLastTokens', 'Pichay', 'ClawVM', 'ARC',
              'AgentDiet', 'CWL', 'DTOC', 'SlidingWindow', 'CliffCompaction', 'ACM',
-             'AgentFoldTools', 'TokenPilotLifecycle', 'ACONSource'}
+             'AgentFoldTools', 'TokenPilotLifecycle', 'ACONSource', 'ContextFoldingTools', 'ReSumSource', 'AgentFoldSource', 'FoldActSource'}
 
 
 class FakeSummary:
     def summarize_prompt(self, system, user, purpose='history', **kwargs):
+        if purpose == 'reflect' and 'selected_rule_ids' in user:
+            from ctxpress.methods._paper_sources.taco.seed_rules import get_seed_rules
+            return json.dumps({'selected_rule_ids': [r.rule_id for r in get_seed_rules()]})
         if purpose == 'lifecycle':
             data = json.loads(user)
             return json.dumps(dict(baseVersion=data['baseVersion'], taskUpdates=[dict(
@@ -40,9 +44,10 @@ def check(name, args=None, turns=60, output_chars=4096):
     inputs = [dict(type='message', role='system', content='Keep these instructions.'),
               dict(type='message', role='user', content='Find and fix the issue.'), catalog]
     samples = []
-    with TemporaryDirectory(prefix='ctxpress-method-check-') as store:
+    with TemporaryDirectory(prefix='ctxpress-method-check-') as store, ExitStack() as resources:
         rewriter = Rewriter(lambda: build({'class': name, 'args': args or {}}),
                             store_dir=store, summarizer=FakeSummary())
+        resources.callback(rewriter.close)
         def send(session, history, label):
             body = dict(model='synthetic', input=copy.deepcopy(history))
             before = copy.deepcopy(body)
@@ -53,7 +58,19 @@ def check(name, args=None, turns=60, output_chars=4096):
             return output
         for index in range(turns):
             call_name, arguments = 'read', '{}'
-            if name == 'AgentFoldTools' and index == turns - 2:
+            if name == 'CWL' and index == 0:
+                call_name, arguments = 'delimiter', json.dumps(dict(action='start', name='fixture', type='expl'))
+            if name == 'CWL' and index == turns - 1:
+                call_name, arguments = 'delimiter', json.dumps(dict(action='end', description='Synthetic findings.'))
+            if name == 'FoldActSource' and index == turns // 2:
+                inputs.append(dict(role='assistant', content='<information_summary>Synthetic findings.</information_summary>'))
+            if name == 'ContextFoldingTools' and index == 0:
+                call_name = 'context_branch'
+                arguments = json.dumps(dict(description='synthetic subtask', prompt='inspect evidence'))
+            if name == 'ContextFoldingTools' and index == turns - 1:
+                call_name = 'context_return'
+                arguments = json.dumps(dict(message='Synthetic branch findings.'))
+            if name in ('AgentFoldTools', 'AgentFoldSource') and index == turns - 2:
                 call_name = 'fold_context'
                 arguments = json.dumps(dict(start_step=1, end_step=index, summary='Synthetic completed steps.'))
             if name == 'ACM' and index in (turns // 2, turns - 2):
@@ -62,8 +79,16 @@ def check(name, args=None, turns=60, output_chars=4096):
                 call_name, arguments = 'query_memory', '{"summary_id":1,"query":"earlier findings"}'
             if name == 'DTOC' and index == turns - 2:
                 call_name, arguments = 'manage_context', '{"enable":[],"disable":["tk_001"]}'
-            inputs += [dict(type='function_call', call_id=f'c{index}', name=call_name, arguments=arguments),
-                       dict(type='function_call_output', call_id=f'c{index}', output=('recorded' if call_name != 'read' else 'data ' * (output_chars // 5)))]
+            if name == 'TACO':
+                call_name, arguments = 'exec_command', '{"cmd":"git fetch"}'
+            if name == 'LongSeeker' and index == turns - 2:
+                call_name, arguments = 'longseeker_compress', json.dumps(dict(start=1, end=index, summary='Synthetic findings.'))
+            if name == 'ZipRL' and index == turns - 2:
+                call_name, arguments = 'zip_context', json.dumps(dict(summary_level=3, summary='Synthetic findings.'))
+            fixture_output = ('remote: Counting objects: 100% (5/5)\n' * (output_chars // 38) if name == 'TACO'
+                              else 'recorded' if call_name != 'read' else 'data ' * (output_chars // 5))
+            inputs += [dict(type='function_call' , call_id=f'c{index}', name=call_name, arguments=arguments),
+                       dict(type='function_call_output', call_id=f'c{index}', output=fixture_output)]
             output = send('growing', inputs, 'incremental')
             if not any(i.get('call_id') == f'c{index}' for i in output['input']):
                 # Retaining the last output isn't every method's policy; report it, don't redefine the method.

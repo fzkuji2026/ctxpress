@@ -140,6 +140,15 @@ if not binary.is_file() or not os.access(binary,os.X_OK):
 if not Path('/ctxpress-runtime/ctxpress/__main__.py').is_file():
     raise RuntimeError('frozen ctxpress runtime is unavailable')
 user=pwd.getpwnam('fakeroot')
+# Base images can already own UID 1000 (for example Node images). Keep the
+# host group and setgid inheritance while giving the actual Agent UID access.
+for mount in ('/ctxpress-logs', '/ctxpress-logs/sessions', '/ctxpress-store'):
+    output=Path(mount)
+    if output.is_symlink() or not output.is_dir():
+        raise RuntimeError('native output mount must be a real directory: '+mount)
+    group=output.stat().st_gid
+    os.chown(output,user.pw_uid,group)
+    os.chmod(output,0o2770)
 home=Path('/home/fakeroot/.codex')
 if home.is_symlink():
     raise RuntimeError('private native home cannot be a symbolic link')

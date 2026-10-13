@@ -139,3 +139,66 @@ def test_invalid_lifecycle_fails_before_cleanup(tmp_path, monkeypatch, change):
             if change == 'self-join': trial.watcher_thread = threading.current_thread()
             trial.cleanup()
     assert not events and module.E2ETrialRunner is original
+
+
+def test_native_wait_budget_bounds_long_queue_wait_and_restores_queue():
+    import queue
+    import time
+    native_queue = queue.Queue()
+    trial = SimpleNamespace(eval_event_queue=native_queue)
+    def wait():
+        while True:
+            try:
+                trial.eval_event_queue.get(timeout=60)
+            except queue.Empty:
+                pass  # native harvest/recovery must not renew our budget
+    started = time.monotonic()
+    with pytest.raises(milestone_trial.DrainTimeout, match='wait budget'):
+        milestone_trial.wait_for_evaluations(trial, wait, 0.04)
+    assert time.monotonic() - started < 1
+    assert trial.eval_event_queue is native_queue
+    assert trial._ctxpress_grading_remaining == 0
+    with pytest.raises(milestone_trial.DrainTimeout):
+        milestone_trial.wait_for_evaluations(trial, lambda: 'renewed', 60)
+
+
+def test_native_wait_budget_is_cumulative_and_preserves_events():
+    import queue
+    import time
+    native_queue = queue.Queue()
+    native_queue.put('done')
+    trial = SimpleNamespace(eval_event_queue=native_queue)
+    def wait():
+        time.sleep(0.02)
+        return trial.eval_event_queue.get(timeout=60)
+    assert milestone_trial.wait_for_evaluations(trial, wait, 1) == 'done'
+    remaining = trial._ctxpress_grading_remaining
+    assert 0 < remaining < 1
+    assert milestone_trial.wait_for_evaluations(trial, lambda: 'new_tasks', 60) == 'new_tasks'
+    assert trial._ctxpress_grading_remaining <= remaining
+    assert trial.eval_event_queue is native_queue
+
+
+def test_expired_wait_budget_also_bounds_event_drain():
+    import queue
+    import time
+    native_queue = queue.Queue()
+    native_queue.put('late')
+    bounded = milestone_trial._DeadlineQueue(native_queue, time.monotonic() - 1)
+    with pytest.raises(milestone_trial.DrainTimeout):
+        bounded.get_nowait()
+    assert native_queue.get_nowait() == 'late'
+
+
+def test_grading_wait_records_both_clocks_on_timeout(tmp_path):
+    import queue
+    trial = SimpleNamespace(eval_event_queue=queue.Queue(),
+                            orchestrator=SimpleNamespace(trial_root=tmp_path))
+    with pytest.raises(milestone_trial.DrainTimeout):
+        milestone_trial.wait_for_evaluations(trial, lambda: trial.eval_event_queue.get(timeout=10), .03)
+    record = json.loads((tmp_path / 'ctxpress-grading-wait.json').read_text())
+    assert record['phase'] == 'wait-returned'
+    assert record['remaining_after'] == 0
+    assert record['elapsed_monotonic'] >= .03
+    assert record['elapsed_wall'] >= .02
+    assert record['remaining_before'] == .03

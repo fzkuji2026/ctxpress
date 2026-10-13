@@ -1,6 +1,6 @@
 """Drain the native watcher before author cleanup or owned resource removal."""
 from __future__ import annotations
-import contextlib, signal, threading
+import contextlib, signal, threading, time
 from pathlib import Path
 from ctxpress.harness.jobs import plan as eval_plan
 from ctxpress.core import artifacts as artifact_io
@@ -13,6 +13,59 @@ class DrainTimeout(RuntimeError):
 def _seconds(value):
     eval_plan._positive(value, 'native grading shutdown timeout', integer=False)
     return float(value)
+
+
+class _DeadlineQueue:
+    """Bound native event waits without changing watcher producers or stdlib."""
+    def __init__(self, queue, deadline):
+        self.queue, self.deadline = queue, deadline
+
+    def __getattr__(self, name):
+        return getattr(self.queue, name)
+
+    def get_nowait(self):
+        return self.get(block=False)
+
+    def get(self, block=True, timeout=None):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise DrainTimeout('native grading wait budget exhausted')
+        if not block:
+            return self.queue.get(block=False)
+        try:
+            return self.queue.get(timeout=remaining if timeout is None else min(timeout, remaining))
+        finally:
+            if time.monotonic() >= self.deadline:
+                raise DrainTimeout('native grading wait budget exhausted')
+
+
+def wait_for_evaluations(trial, callback, seconds, *args, **kwargs):
+    """Charge every native wait and final drain to one cumulative budget."""
+    remaining = getattr(trial, '_ctxpress_grading_remaining', seconds)
+    if remaining <= 0:
+        raise DrainTimeout('native grading wait budget exhausted')
+    started = time.monotonic()
+    started_wall = time.time()
+    root = getattr(getattr(trial, 'orchestrator', None), 'trial_root', None)
+    evidence_path = Path(root) / 'ctxpress-grading-wait.json' if root is not None else None
+    evidence = dict(schema='ctxpress.eval.milestone_grading_wait', version=1,
+                    phase='waiting', budget_seconds=seconds, remaining_before=remaining,
+                    started_wall=started_wall, started_monotonic=started)
+    if evidence_path is not None:
+        artifact_io.atomic_json(evidence_path, evidence)
+    queue = trial.eval_event_queue
+    trial.eval_event_queue = _DeadlineQueue(queue, started + remaining)
+    try:
+        return callback(*args, **kwargs)
+    finally:
+        trial.eval_event_queue = queue
+        elapsed = time.monotonic() - started
+        trial._ctxpress_grading_remaining = max(0.0, remaining - elapsed)
+        if evidence_path is not None:
+            evidence.update(phase='wait-returned', elapsed_monotonic=elapsed,
+                            elapsed_wall=time.time() - started_wall,
+                            remaining_after=trial._ctxpress_grading_remaining)
+            artifact_io.atomic_json(evidence_path, evidence)
 
 
 def drain(trial, owner, seconds):
@@ -79,6 +132,9 @@ def installed(code, owner, shutdown_seconds):
                 raise ValueError('native trial cleanup requires its owned Agent')
             owner.registry.protect_trial(owner.record['container'])
 
+        def _wait_for_evaluations(self, *args, **kwargs):
+            return wait_for_evaluations(self, super()._wait_for_evaluations, seconds, *args, **kwargs)
+
         def cleanup(self):
             if threading.current_thread() is not threading.main_thread():
                 raise ValueError('native trial cleanup requires the main worker thread')
@@ -89,7 +145,7 @@ def installed(code, owner, shutdown_seconds):
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
             record = path = None
             try:
-                path, record = drain(self, owner, seconds)
+                path, record = drain(self, owner, max(0.001, getattr(self, '_ctxpress_grading_remaining', seconds)))
                 self.remove_container = False
                 result = super().cleanup()
                 record.update(phase='author-cleanup-returned', author_cleanup_returned=True)

@@ -43,6 +43,17 @@ def _protocol(value):
             type(value.get('family_count')) is not int or value['family_count'] != len(benchmarks.FAMILIES) or
             value.get('start_mode') != 'task_start' or value.get('scope') != 'benchmark'):
         raise ValueError('require a task-start protocol for the fixed eight benchmark families')
+    if value.get('paper_cohort') is not None:
+        from ctxpress.methods.paper_catalog import VERSION, validate_entries
+        if value['paper_cohort'] != VERSION:
+            raise ValueError('unknown fixed paper cohort')
+        for phase in ('pilot', 'comparison'):
+            stage = value.get(phase) or {}
+            validate_entries(stage.get('methods'), require_services=False)
+            if type(stage.get('workers')) is not int or stage['workers'] != 1:
+                raise ValueError('paper cohort requires one complete evaluation worker')
+        if (value.get('comparison') or {}).get('candidate_training') is not None:
+            raise ValueError('paper cohort cannot append a project candidate')
     families = value.get('families')
     if (not isinstance(families, list) or len(families) != len(benchmarks.FAMILIES) or
             any(not isinstance(row, dict) or row.get('family') not in benchmarks.FAMILIES for row in families) or
@@ -245,7 +256,7 @@ def configure(source, *, family, phase, data, bindir, resources=None, prices=Non
                 len({entry['class'] for entry in baselines}) != len(baselines)):
             raise ValueError('method pilot requires unique declared comparison baseline methods')
         indexed = {entry['class']: entry for entry in baselines}
-        if 'NoCompaction' not in classes or any(name not in indexed for name in classes):
+        if (not protocol.get('paper_cohort') and 'NoCompaction' not in classes) or any(name not in indexed for name in classes):
             raise ValueError('method pilot requires NoCompaction and declared comparison baselines only')
         methods = [copy.deepcopy(indexed[name]) for name in classes]
     elif isinstance(stage, dict) and isinstance(stage.get('methods'), list) and stage['methods']:
@@ -268,8 +279,13 @@ def configure(source, *, family, phase, data, bindir, resources=None, prices=Non
     if not isinstance(settings, dict) or not isinstance(protocol.get('run'), dict):
         raise ValueError('protocol and template must declare run settings')
     settings.update(copy.deepcopy(protocol['run']))
-    if phase == 'comparison':
+    if phase == 'comparison' and not protocol.get('paper_cohort'):
         methods.append(_candidate(protocol, artifact_root, bindings))
+    if protocol.get('paper_cohort'):
+        from ctxpress.methods.paper_catalog import validate_entries
+        validate_entries(methods)
+        if type(stage.get('workers')) is not int or stage['workers'] != 1:
+            raise ValueError('paper cohort requires one complete evaluation worker')
     for entry in methods:
         if not isinstance(entry, dict):
             raise ValueError('invalid protocol method')
