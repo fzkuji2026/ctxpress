@@ -35,7 +35,7 @@ def validate_execution(result):
     observation = execution_observation(result)
     if observation.get('execution_invalid'):
         from ctxpress.harness.runtime.execution_health import ExecutionInfrastructureFailure
-        raise ExecutionInfrastructureFailure('execution invalid: tool runtime failed or its evidence is unsafe; see execution observation')
+        raise ExecutionInfrastructureFailure('execution invalid: tool runtime or provider failed, or its evidence is unsafe; see execution observation')
     if not observation["observed_requests"]:
         raise ModelRequestFailure("continuation exited without an observed model request")
     if not observation["valid"]:

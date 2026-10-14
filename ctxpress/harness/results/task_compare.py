@@ -453,6 +453,8 @@ def _assessment(plan, spec, members, directory, paths, common_reasons, supported
         if health['execution_invalid']:
             if any(row.get('kind') == 'method_tool_route_failure' for row in health['tool_runtime_failures']):
                 raise ValueError('method control routing is invalid or unverified; official grade is diagnostic only')
+            if any(row.get('kind') == 'provider_failure' for row in health['tool_runtime_failures']):
+                raise ValueError('model provider failed (overloaded) during the run; official grade is diagnostic only')
             raise ValueError('tool runtime failed to start; official grade is diagnostic only')
         if health.get('evidence_errors'):
             raise ValueError('tool runtime evidence is unreadable or invalid')

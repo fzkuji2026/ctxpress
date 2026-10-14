@@ -152,3 +152,26 @@ def test_report_excludes_quality_while_preserving_official_reward_and_cost_evide
     assert method['valid_rewards']==0 and method['infra_invalid']==1 and method['reward_metrics']=={}
     assert method['jobs'][0]['grade']['rewards']=={'reward':0}
     assert method['jobs'][0]['execution_observation']['execution_invalid']
+
+
+def overloaded(turn='t1'):
+    return dict(type='event_msg', payload=dict(type='task_complete', turn_id=turn, last_agent_message=None,
+        error=dict(message='Selected model is at capacity. Please try a different model.', codex_error_info='server_overloaded')))
+
+
+def test_provider_overload_turn_invalidates_execution_and_survives_session_removal(tmp_path):
+    run, path = result(tmp_path, transcript(output='ok') + [overloaded()])
+    observed = execution_health.observe(run)
+    assert observed['execution_invalid'] and observed['tool_calls'] == 1
+    failure = observed['tool_runtime_failures'][0]
+    assert failure['kind'] == 'provider_failure' and failure['error'] == 'server_overloaded' and failure['line'] == 3
+    with pytest.raises(execution_health.ExecutionInfrastructureFailure): evaluation.validate_execution(run)
+    execution_health.retain(run); path.unlink()
+    assert execution_health.observe(run)['execution_invalid'] and not execution_health.observe(run)['health_unknown']
+
+
+def test_other_turn_errors_and_agent_text_do_not_count_as_provider_failure(tmp_path):
+    other = overloaded(); other['payload']['error']['codex_error_info'] = 'context_window_exceeded'
+    prose = dict(type='event_msg', payload=dict(type='agent_message', message='server_overloaded'))
+    run, _ = result(tmp_path, transcript(output='ok') + [other, prose])
+    assert not execution_health.observe(run)['execution_invalid']

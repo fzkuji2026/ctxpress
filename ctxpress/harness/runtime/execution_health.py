@@ -1,4 +1,4 @@
-"""Infrastructure evidence from matched runtime tool outputs, never agent prose."""
+"""Infrastructure evidence from matched runtime tool outputs and host error classes, never agent prose."""
 from __future__ import annotations
 import hashlib, json, re
 from pathlib import Path
@@ -11,9 +11,27 @@ class ExecutionInfrastructureFailure(RuntimeError):
     """Agent tool infrastructure failed despite a successful model response."""
 
 
+# Host-classified provider failures that end a turn independently of the method under test.
+PROVIDER_FAILURES = ('server_overloaded',)
+
+
+def _provider_failure(row):
+    """A Codex turn that ended on a provider-side failure, read from the host's own error class."""
+    payload = row.get('payload') if isinstance(row, dict) and row.get('type') == 'event_msg' else None
+    error = payload.get('error') if isinstance(payload, dict) else None
+    kind = error.get('codex_error_info') if isinstance(error, dict) else None
+    if kind in PROVIDER_FAILURES:
+        return dict(kind='provider_failure', error=kind, event_type=payload.get('type'), turn_id=payload.get('turn_id'))
+    return None
+
+
 def observe_rows(rows, *, source=None, sha256=None):
     calls = {}; outputs = set(); failures = []
     for line, row in enumerate(rows, 1):
+        failure = _provider_failure(row)
+        if failure:
+            failures.append(dict(failure, source=source, source_sha256=sha256, line=line))
+            continue
         if not isinstance(row, dict) or row.get('type') != 'response_item':
             continue
         payload = row.get('payload')
@@ -73,8 +91,9 @@ def observe(result):
         valid = (isinstance(stored, dict) and type(stored.get('execution_invalid')) is bool and
             all(type(stored.get(key)) is int and stored[key] >= 0 for key in ('tool_calls', 'tool_outputs')) and
             isinstance(stored.get('tool_runtime_failures'), list) and
-            all(isinstance(row, dict) and row.get('kind') in ('code_mode_host_spawn_failure', 'method_tool_route_failure') and
-                isinstance(row.get('call_id'), str) and isinstance(row.get('error'), str)
+            all(isinstance(row, dict) and isinstance(row.get('error'), str) and
+                (row.get('kind') in ('code_mode_host_spawn_failure', 'method_tool_route_failure') and isinstance(row.get('call_id'), str) or
+                 row.get('kind') == 'provider_failure' and row['error'] in PROVIDER_FAILURES)
                 for row in stored['tool_runtime_failures']) and
             stored['execution_invalid'] == bool(stored['tool_runtime_failures']))
         if stored is not None and not valid:
