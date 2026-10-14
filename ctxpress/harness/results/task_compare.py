@@ -349,6 +349,26 @@ def _milestone(spec, result, folder, evidence):
                         submission_complete=grade.get('submission_complete'), scoring_complete=grade.get('scoring_complete'))
 
 
+def _context_window(result):
+    """Window conformance under an explicit context profile; reported beside, not inside, the official grade.
+    None when the run declared no profile."""
+    rows = [row for row in result.get('rewrites', []) if isinstance(row, dict)]
+    measured = [row for row in rows if isinstance(row.get('experiment_context'), dict)]
+    if not measured:
+        return None
+    over = [row for row in measured if row['experiment_context'].get('over_limit')]
+    checked = [row['experiment_context_provider_check'] for row in rows
+               if isinstance(row.get('experiment_context_provider_check'), dict)]
+    provider_over = [row for row in checked if row.get('within_limit') is False]
+    return dict(max_context_tokens=measured[0]['experiment_context'].get('max_context_tokens'),
+                measured_requests=len(measured), over_limit_requests=len(over),
+                over_limit_native_compactions=sum(row.get('type') == 'native_compaction' for row in over),
+                max_input_tokens_estimate=max(row['experiment_context'].get('input_tokens_estimate') or 0 for row in measured),
+                provider_checked_requests=len(checked), provider_over_limit_requests=len(provider_over),
+                max_provider_input_tokens=max((row.get('input_tokens') or 0 for row in checked), default=None),
+                conformant=not over and not provider_over)
+
+
 def _assessment(plan, spec, members, directory, paths, common_reasons, supported):
     reasons = list(common_reasons)
     quality_reasons = [] if supported else ['unsupported benchmark comparison: ' + UNSUPPORTED.get(plan['config']['benchmark'], 'no audited reader')]
@@ -356,7 +376,7 @@ def _assessment(plan, spec, members, directory, paths, common_reasons, supported
     output = dict(job_id=spec['id'], status=None, attempt=None, reasons=reasons, quality_reasons=quality_reasons,
                   quality_admissible=False, metrics={}, grade_details=None, artifacts=evidence,
                   usage=None, api_usage_complete=False, api_cost_complete=False, api_cost_usd=None, bill=None,
-                  cost_reasons=[])
+                  cost_reasons=[], context_window=None, window_conformant=None)
     if not members:
         reasons.append('missing planned job')
         return output
@@ -390,6 +410,8 @@ def _assessment(plan, spec, members, directory, paths, common_reasons, supported
             raise ValueError('recorded result differs from attempt artifact')
         _binding(plan, spec, result, folder, directory, paths, evidence)
         output['mechanism_observation'] = eval_mechanism.observe(result)
+        output['context_window'] = _context_window(result)
+        output['window_conformant'] = output['context_window']['conformant'] if output['context_window'] else None
     except (OSError, ValueError, TypeError, KeyError, AttributeError, UnicodeError) as error:
         if isinstance(error, eval_harbor_compare.UnsupportedVariant):
             output.update(comparison_variant_supported=False, unsupported_reason=str(error))
@@ -593,7 +615,7 @@ def compare(plan, jobs, *, reference, directory):
         pairs = []
         for identity, repeat in coordinates:
             missing = dict(reasons=['missing planned method/task/repeat'], quality_reasons=[], metrics={}, quality_admissible=False,
-                           api_cost_complete=False, api_cost_usd=None)
+                           api_cost_complete=False, api_cost_usd=None, window_conformant=None)
             base = assessments.get((identity, repeat, reference), missing)
             candidate = assessments.get((identity, repeat, label), missing)
             reasons = [side + ': ' + reason for side, value in (('reference', base), ('candidate', candidate))
@@ -617,7 +639,10 @@ def compare(plan, jobs, *, reference, directory):
                 metric_pairs[name] = dict(reference=a, candidate=b, comparable=valid, delta=(b - a) if valid else None)
             cost_complete = base['api_cost_complete'] and candidate['api_cost_complete']
             cost_comparable = cost_complete and host_comparable
+            sides = (base.get('window_conformant'), candidate.get('window_conformant'))
+            window = None if None in sides else all(sides)
             pairs.append(dict(task_id=identity, repeat=repeat, quality_admissible=comparable, reasons=reasons,
+                              window_conformant=window,
                               metrics=metric_pairs, reference=base, candidate=candidate, api_cost_complete=cost_complete,
                               api_cost_comparable=cost_comparable,
                               reference_api_cost_usd=base['api_cost_usd'], candidate_api_cost_usd=candidate['api_cost_usd'],
@@ -628,6 +653,8 @@ def compare(plan, jobs, *, reference, directory):
         candidates.append(dict(method=label, quality_complete=quality_complete, api_cost_complete=cost_complete,
             api_cost_comparable=cost_comparable,
             coverage=dict(planned_pairs=len(pairs), comparable_pairs=sum(p['quality_admissible'] for p in pairs),
+                          window_conformant_pairs=sum(p['window_conformant'] is True for p in pairs),
+                          window_nonconformant_pairs=sum(p['window_conformant'] is False for p in pairs),
                           cost_comparable_pairs=sum(p['api_cost_comparable'] for p in pairs),
                           cost_pairs=sum(p['api_cost_complete'] for p in pairs), reasons=dict(Counter(r for p in pairs for r in p['reasons']))),
             metrics={name: _metric_summary(pairs, name) for name in names},
@@ -649,7 +676,10 @@ def compare(plan, jobs, *, reference, directory):
         pairing='frozen (task_id, repeat, method label); repeat index does not establish shared random seeds',
         quality_scope='descriptive official metrics within this benchmark only; no cross-family quality aggregate, significance or noninferiority inference',
         cost_scope='observed main, summary/reflection, native compaction and passthrough API tokens at declared per-model cache-write/long-context rates; unknowns stay null; not an invoice; dedicated pruner and host compute excluded',
+        window_scope=('context_window per job: requests over the declared window (ctxpress estimate and provider '
+                      'usage). Official grades stay valid; window conformance is a separate column, not a quality gate.'),
         coverage=dict(planned_jobs=len(specs), admissible_jobs=sum(v['quality_admissible'] for v in assessments.values()),
+                      window_nonconformant_jobs=sum(v.get('window_conformant') is False for v in assessments.values()),
                       cost_jobs=sum(v['api_cost_complete'] for v in assessments.values()), unplanned_jobs=unplanned,
                       reasons=dict(Counter(r for v in assessments.values() for r in v['reasons'] + v['quality_reasons']))),
         jobs=[dict(task_id=key[0], repeat=key[1], method=key[2], **value) for key, value in assessments.items()],

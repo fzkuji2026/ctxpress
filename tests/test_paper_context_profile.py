@@ -228,3 +228,23 @@ def test_published_config_matches_generated_profile():
             expected['reflect_model'] = document['models']['agentdiet_reflection']
         assert entry['args'] == expected
     assert document['run']['max_calls'] is None and document['run']['timeout'] is None
+
+
+def test_anthropic_capacity_trigger_counts_the_system_prompt():
+    from ctxpress.live.anthropic import rewrite_messages
+    request = dict(model='test-model', system='s' * 80000, tools=[dict(name='exec', description='run')],
+                   messages=[dict(role='user', content=[dict(type='text', text='task')])])
+    result, info = rewrite_messages(Rewriter(factory()), request, 'session')
+    assert info['rendered_prompt_tokens'] >= 20000  # the measured body includes the 20k-token system prompt
+    assert result['system'][0]['text'] == 's' * 80000 and len(result['system']) <= 2  # not duplicated
+
+
+def test_comparison_reports_window_conformance_beside_the_grade():
+    from ctxpress.harness.results.task_compare import _context_window
+    row = lambda tokens, **extra: dict(request=1, experiment_context=check_body(body('x' * tokens * 4), PROFILE), **extra)
+    clean = _context_window(dict(rewrites=[row(1000), row(2000, experiment_context_provider_check=dict(
+        input_tokens=2100, max_context_tokens=128000, within_limit=True))]))
+    assert clean['conformant'] and clean['over_limit_requests'] == 0 and clean['provider_checked_requests'] == 1
+    over = _context_window(dict(rewrites=[row(1000), dict(row(140000), type='native_compaction')]))
+    assert not over['conformant'] and over['over_limit_requests'] == 1 and over['over_limit_native_compactions'] == 1
+    assert _context_window(dict(rewrites=[dict(request=1)])) is None  # no declared window

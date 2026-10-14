@@ -152,7 +152,9 @@ def rewrite_messages(rewriter, body, key=None, summarizer=None):
     if not rewritable(body):
         return body, None
     flat, refs = flatten(body)
-    rewritten, info = rewriter.rewrite_body(dict({k: v for k, v in body.items() if k not in ("messages", "system")}, input=flat),
+    # The system prompt stays in the measured body so capacity triggers see the complete input; the
+    # outgoing request is rebuilt from the original body, so the field is never duplicated.
+    rewritten, info = rewriter.rewrite_body(dict({k: v for k, v in body.items() if k != "messages"}, input=flat),
                                          key or session_key(body), summarizer=summarizer,
                                          allow_forks=True, check_context=False)
     if info is None:
