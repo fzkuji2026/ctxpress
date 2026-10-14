@@ -15,19 +15,32 @@
     },
     "source_catalog": "ctxpress.methods.paper_catalog",
     "context_design": {
-      "version": "paper-context-128k-20261013-v1",
+      "version": "paper-context-128k-20261014-v3",
       "context": {
         "version": 1,
         "max_context_tokens": 128000,
         "compression_trigger_tokens": 102400
       },
       "counting": "complete rendered agent input; shared chars/4 and media estimate, not exact provider tokens",
-      "scope": "Shared agent and auxiliary-model input limit; source history is not silently truncated to fit. Per-call generation limits are unchanged.",
-      "native_fallback": false,
+      "scope": "Shared agent input limit. Every method keeps the host native compaction at the window as the only fallback; ctxpress never cuts or refuses an agent request, and a request over the window is forwarded and recorded (over_limit). Auxiliary-model inputs over the window fail and are recorded. Per-call generation limits are unchanged.",
+      "fallback": "host native compaction",
       "external_request_or_time_caps": false,
       "methods": [
         {
+          "method": "HostDefault",
+          "role": "local",
+          "args": {
+            "context_profile": {
+              "version": 1,
+              "max_context_tokens": 128000,
+              "compression_trigger_tokens": 102400
+            }
+          },
+          "note": "Control: the host alone; its native compaction at the 128000 window."
+        },
+        {
           "method": "ComplexityTrap",
+          "role": "local",
           "args": {
             "n": 10,
             "pin_spec": false,
@@ -42,6 +55,7 @@
         },
         {
           "method": "ComplexityTrapSummary",
+          "role": "full",
           "args": {
             "n": 21,
             "m": 10,
@@ -55,6 +69,7 @@
         },
         {
           "method": "ComplexityTrapHybrid",
+          "role": "full",
           "args": {
             "n": 43,
             "m": 10,
@@ -70,6 +85,7 @@
         },
         {
           "method": "AgentDiet",
+          "role": "local",
           "args": {
             "a": 2,
             "b": 1,
@@ -88,6 +104,7 @@
         },
         {
           "method": "ACONSource",
+          "role": "full",
           "args": {
             "t_hist": 102400,
             "trigger_tokens": 102400,
@@ -104,6 +121,7 @@
         },
         {
           "method": "ReSumSource",
+          "role": "full",
           "args": {
             "context_k": 125,
             "trigger_tokens": 102400,
@@ -119,6 +137,7 @@
         },
         {
           "method": "AgentFoldSource",
+          "role": "full",
           "args": {
             "context_profile": {
               "version": 1,
@@ -130,6 +149,7 @@
         },
         {
           "method": "SWEPruner",
+          "role": "local",
           "args": {
             "threshold": 0.5,
             "min_chars": 500,
@@ -144,6 +164,7 @@
         },
         {
           "method": "TokenPilotLifecycle",
+          "role": "local",
           "args": {
             "entry_budget": 25600,
             "batch_turns": 8,
@@ -159,6 +180,7 @@
         },
         {
           "method": "ACM",
+          "role": "full",
           "args": {
             "summary_model": null,
             "context_profile": {
@@ -171,6 +193,7 @@
         },
         {
           "method": "CWL",
+          "role": "full",
           "args": {
             "budget": 102400,
             "full_context": true,
@@ -184,6 +207,7 @@
         },
         {
           "method": "DTOC",
+          "role": "local",
           "args": {
             "strategy": true,
             "context_profile": {
@@ -196,6 +220,7 @@
         },
         {
           "method": "ContextFoldingTools",
+          "role": "full",
           "args": {
             "max_branches": null,
             "branch_max_turns": null,
@@ -211,6 +236,7 @@
         },
         {
           "method": "FoldActSource",
+          "role": "full",
           "args": {
             "max_model_len": 128000,
             "selection_tokens": 102400,
@@ -225,6 +251,7 @@
         },
         {
           "method": "TACO",
+          "role": "local",
           "args": {
             "uncovered_threshold": 3000,
             "freeze_rules": false,
@@ -240,6 +267,7 @@
         },
         {
           "method": "CoMem",
+          "role": "full",
           "args": {
             "trigger_tokens": 102400,
             "interval": 1,
@@ -255,6 +283,7 @@
         },
         {
           "method": "LongSeeker",
+          "role": "full",
           "args": {
             "context_profile": {
               "version": 1,
@@ -266,6 +295,7 @@
         },
         {
           "method": "ZipRL",
+          "role": "full",
           "args": {
             "context_profile": {
               "version": 1,
@@ -324,7 +354,6 @@
   "method_pilot": {
     "method_classes": [
       "HostDefault",
-      "NoCompaction",
       "ComplexityTrap",
       "ComplexityTrapSummary",
       "ComplexityTrapHybrid",
@@ -332,7 +361,6 @@
       "ACONSource",
       "ReSumSource",
       "AgentFoldSource",
-      "SWEPruner",
       "TokenPilotLifecycle",
       "ACM",
       "CWL",
@@ -349,25 +377,14 @@
     "methods": [
       {
         "class": "HostDefault",
-        "label": "HostDefault",
         "args": {
           "context_profile": {
             "version": 1,
             "max_context_tokens": 128000,
             "compression_trigger_tokens": 102400
           }
-        }
-      },
-      {
-        "class": "NoCompaction",
-        "label": "NoCompaction",
-        "args": {
-          "context_profile": {
-            "version": 1,
-            "max_context_tokens": 128000,
-            "compression_trigger_tokens": 102400
-          }
-        }
+        },
+        "label": "HostDefault"
       },
       {
         "class": "ComplexityTrap",
@@ -470,20 +487,6 @@
           }
         },
         "label": "AgentFoldSource"
-      },
-      {
-        "class": "SWEPruner",
-        "args": {
-          "threshold": 0.5,
-          "min_chars": 500,
-          "chunk_overlap_tokens": 50,
-          "context_profile": {
-            "version": 1,
-            "max_context_tokens": 128000,
-            "compression_trigger_tokens": 102400
-          }
-        },
-        "label": "SWEPruner"
       },
       {
         "class": "TokenPilotLifecycle",
@@ -624,25 +627,14 @@
     "methods": [
       {
         "class": "HostDefault",
-        "label": "HostDefault",
         "args": {
           "context_profile": {
             "version": 1,
             "max_context_tokens": 128000,
             "compression_trigger_tokens": 102400
           }
-        }
-      },
-      {
-        "class": "NoCompaction",
-        "label": "NoCompaction",
-        "args": {
-          "context_profile": {
-            "version": 1,
-            "max_context_tokens": 128000,
-            "compression_trigger_tokens": 102400
-          }
-        }
+        },
+        "label": "HostDefault"
       },
       {
         "class": "ComplexityTrap",
@@ -745,20 +737,6 @@
           }
         },
         "label": "AgentFoldSource"
-      },
-      {
-        "class": "SWEPruner",
-        "args": {
-          "threshold": 0.5,
-          "min_chars": 500,
-          "chunk_overlap_tokens": 50,
-          "context_profile": {
-            "version": 1,
-            "max_context_tokens": 128000,
-            "compression_trigger_tokens": 102400
-          }
-        },
-        "label": "SWEPruner"
       },
       {
         "class": "TokenPilotLifecycle",
@@ -912,12 +890,11 @@
     "scope": "declared-rate estimates; provider cache writes, long-context multipliers, tiers and host compute require applicable rate declarations"
   },
   "gates": [
-    "Explicitly resume only after real-host trigger, provider-token conformance, complete cost and cleanup acceptance under paper-context-128k-20261014-v2; legacy plans are superseded",
+    "Explicitly resume only after real-host trigger, provider-token conformance, complete cost and cleanup acceptance under paper-context-128k-20261014-v3; legacy plans are superseded",
     "Freeze a new task cohort with no artificial agent call or elapsed-time cap",
-    "Configure real author SWE-Pruner service; no heuristic substitute",
     "Record all source adaptations and trained-policy omissions",
     "Complete native host tool, pricing and cleanup preflight",
-    "Run only the fixed paper-cohort methods and the two controls, one complete job at a time"
+    "Run only the fixed paper-cohort methods (extra-model methods left out) and the HostDefault control, one complete job at a time"
   ],
   "families": [
     {
@@ -1035,7 +1012,6 @@
       "ComplexityTrap",
       "ComplexityTrapSummary",
       "ComplexityTrapHybrid",
-      "SWEPruner",
       "ReSumSource",
       "TACO",
       "ACM",

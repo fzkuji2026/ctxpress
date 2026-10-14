@@ -1,19 +1,15 @@
 {
   "version": "online-context-papers-20261012-v2",
   "context_profile": {
-    "version": "paper-context-128k-20261014-v2",
+    "version": "paper-context-128k-20261014-v3",
     "context": {
       "version": 1,
       "max_context_tokens": 128000,
       "compression_trigger_tokens": 102400
     },
     "counting": "complete rendered agent input; shared chars/4 and media estimate, not exact provider tokens",
-    "scope": "Shared agent and host-compaction input limit. A full method replaces the host native compaction; a local method keeps it. Auxiliary-model inputs are not truncated to fit. Per-call generation limits are unchanged.",
-    "overflow": {
-      "rule": "oldest-tool-outputs-v1",
-      "quantum_tokens": 8192,
-      "description": "Oldest tool outputs replaced by a notice until the request fits; no model call; every use recorded."
-    },
+    "scope": "Shared agent input limit. Every method keeps the host native compaction at the window as the only fallback; ctxpress never cuts or refuses an agent request, and a request over the window is forwarded and recorded (over_limit). Auxiliary-model inputs over the window fail and are recorded. Per-call generation limits are unchanged.",
+    "fallback": "host native compaction",
     "external_request_or_time_caps": false,
     "methods": [
       {
@@ -27,18 +23,6 @@
           }
         },
         "note": "Control: the host alone; its native compaction at the 128000 window."
-      },
-      {
-        "method": "NoCompaction",
-        "role": "full",
-        "args": {
-          "context_profile": {
-            "version": 1,
-            "max_context_tokens": 128000,
-            "compression_trigger_tokens": 102400
-          }
-        },
-        "note": "Control: no method and no native compaction; only the shared overflow rule."
       },
       {
         "method": "ComplexityTrap",
@@ -561,8 +545,10 @@
   "paper_count": 16,
   "method_count": 18,
   "controls": [
-    "HostDefault",
-    "NoCompaction"
+    "HostDefault"
+  ],
+  "extra_model_methods": [
+    "SWEPruner"
   ],
   "scope": "Online interaction-history and tool-output compression with public author code; fixed cohort.",
   "evidence": "Source-function comparisons and host contract tests are not trained-policy or real benchmark equivalence.",
@@ -577,17 +563,6 @@
         }
       },
       "label": "HostDefault"
-    },
-    {
-      "class": "NoCompaction",
-      "args": {
-        "context_profile": {
-          "version": 1,
-          "max_context_tokens": 128000,
-          "compression_trigger_tokens": 102400
-        }
-      },
-      "label": "NoCompaction"
     },
     {
       "class": "ComplexityTrap",
@@ -690,20 +665,6 @@
         }
       },
       "label": "AgentFoldSource"
-    },
-    {
-      "class": "SWEPruner",
-      "args": {
-        "threshold": 0.5,
-        "min_chars": 500,
-        "chunk_overlap_tokens": 50,
-        "context_profile": {
-          "version": 1,
-          "max_context_tokens": 128000,
-          "compression_trigger_tokens": 102400
-        }
-      },
-      "label": "SWEPruner"
     },
     {
       "class": "TokenPilotLifecycle",

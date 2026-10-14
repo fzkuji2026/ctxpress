@@ -15,7 +15,7 @@ def main(argv=None):
     p = sub.add_parser('paper-methods', help='inspect the fixed paper cohort or prepare a new shared evaluation config; never run')
     p.add_argument('--config', help='existing benchmark configuration to copy; original is untouched')
     p.add_argument('--output', help='new configuration in the same directory, preserving relative paths')
-    p.add_argument('--pruner-url', help='real SWE-Pruner endpoint required when preparing all methods')
+    p.add_argument('--pruner-url', help='real SWE-Pruner endpoint; without it the extra-model method is left out')
     p = sub.add_parser('benchmarks', help='list built-in benchmark adapters and their supported scope')
     p.add_argument('--start-mode', choices=tasks.MODES)
     p.add_argument('--evidence', action='append', default=[], help='review.json bundle; repeat to show bounded real-run evidence')

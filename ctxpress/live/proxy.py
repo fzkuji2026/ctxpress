@@ -154,24 +154,9 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                 except (ValueError, AttributeError):
                     info['model'] = None
             if compact and body and context_profile and isinstance(parsed, dict):
-                # The host's compaction request obeys the same window and the same overflow rule.
-                from ctxpress.methods.experiment_context import check_body, fit_body
-                fitted, fallback = fit_body(parsed, context_profile)
-                try:
-                    info['experiment_context'] = check_body(fitted, context_profile)
-                except ContextLimitError as e:
-                    record(dict(type='experiment_context_limit', caller='native_compaction', t=time.time(),
-                                status=400, reason=str(e), upstream_sent=False,
-                                input_tokens_estimate=e.tokens, context_profile=e.profile))
-                    error = json.dumps({'error': {'type': 'invalid_request_error',
-                        'code': 'ctxpress_experiment_context_limit', 'message': str(e)}}).encode()
-                    self.send_response(400)
-                    self.send_header('Content-Type', 'application/json')
-                    self.send_header('Content-Length', str(len(error)))
-                    self.end_headers(); self.wfile.write(error); return
-                if fallback:
-                    info['experiment_context']['overflow_fallback'] = fallback
-                    body = json.dumps(fitted, ensure_ascii=False).encode("utf-8")
+                # The host's compaction request is measured against the same window, never cut.
+                from ctxpress.methods.experiment_context import check_body
+                info['experiment_context'] = check_body(parsed, context_profile)
             original, j, summarizer, dialect, key = None, None, None, "responses", None
             if method == "POST" and incoming.path.rstrip("/").endswith("/chat/completions") and body:
                 # Chat Completions (vLLM / LiteLLM agents): same method on flattened messages (ctxpress.live.chat)

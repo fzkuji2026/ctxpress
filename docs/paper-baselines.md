@@ -35,7 +35,7 @@
 - 后续方法取自这份清单。CliffCompaction、原生不压缩/压缩、自研成本策略、旧 AgentFold/ReSum/ACON/TokenPilot 近似版、长期记忆和静态文本压缩方案不进入新论文队列。保留其已有代码与冻结历史记录。
 - Complexity Trap 包含遮蔽、LLM 摘要、混合三个已发表配置，因此 16 篇对应 18 个配置。
 - `paper-context.protocol.json` 是新协议模板；所有任务待重新冻结，不继承旧实验的 169 或 49 个作业目标，不启动任何实验或扩大 benchmark 范围。新作业保持单并发。
-- SWE-Pruner 必须填写真实剪枝服务地址；无服务时配置生成失败，不得用定义行/理想上界代替真实论文方法。
+- SWE-Pruner 需要真实剪枝服务地址；不给地址时配置生成会把它排除（需要额外模型的方法另作一类比较），不得用定义行/理想上界代替真实论文方法。
 - `configs/experiment.protocol.json` 等旧协议只保留历史用途。新论文协议不强制加入 NoCompaction，也不附加 AutoCostModel。
 
 ## 统一入口

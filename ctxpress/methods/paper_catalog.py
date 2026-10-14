@@ -52,9 +52,14 @@ PAPERS = (
 )
 
 
-# Two controls run under the same window: the host's own compaction alone, and no method at all
-# (only the shared overflow rule). Each paper method is read against them.
-CONTROLS = ('HostDefault', 'NoCompaction')
+# The control runs under the same window: the host's own compaction alone. Each paper method is read against it.
+CONTROLS = ('HostDefault',)
+
+
+def needs_extra_model(paper):
+    """A method that needs its own deployed model is a different kind of comparison; it joins the
+    cohort only when that service is given explicitly."""
+    return bool(paper.get('requires'))
 
 
 def describe():
@@ -67,6 +72,7 @@ def describe():
     from ctxpress.methods.paper_profile import describe as profile_description
     return dict(version=VERSION, context_profile=profile_description(), papers=papers, paper_count=len(papers),
                 method_count=sum(len(p['methods']) for p in papers), controls=list(CONTROLS),
+                extra_model_methods=[name for p in PAPERS if needs_extra_model(p) for name in p['methods']],
                 scope='Online interaction-history and tool-output compression with public author code; fixed cohort.',
                 evidence='Source-function comparisons and host contract tests are not trained-policy or real benchmark equivalence.')
 
@@ -75,7 +81,8 @@ def method_entries(pruner_url=None, *, normalized=True):
     from ctxpress.methods import build
     from ctxpress.methods.paper_profile import arguments
     entries = []
-    for name in (*CONTROLS, *(name for paper in PAPERS for name in paper['methods'])):
+    papers = [paper for paper in PAPERS if pruner_url or not needs_extra_model(paper)]
+    for name in (*CONTROLS, *(name for paper in papers for name in paper['methods'])):
         args = arguments(name) if normalized else {}
         if name == 'SWEPruner' and pruner_url:
             args['url'] = pruner_url
@@ -104,7 +111,7 @@ def validate_entries(entries, require_services=True):
     return True
 
 
-def configure(base, pruner_url):
+def configure(base, pruner_url=None):
     """Replace an explicit new experiment's methods; never launch or alter old runs."""
     config = deepcopy(base)
     config['methods'] = method_entries(pruner_url)

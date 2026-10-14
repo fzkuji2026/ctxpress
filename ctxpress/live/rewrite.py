@@ -423,18 +423,14 @@ class Rewriter:
         return getattr(session.ctx.method, "context_profile", None) if session else None
 
     def check_context(self, body, info):
-        """Fit and check the final host body (the shared overflow rule, then the window); returns the body
-        to send. Adapters call again after unflattening."""
+        """Measure the final host body against the window (recorded, never cut); returns the body.
+        Adapters call again after unflattening."""
         if not info:
             return body
         profile = self.context_profile(info.get("session"))
         if profile:
-            from ctxpress.methods.experiment_context import check_body, fit_body
-            body, fallback = fit_body(body, profile)
+            from ctxpress.methods.experiment_context import check_body
             info["experiment_context"] = check_body(body, profile)
-            if fallback:
-                info["experiment_context"]["overflow_fallback"] = fallback
-                info["rendered_prompt_tokens"] = info["experiment_context"]["input_tokens_estimate"]
         return body
 
     def observe_response(self, info):
