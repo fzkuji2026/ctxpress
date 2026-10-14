@@ -16,6 +16,19 @@ HARBOR_RUNTIME_TESTS = {'test_deep_swe', 'test_harbor_catalog', 'test_harbor_dri
                         'test_swe_pro'}
 
 
+# Not in the default check: benchmark families the current experiments do not use, and the slowest
+# author-source comparisons. `pytest --all` (or `python tests/parallel.py --all`) runs them too.
+EXTENDED_TESTS = {'test_bigcode_bench', 'test_browsecomp', 'test_deep_swe', 'test_eval_code_compare', 'test_eval_families',
+                  'test_eval_harbor_compare', 'test_harbor_catalog', 'test_harbor_driver', 'test_harbor_gpu',
+                  'test_harbor_gpu_locks', 'test_harbor_modern', 'test_official_harbor', 'test_original_benchmarks',
+                  'test_poly_bench', 'test_pro_v1', 'test_swe_pro', 'test_swe_runner', 'test_terminal_science',
+                  'test_ports', 'test_complexity_trap_summary'}
+
+
+def pytest_addoption(parser):
+    parser.addoption('--all', action='store_true', help='also run the extended tests (other benchmarks, slow source comparisons)')
+
+
 def pytest_configure(config):
     config.addinivalue_line('markers', 'linux_only: tests the Linux container harness; skipped elsewhere')
 
@@ -23,6 +36,11 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(config, items):
     linux = pytest.mark.skip(reason='Linux container harness (POSIX paths, Docker mounts, process groups)')
     harbor = pytest.mark.skip(reason='the official Harbor and Pier runtimes require Python 3.12 or later')
+    if not config.getoption('--all'):
+        extended = [item for item in items if item.module.__name__.rsplit('.', 1)[-1] in EXTENDED_TESTS]
+        if extended:
+            config.hook.pytest_deselected(items=extended)
+            items[:] = [item for item in items if item not in extended]
     for item in items:
         if not sys.platform.startswith('linux') and item.get_closest_marker('linux_only'):
             item.add_marker(linux)

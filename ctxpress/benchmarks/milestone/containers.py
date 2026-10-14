@@ -16,8 +16,48 @@ def check_prepared_tools(container):
                            + ', '.join(missing) + '; prepare and freeze a new image before retrying')
 
 
+# On overlayfs every chown copies the whole file into the container layer, even when the owner is
+# unchanged: the author's `chown -R /testbed` alone took ~500 s per fresh Navidrome container.
+CHOWN_CHANGED = '''
+def _ctxpress_chown_changed(command, check=False, **_):
+    """Same end state as `chown -R UID:GID PATH` (physical walk; a link is changed itself), but an
+    entry is touched only when its owner or group differs, or it is a regular file with set-id bits,
+    which chown clears. Entries already in that state stay in the image layer."""
+    import os, stat, subprocess
+    owner, path = command[2], command[3]
+    uid, gid = (int(part) for part in owner.split(':'))
+    errors = []
+    def visit(entry):
+        try:
+            st = os.lstat(entry)
+            if (st.st_uid != uid or st.st_gid != gid or
+                    (stat.S_ISREG(st.st_mode) and st.st_mode & (stat.S_ISUID | stat.S_ISGID))):
+                os.lchown(entry, uid, gid)
+        except OSError as error:
+            errors.append(str(error))
+    visit(path)
+    if os.path.isdir(path) and not os.path.islink(path):
+        for root, dirs, files in os.walk(path, onerror=lambda error: errors.append(str(error))):
+            for name in dirs + files:
+                visit(os.path.join(root, name))
+    result = subprocess.CompletedProcess(command, 1 if errors else 0, '', '\\n'.join(errors))
+    if check and errors:
+        raise subprocess.CalledProcessError(1, command, '', result.stderr)
+    return result
+'''
+
+
+def _recursive_chown(node):
+    return (isinstance(node,ast.Call) and isinstance(node.func,ast.Attribute) and node.func.attr=='run' and
+            isinstance(node.func.value,ast.Name) and node.func.value.id=='subprocess' and node.args and
+            isinstance(node.args[0],ast.List) and len(node.args[0].elts)==4 and
+            all(isinstance(e,ast.Constant) for e in node.args[0].elts[:2]) and
+            [e.value for e in node.args[0].elts[:2]]==['chown','-R'])
+
+
 def prepared_initialization(source):
-    """Remove the one author sudo installer, preserving user/cache/git setup."""
+    """Remove the one author sudo installer and make each recursive chown skip entries already in
+    their final state; user/cache/git setup and the resulting ownership are unchanged."""
     tree=ast.parse(source);found=[]
     for index,node in enumerate(tree.body):
         if isinstance(node,ast.Try):
@@ -25,6 +65,13 @@ def prepared_initialization(source):
             if {'which','sudo','apt-get','apk'}<=strings:found.append(index)
     if len(found)!=1:raise ValueError('native sudo initialization contract changed')
     tree.body[found[0]:found[0]+1]=ast.parse("if shutil.which('sudo') is None:\n    raise RuntimeError('prepared native image requires sudo')").body
+    calls=[node for node in ast.walk(tree) if _recursive_chown(node)]
+    lists=[node for node in ast.walk(tree) if isinstance(node,ast.List) and len(node.elts)>=2 and
+           all(isinstance(e,ast.Constant) for e in node.elts[:2]) and [e.value for e in node.elts[:2]]==['chown','-R']]
+    if not calls or len(lists)!=len(calls):raise ValueError('native recursive chown contract changed')
+    for call in calls:
+        call.func=ast.Name(id='_ctxpress_chown_changed',ctx=ast.Load())
+    tree.body[0:0]=ast.parse(CHOWN_CHANGED).body
     return ast.unparse(tree)
 
 

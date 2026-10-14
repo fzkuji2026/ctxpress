@@ -6,8 +6,12 @@
 
 ```bash
 pip install -e '.[test,sim,itemmodel]'
-python -m pytest tests -q -rs
+python tests/parallel.py          # 默认检查：多进程并行，约 3 分钟
+python tests/parallel.py --all    # 加上扩展测试，约 10 分钟
+python -m pytest tests -q -rs     # 单进程，同默认检查的范围
 ```
+
+默认检查不含扩展测试：当前实验不用的基准族（Harbor/Terminal-Bench、SWE-bench Pro、PolyBench、BigCodeBench、DeepSWE、BrowseComp 等）和最慢的作者源码对照，名单在 `tests/conftest.py` 的 `EXTENDED_TESTS`；`--all` 时一并运行。`tests/parallel.py` 按 `tests/durations.json` 的历史用时分配进程，新增慢测试后用 `--record` 更新。
 
 录制数据与作者对照测试读取 `CTXPRESS_DATA`（默认仓库旁的 `../data`）；缺少数据或平台条件的用例会跳过并说明原因，跳过不算已通过对照。CWL / DTOC 的作者 TypeScript 对照需要支持 `--experimental-transform-types` 的 Node（22.6 及以上）。评测相关的 Linux 专用用例在其他系统上跳过（`linux_only` 标记）；`tests/test_layering.py` 检查包之间的依赖方向。与各论文原版代码逐条对照的脚本见 [repro/README.md](../repro/README.md)。
 

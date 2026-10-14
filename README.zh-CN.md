@@ -159,7 +159,7 @@ ctxpress analyze runs/my-run --output runs/my-run-analysis
 
 ```bash
 pip install -e ".[test]"
-python -m pytest tests -q
+python tests/parallel.py            # 并行默认检查（约 3 分钟）；--all 加上扩展测试
 ctxpress smoke --output runs/smoke     # 每个方法经过真实代理，对接本地假模型各跑一遍
 ```
 

@@ -177,7 +177,7 @@ Windows). See [docs/evaluation.md](docs/evaluation.md) and [docs/benchmarks.md](
 
 ```bash
 pip install -e ".[test]"
-python -m pytest tests -q
+python tests/parallel.py            # parallel default check (~3 min); --all adds the extended tests
 ctxpress smoke --output runs/smoke     # every method through the real proxy against a local fake model
 ```
 

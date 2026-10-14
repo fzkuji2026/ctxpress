@@ -111,12 +111,37 @@ except Exception:
     pass
 try:
     print('native fakeroot and cache setup')
+    subprocess.run(['chown', '-R', f'{uid}:{gid}', '/testbed'], capture_output=True, text=True)
 except Exception:
     pass
 '''
     actual=prepared_initialization(source);ast.parse(actual)
     assert 'native fakeroot and cache setup' in actual and 'apt-get' not in actual and 'apk' not in actual
+    assert "_ctxpress_chown_changed(['chown', '-R', f'{uid}:{gid}', '/testbed']" in actual
     with pytest.raises(ValueError,match='contract changed'):prepared_initialization('print("new installer shape")')
+    no_chown=source.replace("    subprocess.run(['chown', '-R', f'{uid}:{gid}', '/testbed'], capture_output=True, text=True)\n",'')
+    with pytest.raises(ValueError,match='recursive chown contract changed'):prepared_initialization(no_chown)
+
+
+def test_recursive_chown_touches_only_entries_not_in_their_final_state(tmp_path,monkeypatch):
+    import os,stat,subprocess
+    from ctxpress.benchmarks.milestone.containers import CHOWN_CHANGED
+    space={};exec(CHOWN_CHANGED,space);chown=space['_ctxpress_chown_changed']
+    (tmp_path/'tree/sub').mkdir(parents=True)
+    for name in ('a','sub/b','setid'):(tmp_path/'tree'/name).write_text('x')
+    os.chmod(tmp_path/'tree/setid',0o2755)
+    os.symlink('a',tmp_path/'tree/link')
+    me=f'{os.getuid()}:{os.getgid()}';touched=[]
+    real=os.lchown
+    monkeypatch.setattr(os,'lchown',lambda path,uid,gid:touched.append(os.path.relpath(path,tmp_path/'tree')) or real(path,uid,gid))
+    result=chown(['chown','-R',me,str(tmp_path/'tree')],capture_output=True,text=True)
+    assert result.returncode==0 and touched==['setid']  # only the set-id file, which chown would change
+    stats=[os.lstat(tmp_path/'tree'/n) for n in ('a','sub','sub/b','link')]
+    assert all((s.st_uid,s.st_gid)==(os.getuid(),os.getgid()) for s in stats)
+    failed=chown(['chown','-R','0:0',str(tmp_path/'tree')]) if os.getuid() else None
+    if failed is not None:
+        assert failed.returncode==1 and failed.stderr
+        with pytest.raises(subprocess.CalledProcessError):chown(['chown','-R','0:0',str(tmp_path/'tree')],check=True)
 
 
 def test_native_combined_host_gateway_is_removed_only_from_agent_launch(tmp_path,monkeypatch):
