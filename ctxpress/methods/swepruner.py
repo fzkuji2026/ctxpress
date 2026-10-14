@@ -82,6 +82,7 @@ def render(text, query, prune, threshold=0.5, min_chars=500, chunk_overlap_token
 class SWEPruner(Method):
     """SWE-Pruner (2601.16746): outputs of commands that carry a focus question are pruned to the relevant lines
     by a small model when they enter the context."""
+    context_role = 'local'  # edits tool outputs only; the host keeps its native compaction
     source = "arXiv 2601.16746"
     instructions = INSTRUCTIONS
 

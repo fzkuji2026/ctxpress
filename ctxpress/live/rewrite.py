@@ -412,7 +412,7 @@ class Rewriter:
                     request_output_limit=body.get('max_output_tokens'),
                     rendered_prompt_tokens=billable_chars(body)/4)
         if check_context:
-            self.check_context(body, info)
+            body = self.check_context(body, info)
         if self.log:
             with open(self.log, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(info, ensure_ascii=False) + "\n")
@@ -423,13 +423,19 @@ class Rewriter:
         return getattr(session.ctx.method, "context_profile", None) if session else None
 
     def check_context(self, body, info):
-        """Check the final host body; adapters call again after unflattening."""
+        """Fit and check the final host body (the shared overflow rule, then the window); returns the body
+        to send. Adapters call again after unflattening."""
         if not info:
-            return
+            return body
         profile = self.context_profile(info.get("session"))
         if profile:
-            from ctxpress.methods.experiment_context import check_body
+            from ctxpress.methods.experiment_context import check_body, fit_body
+            body, fallback = fit_body(body, profile)
             info["experiment_context"] = check_body(body, profile)
+            if fallback:
+                info["experiment_context"]["overflow_fallback"] = fallback
+                info["rendered_prompt_tokens"] = info["experiment_context"]["input_tokens_estimate"]
+        return body
 
     def observe_response(self, info):
         """Deliver paired provider usage; absent usage never becomes zero."""

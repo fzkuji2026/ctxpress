@@ -8,7 +8,8 @@ import pytest
 
 from ctxpress.methods import build
 from ctxpress.methods.paper_catalog import method_entries
-from ctxpress.methods.experiment_context import PROFILE, ContextLimitError, check_body
+from ctxpress.methods.experiment_context import (PROFILE, QUANTUM_TOKENS, ContextLimitError, check_body,
+                                                 fit_body, instructions, role)
 from ctxpress.live.rewrite import Rewriter
 
 
@@ -21,19 +22,68 @@ def factory(name='AgentFoldSource', **args):
         {'class': name, 'args': dict(args, context_profile=PROFILE)})
 
 
-def test_all_eighteen_profiles_reach_runtime_and_clone_without_losing_limits():
+LOCAL = {'HostDefault', 'ComplexityTrap', 'AgentDiet', 'SWEPruner', 'TokenPilotLifecycle', 'TACO', 'DTOC'}
+
+
+def test_all_profiles_reach_runtime_and_clone_without_losing_limits():
     entries = method_entries('http://127.0.0.1:1/prune')
-    assert len(entries) == 18
+    assert len(entries) == 20 and [e['class'] for e in entries[:2]] == ['HostDefault', 'NoCompaction']
     for entry in entries:
         m = copy.deepcopy(build(entry))
         assert m.context_profile == PROFILE
         assert m.codex_config['model_context_window'] == 128000
-        assert m.unbounded and not m.allow_native_compaction  # no hidden fallback
-        assert m.requires_host_view
+        assert m.unbounded and m.requires_host_view  # no ctxpress summary fallback
+        local = entry['class'] in LOCAL
+        assert role(m) == ('local' if local else 'full')
+        # A local method keeps the host's own compaction and threshold; a full method replaces it.
+        assert m.allow_native_compaction is local
+        assert ('model_auto_compact_token_limit' in m.codex_config) is not local
+        assert ('native compaction remains active' in instructions(m)) is local
     # Old author configs have no experimental layer, and no defaults were overwritten.
     assert build({'class': 'ACONSource'}).t_hist == 4096
     assert build({'class': 'FoldActSource'}).max_obs_length == 4096
     assert not hasattr(build({'class': 'CWL'}), 'context_profile')
+
+
+def history(outputs, size=16000):
+    request = body()
+    for i in range(outputs):
+        request['input'] += [dict(type='function_call', call_id=str(i), name='exec', arguments='{}'),
+                             dict(type='function_call_output', call_id=str(i), output='x' * size)]
+    return request
+
+
+def test_overflow_rule_omits_oldest_outputs_in_steps_and_keeps_the_rest():
+    request = history(40)
+    assert fit_body(history(20), PROFILE) == (history(20), None)
+    fitted, record = fit_body(request, PROFILE)
+    assert record['outputs_omitted'] == 11 and not record['newest_output_truncated']
+    assert record['tokens_before'] > 128000 >= check_body(fitted, PROFILE)['input_tokens_estimate'] == record['tokens_after']
+    # At least the overflow, rounded up to one step; calls, the user message and later outputs are unchanged.
+    assert record['tokens_before'] - record['tokens_after'] >= QUANTUM_TOKENS
+    omitted = [item for item in fitted['input'] if item.get('output', '').startswith('[ctxpress:')]
+    assert len(omitted) == 11 and fitted['input'][0] == request['input'][0]
+    assert fitted['input'][23:] == request['input'][23:]
+    assert request['input'][2]['output'] == 'x' * 16000  # the caller's body is not mutated
+    # One more step keeps the earlier cut, so the cached prefix survives.
+    longer = copy.deepcopy(request)
+    longer['input'] += history(1, 4000)['input'][1:]
+    assert fit_body(longer, PROFILE)[0]['input'][:len(fitted['input'])] == fitted['input']
+
+
+def test_overflow_rule_shortens_the_newest_output_only_when_nothing_else_is_left():
+    fitted, record = fit_body(history(1, 600000), PROFILE)
+    text = fitted['input'][-1]['output']
+    assert record['newest_output_truncated'] and record['outputs_omitted'] == 0
+    assert text.startswith('x') and text.endswith('x') and 'characters omitted' in text
+    assert check_body(fitted, PROFILE)['input_tokens_estimate'] <= 128000
+
+
+def test_rewriter_sends_the_fitted_body_and_records_the_fallback():
+    result, info = Rewriter(factory('NoCompaction')).rewrite_body(history(40), 'session')
+    fallback = info['experiment_context']['overflow_fallback']
+    assert fallback['outputs_omitted'] == 11 and check_body(result, PROFILE)['input_tokens_estimate'] <= 128000
+    assert info['rendered_prompt_tokens'] == info['experiment_context']['input_tokens_estimate']
 
 
 def test_maximum_is_decimal_and_counts_fixed_prompt_and_tools():
@@ -109,6 +159,46 @@ def test_explicit_context_limit_error_cannot_fall_back_to_forwarding(tmp_path):
         server.shutdown(); server.server_close(); thread.join(timeout=2)
     row = json.loads(log.read_text().splitlines()[-1])
     assert row['type'] == 'experiment_context_limit' and row['upstream_sent'] is False
+
+
+def test_host_compaction_request_obeys_the_same_window_and_overflow_rule(tmp_path):
+    from http.server import BaseHTTPRequestHandler
+    from ctxpress.live.proxy import ThreadingHTTPServer, make_handler
+    received = []
+
+    class Upstream(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            received.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+            reply = json.dumps({'output': []}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(reply)))
+            self.end_headers(); self.wfile.write(reply)
+
+    upstream = ThreadingHTTPServer(('127.0.0.1', 0), Upstream)
+    log = tmp_path / 'requests.jsonl'
+    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(
+        Rewriter(factory('HostDefault')), f'http://127.0.0.1:{upstream.server_port}', None, str(log),
+        context_profile=PROFILE))
+    threads = [threading.Thread(target=s.serve_forever, daemon=True) for s in (upstream, server)]
+    for thread in threads:
+        thread.start()
+    try:
+        connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=10)
+        connection.request('POST', '/responses/compact', json.dumps(history(40)),
+                           {'Content-Type': 'application/json'})
+        assert connection.getresponse().status == 200
+        connection.close()
+    finally:
+        for s in (server, upstream):
+            s.shutdown(); s.server_close()
+    assert check_body(received[0], PROFILE)['input_tokens_estimate'] <= 128000
+    assert received[0] == fit_body(history(40), PROFILE)[0]
+    row = next(json.loads(line) for line in log.read_text().splitlines() if 'native_compaction' in line)
+    assert row['experiment_context']['overflow_fallback']['outputs_omitted'] == 11
 
 
 @pytest.mark.parametrize('profile', [dict(PROFILE, max_context_tokens=True),

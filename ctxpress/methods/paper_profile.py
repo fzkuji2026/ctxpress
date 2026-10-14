@@ -2,11 +2,13 @@
 from copy import deepcopy
 from ctxpress.methods.experiment_context import PROFILE
 
-VERSION = 'paper-context-128k-20261013-v1'
+VERSION = 'paper-context-128k-20261014-v2'
 
 # Counts, relevance probabilities and character thresholds are not token windows.
 # Do not turn a paper's rolling filter or autonomous operation into another algorithm.
 SETTINGS = {
+    'HostDefault': {},
+    'NoCompaction': {},
     'ComplexityTrap': dict(n=10, pin_spec=False, polling=1),
     'ComplexityTrapSummary': dict(n=21, m=10),
     'ComplexityTrapHybrid': dict(n=43, m=10, w=10, polling=1),
@@ -32,6 +34,8 @@ SETTINGS = {
 }
 
 NOTES = {
+    'HostDefault': 'Control: the host alone; its native compaction at the 128000 window.',
+    'NoCompaction': 'Control: no method and no native compaction; only the shared overflow rule.',
     'ComplexityTrap': 'Rolling masking retains 10 latest outputs; no global length trigger in this algorithm.',
     'ComplexityTrapSummary': 'Author 21+10-turn checkpoint schedule retained; 102400 is not a substitute for turn counts.',
     'ComplexityTrapHybrid': 'Author 43+10-turn summary and latest-10 masking retained.',
@@ -58,8 +62,16 @@ def arguments(name):
 
 
 def describe():
+    from ctxpress.methods import REGISTRY
+    from ctxpress.methods.experiment_context import FALLBACK_RULE, QUANTUM_TOKENS, role
     return dict(version=VERSION, context=deepcopy(PROFILE),
                 counting='complete rendered agent input; shared chars/4 and media estimate, not exact provider tokens',
-                scope='Shared agent and auxiliary-model input limit; source history is not silently truncated to fit. Per-call generation limits are unchanged.',
-                native_fallback=False, external_request_or_time_caps=False,
-                methods=[dict(method=name, args=arguments(name), note=NOTES[name]) for name in SETTINGS])
+                scope=('Shared agent and host-compaction input limit. A full method replaces the host native '
+                       'compaction; a local method keeps it. Auxiliary-model inputs are not truncated to fit. '
+                       'Per-call generation limits are unchanged.'),
+                overflow=dict(rule=FALLBACK_RULE, quantum_tokens=QUANTUM_TOKENS,
+                              description='Oldest tool outputs replaced by a notice until the request fits; '
+                                          'no model call; every use recorded.'),
+                external_request_or_time_caps=False,
+                methods=[dict(method=name, role=role(REGISTRY[name]), args=arguments(name), note=NOTES[name])
+                         for name in SETTINGS])

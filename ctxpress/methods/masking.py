@@ -9,6 +9,7 @@ class ComplexityTrap(Method):
     placeholders (observation masking). As SWE-agent's LastNObservations in the authors' fork: the task is never
     masked, `polling` > 1 updates the cut only every `polling` outputs (cache friendly), and the placeholder reads
     "Old environment output: (K lines omitted)"."""
+    context_role = 'local'  # edits tool outputs only; the host keeps its native compaction
     source = "arXiv 2508.21433"
     budget_spec = BudgetSpec("n", "outputs", "recent tool outputs", 10)
 

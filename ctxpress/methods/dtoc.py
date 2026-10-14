@@ -102,6 +102,7 @@ class DTOC(Method):
     assembled, so a manage_context call sees the keys of the previous request; its own result is an output too.
     The keys and visibility live in the proxy: the result text the agent reads is the fork's (the tool process,
     which cannot see the conversation, only acknowledges). `strategy`: also give the /dtoc command's guidance."""
+    context_role = 'local'  # edits tool outputs only; the host keeps its native compaction
     source = "arXiv 2609.26121"
     agent_tools = ({"name": "manage_context", "description": MANAGE_DESCRIPTION, "inputSchema": MANAGE_SCHEMA,
                     "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False}},)

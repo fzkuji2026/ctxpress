@@ -34,6 +34,7 @@ class AgentDiet(Method):
     steps. Later prompts show a rewritten step in its original form, as the authors' MessageManager does.
     One reflection per request, as one per agent step in the original: when a session starts with earlier history
     (a resumed boundary), only step s - a of the first request and the steps after it are considered."""
+    context_role = 'local'  # edits tool outputs only; the host keeps its native compaction
     source = "arXiv 2509.23586"
     requires_summary = True
 

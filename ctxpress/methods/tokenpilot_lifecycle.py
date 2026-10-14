@@ -56,6 +56,7 @@ ESTIMATOR_PROMPT = (
 
 
 class TokenPilotLifecycle(Method):
+    context_role = 'local'  # edits tool outputs only; the host keeps its native compaction
     source = "arXiv 2606.17016"
     name = "TokenPilot (lifecycle adaptation)"
     requires_summary = True

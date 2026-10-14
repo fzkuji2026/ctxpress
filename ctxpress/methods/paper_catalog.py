@@ -52,6 +52,11 @@ PAPERS = (
 )
 
 
+# Two controls run under the same window: the host's own compaction alone, and no method at all
+# (only the shared overflow rule). Each paper method is read against them.
+CONTROLS = ('HostDefault', 'NoCompaction')
+
+
 def describe():
     from ctxpress.methods import REGISTRY
     papers = deepcopy(list(PAPERS))
@@ -61,7 +66,7 @@ def describe():
         paper['full_paper_reproduction'] = False
     from ctxpress.methods.paper_profile import describe as profile_description
     return dict(version=VERSION, context_profile=profile_description(), papers=papers, paper_count=len(papers),
-                method_count=sum(len(p['methods']) for p in papers),
+                method_count=sum(len(p['methods']) for p in papers), controls=list(CONTROLS),
                 scope='Online interaction-history and tool-output compression with public author code; fixed cohort.',
                 evidence='Source-function comparisons and host contract tests are not trained-policy or real benchmark equivalence.')
 
@@ -70,20 +75,19 @@ def method_entries(pruner_url=None, *, normalized=True):
     from ctxpress.methods import build
     from ctxpress.methods.paper_profile import arguments
     entries = []
-    for paper in PAPERS:
-        for name in paper['methods']:
-            args = arguments(name) if normalized else {}
-            if name == 'SWEPruner' and pruner_url:
-                args['url'] = pruner_url
-            entry = {'class': name, 'args': args, 'label': name}
-            build(entry)
-            entries.append(entry)
+    for name in (*CONTROLS, *(name for paper in PAPERS for name in paper['methods'])):
+        args = arguments(name) if normalized else {}
+        if name == 'SWEPruner' and pruner_url:
+            args['url'] = pruner_url
+        entry = {'class': name, 'args': args, 'label': name}
+        build(entry)
+        entries.append(entry)
     return entries
 
 
 def validate_entries(entries, require_services=True):
     from ctxpress.methods import build
-    allowed = {name for p in PAPERS for name in p['methods']}
+    allowed = {name for p in PAPERS for name in p['methods']} | set(CONTROLS)
     if not isinstance(entries, list) or not entries:
         raise ValueError('paper cohort requires a nonempty methods list')
     seen = set()
@@ -107,5 +111,5 @@ def configure(base, pruner_url):
     validate_entries(config['methods'])
     config['workers'] = 1
     if isinstance(config.get('comparison'), dict):
-        config['comparison']['reference'] = 'ComplexityTrap'
+        config['comparison']['reference'] = 'HostDefault'
     return config

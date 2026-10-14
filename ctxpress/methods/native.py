@@ -27,6 +27,7 @@ class HostDefault(Method):
     """The host exactly as shipped: no request is rewritten and none of its native compaction settings (threshold,
     scope, on/off) is overridden. The proxy only records usage. This is the baseline every method is compared with
     on a pinned host version."""
+    context_role = 'local'  # rewrites nothing; the host keeps its native compaction
     name = "宿主默认"
     source = "宿主（Codex / Claude Code）出厂设置"
     host_compaction = "default"               # evaluation launchers pass no compaction override

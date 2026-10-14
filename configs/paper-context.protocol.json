@@ -323,6 +323,8 @@
   },
   "method_pilot": {
     "method_classes": [
+      "HostDefault",
+      "NoCompaction",
       "ComplexityTrap",
       "ComplexityTrapSummary",
       "ComplexityTrapHybrid",
@@ -346,103 +348,302 @@
     "workers": 1,
     "methods": [
       {
+        "class": "HostDefault",
+        "label": "HostDefault",
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        }
+      },
+      {
+        "class": "NoCompaction",
+        "label": "NoCompaction",
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        }
+      },
+      {
         "class": "ComplexityTrap",
-        "args": {},
+        "args": {
+          "n": 10,
+          "pin_spec": false,
+          "polling": 1,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "ComplexityTrap"
       },
       {
         "class": "ComplexityTrapSummary",
-        "args": {},
+        "args": {
+          "n": 21,
+          "m": 10,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "ComplexityTrapSummary"
       },
       {
         "class": "ComplexityTrapHybrid",
-        "args": {},
+        "args": {
+          "n": 43,
+          "m": 10,
+          "w": 10,
+          "polling": 1,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "ComplexityTrapHybrid"
       },
       {
         "class": "AgentDiet",
         "args": {
-          "reflect_model": "gpt-6-luna"
+          "a": 2,
+          "b": 1,
+          "threshold": 500,
+          "min_saving": 400,
+          "max_ratio": 0.8,
+          "reflect_model": "gpt-6-luna",
+          "bypass_filter": false,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
         },
         "label": "AgentDiet"
       },
       {
         "class": "ACONSource",
-        "args": {},
+        "args": {
+          "t_hist": 102400,
+          "trigger_tokens": 102400,
+          "t_obs": 25600,
+          "keep_turns": 2,
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "ACONSource"
       },
       {
         "class": "ReSumSource",
-        "args": {},
+        "args": {
+          "context_k": 125,
+          "trigger_tokens": 102400,
+          "interval": null,
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "ReSumSource"
       },
       {
         "class": "AgentFoldSource",
-        "args": {},
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "AgentFoldSource"
       },
       {
         "class": "SWEPruner",
         "args": {
-          "url": "http://127.0.0.1:18765/prune"
+          "threshold": 0.5,
+          "min_chars": 500,
+          "chunk_overlap_tokens": 50,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
         },
         "label": "SWEPruner"
       },
       {
         "class": "TokenPilotLifecycle",
-        "args": {},
+        "args": {
+          "entry_budget": 25600,
+          "batch_turns": 8,
+          "min_chars": 256,
+          "estimator_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "TokenPilotLifecycle"
       },
       {
         "class": "ACM",
-        "args": {},
+        "args": {
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "ACM"
       },
       {
         "class": "CWL",
-        "args": {},
+        "args": {
+          "budget": 102400,
+          "full_context": true,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "CWL"
       },
       {
         "class": "DTOC",
-        "args": {},
+        "args": {
+          "strategy": true,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "DTOC"
       },
       {
         "class": "ContextFoldingTools",
-        "args": {},
+        "args": {
+          "max_branches": null,
+          "branch_max_turns": null,
+          "branch_timeout": null,
+          "branch_tokens": 25600,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "ContextFoldingTools"
       },
       {
         "class": "FoldActSource",
-        "args": {},
+        "args": {
+          "max_model_len": 128000,
+          "selection_tokens": 102400,
+          "max_obs_length": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "FoldActSource"
       },
       {
         "class": "TACO",
-        "args": {},
+        "args": {
+          "uncovered_threshold": 3000,
+          "freeze_rules": false,
+          "task_category": "software-engineering",
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "TACO"
       },
       {
         "class": "CoMem",
-        "args": {},
+        "args": {
+          "trigger_tokens": 102400,
+          "interval": 1,
+          "lag": 1,
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "CoMem"
       },
       {
         "class": "LongSeeker",
-        "args": {},
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "LongSeeker"
       },
       {
         "class": "ZipRL",
-        "args": {},
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        },
         "label": "ZipRL"
       }
     ]
   },
   "comparison": {
     "methods": [
+      {
+        "class": "HostDefault",
+        "label": "HostDefault",
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        }
+      },
+      {
+        "class": "NoCompaction",
+        "label": "NoCompaction",
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 128000,
+            "compression_trigger_tokens": 102400
+          }
+        }
+      },
       {
         "class": "ComplexityTrap",
         "args": {
@@ -711,12 +912,12 @@
     "scope": "declared-rate estimates; provider cache writes, long-context multipliers, tiers and host compute require applicable rate declarations"
   },
   "gates": [
-    "Explicitly resume only after real-host trigger, provider-token conformance, complete cost and cleanup acceptance under paper-context-128k-20261013-v1; legacy plans are superseded",
+    "Explicitly resume only after real-host trigger, provider-token conformance, complete cost and cleanup acceptance under paper-context-128k-20261014-v2; legacy plans are superseded",
     "Freeze a new task cohort with no artificial agent call or elapsed-time cap",
     "Configure real author SWE-Pruner service; no heuristic substitute",
     "Record all source adaptations and trained-policy omissions",
     "Complete native host tool, pricing and cleanup preflight",
-    "Run only the fixed paper-cohort methods, one complete job at a time"
+    "Run only the fixed paper-cohort methods and the two controls, one complete job at a time"
   ],
   "families": [
     {

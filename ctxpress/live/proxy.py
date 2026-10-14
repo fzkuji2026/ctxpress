@@ -79,7 +79,7 @@ def is_native_compaction(body, turn_metadata=None, compact_prompt=None):
 
 def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_retries=0,
                  allow_native_compaction=True, compact_prompt=None, method_tools=None, upstream_key=None,
-                 chat_session=None, chat_volatile=None):
+                 chat_session=None, chat_volatile=None, context_profile=None):
     up = urllib.parse.urlsplit(upstream)
     vp = urllib.parse.urlsplit(via) if via else None
     lock = threading.Lock()
@@ -153,6 +153,25 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                     info['model'] = json.loads(body).get('model')
                 except (ValueError, AttributeError):
                     info['model'] = None
+            if compact and body and context_profile and isinstance(parsed, dict):
+                # The host's compaction request obeys the same window and the same overflow rule.
+                from ctxpress.methods.experiment_context import check_body, fit_body
+                fitted, fallback = fit_body(parsed, context_profile)
+                try:
+                    info['experiment_context'] = check_body(fitted, context_profile)
+                except ContextLimitError as e:
+                    record(dict(type='experiment_context_limit', caller='native_compaction', t=time.time(),
+                                status=400, reason=str(e), upstream_sent=False,
+                                input_tokens_estimate=e.tokens, context_profile=e.profile))
+                    error = json.dumps({'error': {'type': 'invalid_request_error',
+                        'code': 'ctxpress_experiment_context_limit', 'message': str(e)}}).encode()
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(error)))
+                    self.end_headers(); self.wfile.write(error); return
+                if fallback:
+                    info['experiment_context']['overflow_fallback'] = fallback
+                    body = json.dumps(fitted, ensure_ascii=False).encode("utf-8")
             original, j, summarizer, dialect, key = None, None, None, "responses", None
             if method == "POST" and incoming.path.rstrip("/").endswith("/chat/completions") and body:
                 # Chat Completions (vLLM / LiteLLM agents): same method on flattened messages (ctxpress.live.chat)
@@ -513,6 +532,7 @@ def serve(method_factory, port, upstream, via=None, log=None, params=DEFAULT, ho
                                   max_overflow_retries=sample.max_overflow_retries, upstream_key=upstream_key,
                                   chat_session=chat_session, chat_volatile=chat_volatile,
                                   allow_native_compaction=sample.allow_native_compaction,
+                                  context_profile=getattr(sample, 'context_profile', None),
                                   compact_prompt=sample.codex_config.get('compact_prompt') if not sample.allow_native_compaction else None))
     original_close = srv.server_close
     def close_with_memory():

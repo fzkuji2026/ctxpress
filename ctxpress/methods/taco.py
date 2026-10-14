@@ -33,6 +33,7 @@ class _MeteredClient:
 
 
 class TACO(Method):
+    context_role = 'local'  # edits tool outputs only; the host keeps its native compaction
     source = 'arXiv 2604.19572'
     name = 'TACO (author rule compression)'
     requires_summary = True
