@@ -1,6 +1,6 @@
 # 论文方法统一参数：128k 实验窗口
 
-配置版本：`paper-context-128k-20261014-v3`。固定 16 篇论文、18 个方法配置。需要额外部署模型的 SWE-Pruner 本轮不测，所以运行 17 个方法配置，加对照组 HostDefault，共 18 个。本文件描述已实现的配置，不代表真实评测已经完成。
+配置版本：`paper-context-128k-20261014-v3`。固定 16 篇论文、18 个方法配置。需要额外部署模型的 SWE-Pruner 本轮不测，所以运行 17 个方法配置，加对照组 Vanilla Codex（类名 `HostDefault`：Codex 原样运行，只有它自带的压缩），共 18 个。本文件描述已实现的配置，不代表真实评测已经完成。
 
 ## 共同条件
 
@@ -9,7 +9,7 @@
 - 计数使用框架已有的完整请求字符数 ÷ 4 和媒体估算，并向上取整。它不是精确的模型 tokenizer；请求日志另存 provider 实际输入 token 的合规检查。实际用量超出 128000 的请求必须在验收时列为不符合窗口条件，不能因估算通过就视为合规。
 - **方法类型**（方法类的 `context_role`，只用于报告，运行设置相同）：
   - **完整策略**（`full`）管理整段历史，自己在 102400 触发：Complexity Trap Summary / Hybrid、ACON、ReSum、AgentFold、ACM、CWL、Context-Folding、FoldAct、CoMem、LongSeeker、ZipRL。
-  - **局部策略**（`local`）只处理部分内容（新进入或旧的工具输出）：Complexity Trap 遮蔽、AgentDiet、SWE-Pruner、TokenPilot、TACO、DTOC，以及对照组 HostDefault。
+  - **局部策略**（`local`）只处理部分内容（新进入或旧的工具输出）：Complexity Trap 遮蔽、AgentDiet、SWE-Pruner、TokenPilot、TACO、DTOC，以及对照组 Vanilla Codex。
 - **唯一兜底是宿主原生压缩**：所有方法都保留 Codex 原生压缩，`model_context_window=128000`，触发点用 Codex 自己的规则。离线探针（Codex 0.161.0、假 API）确认：Codex 在发请求之前，用上一次响应的实际输入加上新内容的估算来判断，达到约 115200（窗口的 90%）就先压缩再发，不会等结果。例如上一次 108000，加一条约 10k 的新输出，就先压缩。单条工具输出由 Codex 截到约 10k token。因此 Agent 的普通请求不会超过触发线；唯一可能超过 128000 的是 Codex 的压缩请求本身：它包含压缩前的全部内容，一步里有多条长输出同时返回时会超出（探针中上一次 100000，4 条并行输出，压缩请求约 14 万）。完整策略的 102400 触发线更低，原生压缩只在方法没压下来时才出现。
 - ctxpress 不截断、不拒绝 Agent 请求，也不调用模型补救。发送前估算超过 128000 的请求照常转发，记录在请求日志的 `experiment_context.over_limit`，并在结果中列为不符合窗口条件。原因：真实服务返回 context_length_exceeded 时，Codex 不会压缩重试，而是直接结束本轮（探针中 HTTP 400 和流内失败都是如此），拒绝请求等于让任务失败。宿主自己的压缩请求只记录估算。
 - 摘要/反思等辅助模型调用检查相同上限，超出时该次调用失败并记录，不截断方法的输入。
@@ -22,7 +22,7 @@
 
 | 方法 | 本轮配置 | 调整理由与保留机制 |
 |---|---|---|
-| HostDefault（对照） | 共同窗口配置，局部 | 只有宿主原生压缩（128000 窗口下 Codex 的默认触发点）。 |
+| Vanilla Codex（对照，`HostDefault`） | 共同窗口配置，局部 | 只有宿主原生压缩（128000 窗口下 Codex 的默认触发点）。 |
 | Complexity Trap Masking | `n=10, polling=1, pin_spec=false` | 保留最近 10 条输出的滚动遮蔽；10 是条数，不是 10k token。 |
 | Complexity Trap Summary | `n=21, m=10` | 保留作者 31 轮触发、摘要前 21 轮、保留后 10 轮。 |
 | Complexity Trap Hybrid | `n=43, m=10, w=10, polling=1` | 保留作者 53 轮摘要和最近 10 条输出遮蔽组合。 |

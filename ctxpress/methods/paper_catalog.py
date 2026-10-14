@@ -54,6 +54,7 @@ PAPERS = (
 
 # The control runs under the same window: the host's own compaction alone. Each paper method is read against it.
 CONTROLS = ('HostDefault',)
+LABELS = {'HostDefault': 'Vanilla Codex'}  # the cohort runs on Codex; class names stay host-neutral
 
 
 def needs_extra_model(paper):
@@ -86,7 +87,7 @@ def method_entries(pruner_url=None, *, normalized=True):
         args = arguments(name) if normalized else {}
         if name == 'SWEPruner' and pruner_url:
             args['url'] = pruner_url
-        entry = {'class': name, 'args': args, 'label': name}
+        entry = {'class': name, 'args': args, 'label': LABELS.get(name, name)}
         build(entry)
         entries.append(entry)
     return entries
@@ -118,5 +119,5 @@ def configure(base, pruner_url=None):
     validate_entries(config['methods'])
     config['workers'] = 1
     if isinstance(config.get('comparison'), dict):
-        config['comparison']['reference'] = 'HostDefault'
+        config['comparison']['reference'] = LABELS['HostDefault']
     return config

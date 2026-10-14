@@ -32,7 +32,8 @@ def test_preparation_keeps_benchmark_budget_and_copies_input():
     out = configure(original, 'http://localhost:8000/prune')
     assert len(out['methods']) == 19 and out['workers'] == 1
     assert out['run'] == original['run'] and out['benchmark'] == original['benchmark']
-    assert out['comparison'] == {'reference': 'HostDefault', 'quality': 'per_task'}
+    assert out['comparison'] == {'reference': 'Vanilla Codex', 'quality': 'per_task'}
+    assert out['methods'][0] == dict(out['methods'][0], **{'class': 'HostDefault', 'label': 'Vanilla Codex'})
     assert original['workers'] == 3 and original['comparison']['reference'] == 'old'
 
 

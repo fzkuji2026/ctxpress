@@ -562,7 +562,7 @@
           "compression_trigger_tokens": 102400
         }
       },
-      "label": "HostDefault"
+      "label": "Vanilla Codex"
     },
     {
       "class": "ComplexityTrap",
