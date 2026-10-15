@@ -168,6 +168,39 @@ def history_keys(items):
     return keys
 
 
+VOLATILE = ("internal_chat_message_metadata_passthrough", "status")
+
+
+def identity(item):
+    """What an item is, apart from how the host serialized it this time: its wire id or call id, plus the text a
+    method reads (call input, output, message text). Codex's per-request tool declaration is one slot."""
+    t = item.get("type") or ("message" if "role" in item else None)
+    if t == "additional_tools":
+        return (t,)
+    if t in CALL_TYPES:
+        text = item.get("input") or item.get("arguments") or ""
+    elif t in OUT_TYPES:
+        text = output_text(item)
+    elif t == "message":
+        text = message_text(item)
+    else:
+        text = None
+    handle = item.get("call_id") if t in CALL_TYPES + OUT_TYPES else item.get("id")
+    if handle is None or text is None and t != "reasoning":
+        rest = {k: v for k, v in item.items() if k not in VOLATILE}
+        return (t, hashlib.sha256(json.dumps(rest, sort_keys=True, ensure_ascii=False).encode()).hexdigest())
+    return (t, handle, text and hashlib.sha256(text.encode()).hexdigest())
+
+
+def reserialized(previous, items):
+    """Where items repeat the previous history item by item in identity but not byte for byte (a resumed host
+    re-serializing what it stored): {index: differing fields}. None when the identities diverge."""
+    if len(items) < len(previous) or any(identity(a) != identity(b) for a, b in zip(previous, items)):
+        return None
+    return {i: sorted(k for k in set(a) | set(b) if a.get(k) != b.get(k))
+            for i, (a, b) in enumerate(zip(previous, items)) if a != b}
+
+
 class Session:
     def __init__(self, method_factory, params, store_dir=None, store_prefix=None, store_namespace=None, retrieve_tool=None,
                  summarizer=None):
@@ -185,12 +218,34 @@ class Session:
         # Digests of the last request as received (host) and as sent (after the method), and of its fixed part.
         self.views = (None, None, None)
         self.compared = None             # the views this request was compared against (a length retry reuses them)
+        self.received = []               # the last request's history as received, for re-serialization checks
 
     def rewrite(self, inp, body=None, *, allow_forks=False):
         started = time.perf_counter()
         ctx = self.ctx
         keys = history_keys(inp)
         rebased = keys[:len(self.history)] != self.history
+        realigned = None
+        if rebased and self.received and len(self.received) == len(self.history):
+            changed = reserialized(self.received, inp)
+            if changed is not None:
+                # Same items, re-serialized (Codex rebuilds history from its rollout on `exec resume`): the method
+                # keeps its state; each item keeps its context id under its new byte-level key.
+                self.ids = {new: self.ids[old] for old, new in zip(self.history, keys) if old in self.ids}
+                self.history = keys[:len(self.history)]
+                rebased = False
+                realigned = dict(items=len(changed), first=min(changed) if changed else None,
+                                 types=sorted({inp[i].get("type") or "message" for i in changed}),
+                                 fields=sorted({f for fs in changed.values() for f in fs}))
+        difference = None
+        if rebased and self.received:
+            # Where the host's history first departs from the previous request, and in which fields.
+            at = next((i for i, (a, b) in enumerate(zip(self.received, inp)) if a != b), min(len(self.received), len(inp)))
+            a, b = (self.received[at] if at < len(self.received) else {}), (inp[at] if at < len(inp) else {})
+            difference = dict(index=at, previous_type=a.get("type"), type=b.get("type"),
+                              same_identity=bool(a and b) and identity(a) == identity(b),
+                              fields=sorted(k for k in set(a) | set(b) if a.get(k) != b.get(k)))
+        self.received = list(inp)
         before = self.saved[0] if self.saved is not None else []
         if (allow_forks and rebased and before and len(self.history) > len(before) and self.history[:len(before)] == before
                 and keys[:len(before)] == before):
@@ -287,7 +342,9 @@ class Session:
         out, changed, dropped = self.render(inp, keys, order)
         self.n += 1
         self.compared = self.views
-        info = dict(host_contract=self.host_contract, request=self.n, history_rebased=rebased, history_epoch=self.history_epoch, forks_undone=self.forks,
+        info = dict(host_contract=self.host_contract, request=self.n, history_rebased=rebased, history_realigned=realigned,
+                    history_difference=difference,
+                    history_epoch=self.history_epoch, forks_undone=self.forks,
                     items=len(inp), kept=len(out), changed=changed, dropped=dropped,
                     tokens_before=sum(len(json.dumps(x, ensure_ascii=False)) for x in inp) // 4,
                     tokens_after=sum(len(json.dumps(x, ensure_ascii=False)) for x in out) // 4,
