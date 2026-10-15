@@ -5,7 +5,7 @@ from pathlib import Path
 from ctxpress.core.artifacts import atomic_json
 from ctxpress.harness.jobs.plan import verify
 from ctxpress.live import usage as eval_usage
-from ctxpress.harness.results import compare as eval_compare, mechanism as eval_mechanism, outcomes as eval_outcomes
+from ctxpress.harness.results import compare as eval_compare, mechanism as eval_mechanism, outcomes as eval_outcomes, timing as eval_timing
 from ctxpress.harness.jobs import task as tasks
 
 
@@ -24,7 +24,7 @@ def report(directory):
         group = groups.setdefault(key, dict(method=key, planned=0, completed=0, failed=0, interrupted=0, cancelled=0, pending=0, running=0,
             valid_grades=0, resolved=0, valid_code_samples=0,passed_code_samples=0,valid_rewards=0, reward_metrics={}, valid_milestone_metrics=0,milestone_metrics=[], infra_invalid=0, grading_errors=0, ungraded=0, observed_continuations=0, observed_mutations=0, api_input_tokens=0, api_cached_tokens=0,
             api_output_tokens=0, summary_calls=0, native_compaction_calls=0, passthrough_calls=0, native_compaction_unobserved_runs=0, pruner_calls=0, pruner_input_tokens=0, pruner_usage_unknown=0,
-            missing_api_usage=0, usage_unobserved_runs=0, usage_conflicts=0, method_overhead_estimate=0.0, seconds=0.0, jobs=[], _accounting=[]))
+            missing_api_usage=0, usage_unobserved_runs=0, usage_conflicts=0, method_overhead_estimate=0.0, seconds=0.0, effective_seconds=0.0, error_seconds=0.0, jobs=[], _accounting=[]))
         group["planned"] += 1
         group[job["status"]] += 1
         evidence = dict(id=job["id"], task_id=tasks.identity(spec),
@@ -72,7 +72,10 @@ def report(directory):
                 group[field] += accounting[field]
             group['usage_conflicts'] += len(accounting['usage_conflicts'])
             group["seconds"] += result.get("seconds", 0)
-            evidence.update(stop=result.get("stop"), grade=grade, context=result.get("boundary_context_evidence"),
+            errors = eval_timing.observe(result)
+            group["effective_seconds"] += errors["effective_seconds"] or 0
+            group["error_seconds"] += errors["failed_request_seconds"] + errors["retry_wait_seconds"]
+            evidence.update(stop=result.get("stop"), timing=errors, grade=grade, context=result.get("boundary_context_evidence"),
                             environment=result.get('environment'), gpu=result.get('gpu'), api_usage_complete=accounting['complete'],
                             usage_conflicts=accounting['usage_conflicts'], proxy_log=result.get("proxy_log"))
             for field in ('protocol', 'real_run_verified', 'separate_verifier', 'official_artifacts',
@@ -123,9 +126,10 @@ def write_report(directory):
         fields = [method["method"], method["planned"], method["completed"], method["observed_continuations"], method["observed_mutations"], method["failed"] + method["interrupted"] + method['cancelled'],
                   method["valid_grades"],method['valid_code_samples'], method["infra_invalid"], method["grading_errors"], "—" if rate is None else f"{rate:.1%}",
                   method["api_input_tokens"], method["api_cached_tokens"], '未知' if method['api_cache_write_tokens'] is None else method['api_cache_write_tokens'],
-                  method['missing_api_cache_write_usage'], method["api_output_tokens"], method["summary_calls"], native, method["missing_api_usage"], method["usage_unobserved_runs"],method['usage_conflicts']]
+                  method['missing_api_cache_write_usage'], method["api_output_tokens"], method["summary_calls"], native, method["missing_api_usage"], method["usage_unobserved_runs"],method['usage_conflicts'],
+                  round(method["seconds"] / 60, 1), round(method["effective_seconds"] / 60, 1), round(method["error_seconds"] / 60, 1)]
         cells.append("<tr>" + "".join("<td>" + html.escape(str(value)) + "</td>" for value in fields) + "</tr>")
-    headings = ["方法", "计划", "完成", "收到模型响应", "观察到改写", "失败/中断/取消", "有效任务评分","有效代码样本", "基础设施无效", "评分错误", "有效评分解决率", "API 输入", "缓存读取", "缓存写入", "缺失写入用量请求", "输出", "摘要调用", "原生压缩调用", "缺失用量", "未观察到主请求的运行", "用量冲突"]
+    headings = ["方法", "计划", "完成", "收到模型响应", "观察到改写", "失败/中断/取消", "有效任务评分","有效代码样本", "基础设施无效", "评分错误", "有效评分解决率", "API 输入", "缓存读取", "缓存写入", "缺失写入用量请求", "输出", "摘要调用", "原生压缩调用", "缺失用量", "未观察到主请求的运行", "用量冲突", "Agent 用时（分钟）", "剔除报错后用时（分钟）", "报错耗时（分钟）"]
     markup = '<!doctype html><html lang="zh"><meta charset="utf-8"><title>ctxpress evaluation</title>'
     markup += '<style>body{font:15px system-ui;margin:32px}table{border-collapse:collapse}th,td{padding:8px;border:1px solid #bbb}th{text-align:left}code{word-break:break-all}</style>'
     markup += '<h1>ctxpress 实验记录</h1><p>范围：' + html.escape(result["scope"]) + '；模型：' + html.escape(result["model"]) + '</p>'

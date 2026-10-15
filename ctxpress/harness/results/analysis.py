@@ -14,7 +14,8 @@ retries or writes outside --output; missing values stay missing.
 
 Definitions (per job; "main" = the agent's own model requests, "aux" = summary/reflection calls a method makes and
 the host's own native compaction calls; a request counts when its status is 2xx without a stream error):
-- efficiency: agent seconds, main requests (ok/failed), tool calls, model latency (main + aux + side), rewrite
+- efficiency: agent seconds, effective seconds (agent seconds minus failed model requests and the retry wait
+  before the next request, see timing.py), main requests (ok/failed), tool calls, model latency (main + aux + side), rewrite
   overhead, sessions and requests outside the primary (most active) session.
 - tokens: input = uncached + cache read + cache write; output; reasoning. Main, aux and side ("passthrough": model
   calls forwarded unchanged) separately; their sum is what eval_usage and reports bill.
@@ -36,6 +37,8 @@ from __future__ import annotations
 import argparse, csv, hashlib, json, math, sqlite3, statistics
 from datetime import datetime, timezone
 from pathlib import Path
+
+from ctxpress.harness.results import timing
 
 SCHEMA = "ctxpress.process_evaluation"
 BREAK_MIN_TOKENS = 1024
@@ -243,8 +246,11 @@ def job_metrics(main, aux, prices, result, parse_errors=0):
                       f"miss_cost_{cause}": sum(r["miss_cost"] or 0 for r in rows)})
         cache["breaks"] += cache[f"breaks_{cause}"]
     cache["miss_cost"] = sum(cache[f"miss_cost_{c}"] for c in CAUSES)
+    errors = timing.observe(result)
     metrics = dict(
-        efficiency=dict(agent_seconds=result.get("seconds"), stop=result.get("stop"), main_requests=len(good),
+        efficiency=dict(agent_seconds=result.get("seconds"), effective_seconds=errors["effective_seconds"],
+                        error_seconds=round(errors["failed_request_seconds"] + errors["retry_wait_seconds"], 1),
+                        retry_waits_capped=errors["retry_waits_capped"], stop=result.get("stop"), main_requests=len(good),
                         failed_requests=len(table) - len(good), tool_calls=health.get("tool_calls", result.get("calls")),
                         model_seconds=sum(latency) if latency else 0.0, aux_calls=len(aux_ok), side_calls=len(side_ok),
                         failed_aux_calls=len(aux_rows) - len(aux_ok) - len(side_ok), sessions=len(sessions),
@@ -517,6 +523,8 @@ FIELDS = {   # name -> getter on an analyzed job
     "cost_cache_write": lambda j: j["cost"]["parts"]["cache_write"],
     "cost_output": lambda j: j["cost"]["parts"]["output"],
     "agent_seconds": lambda j: j["efficiency"]["agent_seconds"],
+    "effective_seconds": lambda j: j["efficiency"]["effective_seconds"],
+    "error_seconds": lambda j: j["efficiency"]["error_seconds"],
     "model_seconds": lambda j: j["efficiency"]["model_seconds"],
     "rewrite_seconds": lambda j: j["efficiency"]["rewrite_seconds"],
     "main_requests": lambda j: j["efficiency"]["main_requests"],
