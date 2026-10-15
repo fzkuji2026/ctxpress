@@ -88,7 +88,7 @@ def test_explicit_length_rejection_retries_current_context_without_ingesting_gen
     assert all(row['request']==1 for row in rows)
     telemetry=summary(str(log))
     usage=analyze(dict(requests=telemetry['requests'],usage=telemetry,rewrites=rows))
-    assert telemetry['requests']==2 and usage['missing_api_usage']==1 and not usage['complete']
+    assert telemetry['requests']==2 and usage['failed_requests']==1 and usage['missing_api_usage']==0
     assert 'fixture-private' not in log.read_text(encoding='utf-8')
 
 

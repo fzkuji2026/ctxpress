@@ -9,15 +9,10 @@ Waits are capped so a long idle gap after a failure is never attributed to it si
 """
 from __future__ import annotations
 
+from ctxpress.live.usage import failed
+
 RETRY_WAIT_CAP = 600.0
 REQUEST_TYPES = (None, 'native_compaction', 'passthrough')
-
-
-def failed(row):
-    if row.get('upstream_error') or row.get('stream_error') or row.get('error'):
-        return True
-    status = row.get('status')
-    return status is not None and status != 200
 
 
 def observe(result):

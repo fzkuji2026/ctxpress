@@ -80,7 +80,10 @@ def test_missing_native_usage_stays_unknown_and_errors_do_not_enter_overflow_ret
     rows=[json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()]
     assert rows[0]['completed']==(status==200) and rows[0]['usage'] is None
     accounting=analyze(dict(requests=1,usage=summary(str(log)),rewrites=rows))
-    assert not accounting['complete'] and accounting['missing_api_usage']==1
+    if status==200:     # a completed call without usage leaves the bill unknown
+        assert not accounting['complete'] and accounting['missing_api_usage']==1
+    else:               # a rejected call is a failed request, counted apart
+        assert accounting['missing_api_usage']==0 and accounting['failed_requests']==1
 
 
 def test_native_log_and_telemetry_must_agree():

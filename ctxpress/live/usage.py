@@ -4,7 +4,7 @@ import math
 
 TOKEN_FIELDS = ('api_input_tokens', 'api_cached_tokens', 'api_output_tokens')
 COUNT_FIELDS = ('requests', 'main_requests', 'summary_calls', 'native_compaction_calls', 'passthrough_calls',
-                'missing_api_usage', 'missing_response_model_requests')
+                'missing_api_usage', 'missing_response_model_requests', 'failed_requests')
 # Billed model calls by role: the agent's rewritten requests, method summaries/reflections, the host's native
 # compaction, and model calls the proxy forwarded unchanged (host side calls such as titles or helper requests).
 ROW_TYPES = ('summary', 'native_compaction', 'passthrough')
@@ -13,6 +13,14 @@ ROLES = ('main', 'summary', 'native_compaction', 'passthrough')
 
 def role(row):
     return 'main' if 'request' in row else row.get('type')
+
+
+def failed(row):
+    """A model request the transport or provider failed: dropped connection, cut stream, non-200 status."""
+    if row.get('upstream_error') or row.get('stream_error') or row.get('error'):
+        return True
+    status = row.get('status')
+    return status is not None and status != 200
 CACHE_WRITE_FIELD = 'api_cache_write_tokens'
 CACHE_WRITE_MISSING = 'missing_api_cache_write_usage'
 RATE_FIELDS = ('input', 'cached', 'cache_write', 'output')
@@ -116,14 +124,21 @@ def analyze(result, default_model=None):
     telemetry = result.get('usage') or {}
     totals = dict.fromkeys(TOKEN_FIELDS + (CACHE_WRITE_FIELD, CACHE_WRITE_MISSING), 0)
     by_model, unknown = {}, _bucket()
-    missing, conflicts, missing_models, legacy = 0, [], 0, 0
+    missing, conflicts, missing_models, legacy, failures = 0, [], 0, 0, 0
     missing_returned, observed_returned = 0, 0
     main_model = default_model or result.get('model')
     for row in rows:
         values = _tokens(row.get('usage'))
         valid = _valid_usage(values)
-        missing += not valid
         model = row.get('model')
+        if failed(row) and not valid:
+            # The provider returned no usage for a failed request; it is counted apart, not as missing usage.
+            # A stream cut after generation began may still be billed upstream; that part is unobservable here.
+            bucket = by_model.setdefault(model, _bucket()) if isinstance(model, str) and model.strip() else unknown
+            bucket['failed_requests'] += 1
+            failures += 1
+            continue
+        missing += not valid
         # Earlier main/native logs predate per-request IDs. Their run metadata can
         # identify the main model; an unidentified reflection is never assigned it.
         if 'model' not in row and row.get('type') != 'summary':
@@ -171,14 +186,20 @@ def analyze(result, default_model=None):
             if expected > observed:
                 totals[CACHE_WRITE_FIELD] = None
                 totals[CACHE_WRITE_MISSING] += expected-observed
+    # Run telemetry recorded before failed requests were counted apart treats each one as a missing cache write.
+    legacy_totals = dict(totals, **{CACHE_WRITE_FIELD: None if failures else totals[CACHE_WRITE_FIELD],
+                                    CACHE_WRITE_MISSING: totals[CACHE_WRITE_MISSING] + failures})
     for key,value in totals.items():
+        if (failures and key in telemetry and 'failed_requests' not in telemetry and
+                telemetry[key] == legacy_totals[key] and (telemetry[key] is None or _count(telemetry[key]))):
+            continue
         if key in telemetry and (telemetry[key] != value or
                                  (value is not None and not _count(telemetry[key]))):
             conflicts.append(key+' total disagrees with request records')
     return dict(**totals,summary_calls=max(summaries,telemetry.get('summary_calls',0) if _count(telemetry.get('summary_calls')) else 0),
                 native_compaction_calls=max(compactions,telemetry.get('native_compaction_calls',0) if _count(telemetry.get('native_compaction_calls',0)) else 0),
                 passthrough_calls=max(passthrough,telemetry.get('passthrough_calls',0) if _count(telemetry.get('passthrough_calls',0)) else 0),
-                missing_api_usage=missing,usage_unobserved_runs=int(not main),usage_conflicts=conflicts,
+                missing_api_usage=missing,failed_requests=failures,usage_unobserved_runs=int(not main),usage_conflicts=conflicts,
                 complete=bool(main) and not missing and not conflicts, main_model=main_model,
                 usage_by_model=by_model, unattributed_usage=unknown, missing_model_requests=missing_models,
                 legacy_model_assignments=legacy, model_usage_complete=not missing_models,
@@ -195,6 +216,7 @@ def combine(records, main_model=None):
                   model_usage_complete=all(r['model_usage_complete'] for r in records))
     for key in TOKEN_FIELDS + ('missing_model_requests', 'legacy_model_assignments'):
         result[key] = sum(r[key] for r in records)
+    result['failed_requests'] = sum(r.get('failed_requests', 0) for r in records)
     result[CACHE_WRITE_FIELD] = _sum_known(r[CACHE_WRITE_FIELD] for r in records)
     result[CACHE_WRITE_MISSING] = sum(r[CACHE_WRITE_MISSING] for r in records)
     for key in ('observed_response_model_requests', 'missing_response_model_requests'):
@@ -206,7 +228,7 @@ def combine(records, main_model=None):
             target = result['usage_by_model'].setdefault(model, _bucket()) if model else result['unattributed_usage']
             for key in TOKEN_FIELDS + COUNT_FIELDS + (CACHE_WRITE_MISSING,):
                 # Records from before pass-through calls were logged carry no count for them.
-                target[key] = _sum_known((target[key], source.get(key, 0 if key == 'passthrough_calls' else None)))
+                target[key] = _sum_known((target[key], source.get(key, 0 if key in ('passthrough_calls', 'failed_requests') else None)))
             target[CACHE_WRITE_FIELD] = _sum_known((target[CACHE_WRITE_FIELD], source[CACHE_WRITE_FIELD]))
             target['_request_usage'].extend(source['_request_usage'])
             for returned, count in source['response_models'].items():

@@ -1,4 +1,20 @@
 from ctxpress.harness.results import timing
+from ctxpress.live import usage
+
+
+def test_failed_requests_without_usage_are_counted_apart_not_missing():
+    ok = dict(input_tokens=100, cached_tokens=40, output_tokens=10)
+    rows = [dict(request=1, model='m', status=200, usage=ok),
+            dict(request=2, model='m', upstream_error='SSLZeroReturnError'),
+            dict(request=3, model='m', status=200, stream_error='IncompleteRead'),
+            dict(request=4, model='m', status=200, usage=ok)]
+    out = usage.analyze(dict(requests=4, usage=dict(summary_calls=0), rewrites=rows), 'm')
+    assert out['failed_requests'] == 2 and out['missing_api_usage'] == 0 and out['complete']
+    assert out['api_input_tokens'] == 200
+    assert out['usage_by_model']['m']['requests'] == 2 and out['usage_by_model']['m']['failed_requests'] == 2
+    assert usage.combine([out, out], 'm')['usage_by_model']['m']['failed_requests'] == 4
+    rows[1]['usage'] = ok                          # a failed request that did report usage stays billed
+    assert usage.analyze(dict(requests=4, usage=dict(summary_calls=0), rewrites=rows), 'm')['api_input_tokens'] == 300
 
 
 def test_failed_requests_and_retry_waits_are_removed():

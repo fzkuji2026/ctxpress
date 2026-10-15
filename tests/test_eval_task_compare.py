@@ -168,7 +168,7 @@ def test_failed_reflection_is_visible_separately_from_official_task_quality(tmp_
     change_result(jobs[1], directory, failed_reflection)
     candidate = run((plan, jobs, directory))['candidates'][0]
     observation = candidate['pairs'][0]['candidate']['mechanism_observation']
-    assert candidate['quality_complete'] and not candidate['api_cost_complete']
+    assert candidate['quality_complete'] and candidate['api_cost_complete']     # a rejected call bills nothing
     assert observation['failed_summaries'] == 1 and observation['completed_summary_purposes'] == {}
     assert 'no method-fidelity' in observation['scope']
 
