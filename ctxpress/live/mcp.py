@@ -105,7 +105,15 @@ def retrieve(i, session=None):
     try:
         return open(p, encoding="utf-8").read()
     except FileNotFoundError:
-        return f"no stored output with id {i}"
+        pass
+    if session is not None:
+        # A shared proxy archives into the store of the launch that started it; later launches are siblings.
+        launches = os.path.dirname(settings.store_dir())
+        for other in sorted(os.listdir(launches)) if os.path.isdir(launches) else []:
+            candidate = os.path.join(launches, other, session, f"{int(i)}.txt")
+            if re.fullmatch(r"[0-9a-f]{32}", other) and os.path.isfile(candidate) and not os.path.islink(candidate):
+                return open(candidate, encoding="utf-8").read()
+    return f"no stored output with id {i}"
 
 
 def handle(msg):

@@ -131,9 +131,17 @@ def run(method_entry=None, codex_args=(), codex_bin=None, port=0, upstream=None,
         os.makedirs(os.path.dirname(os.path.abspath(log)), exist_ok=True)
     from ctxpress.live.control_receipts import ControlReceipts
     receipts = ControlReceipts(store_dir, log) if tools and sample.agent_tools else None
-    srv, _ = serve(factory, port, upstream, via, log, host="127.0.0.1", store_dir=store_dir, store_prefix=store_dir,
-                   retrieve_tool=tools, codex_method_tools=tools, control_receipts=receipts)
-    port = srv.server_address[1]
+    # A harness that restarts Codex within one run (resume) shares one proxy, so the method keeps its state.
+    shared_dir = os.environ.get('CTXPRESS_SHARED_PROXY_DIR') if not dry_run else None
+    shared = dict(entry=entry, upstream=upstream, via=via, tools=bool(tools), log=log, store_dir=store_dir)
+    srv = None
+    if shared_dir:
+        from ctxpress.hosts.codex import shared_proxy
+        port = shared_proxy.attach(shared_dir, shared)
+    else:
+        srv, _ = serve(factory, port, upstream, via, log, host="127.0.0.1", store_dir=store_dir, store_prefix=store_dir,
+                       retrieve_tool=tools, codex_method_tools=tools, control_receipts=receipts)
+        port = srv.server_address[1]
     tool_env = dict(CTXPRESS_STORE_DIR=store_dir, CTXPRESS_LOG_PATH=log,
                     CTXPRESS_METHOD_CONFIG=json.dumps(entry),
                     CTXPRESS_REQUIRED_TOOLS='1' if sample.agent_tools else '',
@@ -150,16 +158,21 @@ def run(method_entry=None, codex_args=(), codex_bin=None, port=0, upstream=None,
                                 if tools and sample.agent_tools else {})), prepared=prepared)
         if dry_run:
             return cmd, None
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        if srv is not None:
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
         started = True
         try:
             rc = subprocess.call(cmd, env=env)
         except KeyboardInterrupt:
             rc = 130
     finally:
-        if started:
-            srv.shutdown()
-        srv.server_close()
+        if srv is None:
+            if started:
+                shared_proxy.detach(port, shared)
+        else:
+            if started:
+                srv.shutdown()
+            srv.server_close()
         if not dry_run:
             try:
                 os.remove(os.path.join(codex_home(), f"{profile}.config.toml"))

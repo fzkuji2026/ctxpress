@@ -80,10 +80,12 @@ def is_native_compaction(body, turn_metadata=None, compact_prompt=None):
 
 def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_retries=0,
                  allow_native_compaction=True, compact_prompt=None, method_tools=None, upstream_key=None,
-                 chat_session=None, chat_volatile=None, context_profile=None):
+                 chat_session=None, chat_volatile=None, context_profile=None, control=None):
     up = urllib.parse.urlsplit(upstream)
     vp = urllib.parse.urlsplit(via) if via else None
     lock = threading.Lock()
+    # A shared proxy outlives one host launch: each launch attaches its own log (see control).
+    state = dict(log=log, active=0, idle=threading.Condition())
 
     def outgoing(headers):
         """Request headers for the upstream; with upstream_key the proxy, not the client, holds the credential."""
@@ -105,10 +107,10 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
         return c
 
     def record(row):
-        if log:
+        if state['log']:
             from ctxpress.live.logging import append_record
             with lock:
-                append_record(log, row)
+                append_record(state['log'], row)
 
     class H(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -403,7 +405,7 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
             finally:
                 c.close()
             if os.environ.get("CTXPRESS_DEBUG"):
-                print(f"ctxpress proxy: {method} {self.path} -> {r.status} rewritten={info is not None} log={log}", file=sys.stderr, flush=True)
+                print(f"ctxpress proxy: {method} {self.path} -> {r.status} rewritten={info is not None} log={state['log']}", file=sys.stderr, flush=True)
             if info is not None:
                 if dialect == "anthropic":
                     from ctxpress.live import anthropic
@@ -442,11 +444,30 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                 record(dict(passthrough, status=r.status, seconds=round(time.time() - t0, 2),
                             usage=None if stream_error else usage, response_model=None if stream_error else returned))
 
+        def _control(self):
+            n = int(self.headers.get("Content-Length") or 0)
+            try:
+                payload = json.loads(self.rfile.read(n) or b'{}')
+                reply, status = control(self.path, payload, state), 200
+            except Exception as error:
+                reply, status = dict(error=type(error).__name__, message=str(error)), 400
+            raw = json.dumps(reply).encode()
+            self.send_response(status); self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(raw))); self.end_headers(); self.wfile.write(raw)
+
         def _safe(self, method):
+            if control is not None and self.path.startswith('/__ctxpress/'):
+                return self._control()
+            with state['idle']:
+                state['active'] += 1
             try:
                 self._forward(method)
             except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
                 self.close_connection = True                 # client or upstream went away; the client retries
+            finally:
+                with state['idle']:
+                    state['active'] -= 1
+                    state['idle'].notify_all()
 
         def do_POST(self):
             self._safe("POST")
@@ -515,7 +536,8 @@ def find_usage(raw):
 
 def serve(method_factory, port, upstream, via=None, log=None, params=DEFAULT, host="0.0.0.0", store_dir=None, store_prefix=None,
           retrieve_tool=None, summarizer=None, codex_method_tools=False, control_receipts=None, upstream_key=None,
-          chat_session=None, chat_volatile=None):
+          chat_session=None, chat_volatile=None, shared_key=None):
+    """`shared_key`: serve successive host launches of one agent run (ctxpress.hosts.codex.shared_proxy)."""
     def live_factory():
         method = method_factory()
         method.validate_live()
@@ -527,7 +549,33 @@ def serve(method_factory, port, upstream, via=None, log=None, params=DEFAULT, ho
                    summarizer=summarizer)
     from ctxpress.live.method_tools import MethodTools
     adapter = MethodTools(sample, receipts=control_receipts) if codex_method_tools and sample.agent_tools else None
+
+    def control(path, payload, state):
+        """Local launch control for a shared proxy: method state stays in this process across launches."""
+        if payload.get('key') != shared_key:
+            raise ValueError('shared proxy serves a different method configuration')
+        if path == '/__ctxpress/health':
+            return dict(key=shared_key, pid=os.getpid())
+        if path == '/__ctxpress/attach':
+            with state['idle']:
+                state['log'] = payload['log']
+            if adapter is not None and adapter.receipts is not None:
+                from ctxpress.live.control_receipts import ControlReceipts
+                with adapter.lock:
+                    adapter.receipts = ControlReceipts(payload['store_dir'], payload['log'])
+            return dict(attached=payload['log'])
+        if path == '/__ctxpress/detach':
+            # The host has exited; let responses still being recorded reach this launch's log.
+            with state['idle']:
+                state['idle'].wait_for(lambda: state['active'] == 0, timeout=60)
+                drained = state['active'] == 0
+                if state['log'] == payload['log']:
+                    state['log'] = None
+            return dict(drained=drained)
+        raise ValueError('unknown shared proxy control')
+
     srv = ThreadingHTTPServer((host, port), make_handler(rw, upstream, via, log,
+                                  control=control if shared_key else None,
                                   method_tools=adapter,
                                   summaries=sample.requires_summary and summarizer is None,
                                   max_overflow_retries=sample.max_overflow_retries, upstream_key=upstream_key,

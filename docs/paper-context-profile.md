@@ -16,6 +16,7 @@
 - 摘要/反思等辅助模型调用检查相同上限，超出时该次调用失败并记录，不截断方法的输入。
 - 关闭框架通用摘要兜底。不设置 Agent 总请求数或运行时间上限。同时最多 2 个完整作业（各自独立容器），每个作业评分并发 1，以及已有评分超时；方法服务的网络超时不等于任务预算。
 - **上游模型故障不计成绩**：Codex 会话记录里，某一轮以宿主错误类别 `server_overloaded`（"Selected model is at capacity"）结束，就说明该作业受到 provider 故障影响，作业判为基础设施失败（`provider_failure`），官方分数只作诊断，之后整作业重跑（`eval run --retry`）。ctxpress 不在请求层重试，Agent 行为保持 Codex 默认。2026-10-14 首批中 Vanilla Codex 与 Complexity Trap 同时遇到此错误，作者 harness 的恢复也因同一错误失败，该批作废。
+- **一次运行共用一个代理**：作者 harness 在一次运行里多次重启 Codex（每个里程碑后 `exec resume` 同一会话，r2 中多数作业 1–4 次）。此前每次启动都新建代理，方法状态（摘要、遮蔽、轮次）清零，新代理第一次就收到 Codex 积累的整段历史：r2 的 Complexity Trap Summary、ACON、ReSum 各有一次 46–56 万 token 的 Agent 请求，摘要方法的辅助调用也因超过 128000 被拒。现在容器内第一次启动开一个常驻代理（`ctxpress.hosts.codex.shared_proxy`），之后的启动连回同一进程，只切换本次的请求日志和回执存储；方法配置不同则拒绝复用。真实 Codex 0.161 离线探针（假 API）确认 `exec resume` 后请求序号接续、旧输出保持遮蔽。r2 中的历史重开全部发生在原生压缩之后，属正常。
 - **方法工具状态跨恢复延续**：作者 harness 恢复 Agent 时会启动新的 Codex 与 MCP 进程，回执存储也是新的。新存储没有记录时接续上一个启动的已验证控制历史，新 MCP 进程据此重建工具状态。此前只用 Codex 当前保留的调用记录，宿主压缩后会丢掉前面的调用，r2 的 CWL 因此报 `verified control history cannot reproduce author tool state`。
 - 自动按容量压缩的方法使用 102400 的整体触发线；逐步、逐输出、按轮次或由 Agent 主动调用的方法保留自身机制。自主工具方法收到相同窗口说明，是否调用是待测行为：2026-10-13 的试跑中，未训练的 gpt-6.1-sol 一次也没有调用 AgentFold、ACM、LongSeeker、ZipRL 的上下文工具（工具链路已用真实 Codex CLI 验证可用）。
 - 需要额外部署模型的方法属于另一类比较，本轮不测：只有 SWE-Pruner（作者 0.6B 剪枝模型）。只有显式给出剪枝服务地址（`--pruner-url`）时才加入。AgentDiet 的反思模型走同一 API，不需要部署，照常测。

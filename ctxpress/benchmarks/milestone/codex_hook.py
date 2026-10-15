@@ -186,7 +186,9 @@ if source.is_file():
             environment=['env','PYTHONPATH=/ctxpress-runtime']
             if private:
                 if self._model_relay is None:raise ValueError('native model relay has not been prepared')
+                # The author resumes the same session in new Codex processes; one proxy keeps the method's state.
                 environment+=['CODEX_HOME=/home/fakeroot/.codex','CTXPRESS_HOME=/ctxpress-private/ctxpress',
+                    'CTXPRESS_SHARED_PROXY_DIR=/ctxpress-private/shared-proxy',
                     'HTTPS_PROXY='+self._model_relay,'HTTP_PROXY='+self._model_relay,'NO_PROXY=localhost,127.0.0.1',
                     'python3','-m','ctxpress.harness.runtime.agent_process','--pid-file','/ctxpress-private/agent.json','--']
             args = environment+['python3', '-m', 'ctxpress', 'codex',
