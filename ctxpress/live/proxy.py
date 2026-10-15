@@ -10,7 +10,8 @@ Codex: point the built-in OpenAI provider at the proxy and turn off request comp
     enable_request_compression = false
 (WebSocket upgrades are refused, so Codex falls back to HTTP.) `POST .../responses`, `.../v1/messages` (Anthropic)
 and `.../chat/completions` bodies with tools are rewritten;
-native compaction requests are forwarded unchanged unless the method forbids them.
+native compaction requests carry the method's current view of the history (never cut further)
+unless the method forbids them.
 Codex identifies both local and v2 remote compaction on /responses with turn metadata.
 Responses are streamed back as they
 arrive. The log has, per request, what the method changed and the real token usage the API reported; request
@@ -153,6 +154,21 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                     info['model'] = json.loads(body).get('model')
                 except (ValueError, AttributeError):
                     info['model'] = None
+            if compact and body and isinstance(parsed, dict) and isinstance(parsed.get('input'), list):
+                # The host summarizes the history the model saw: the method's current view, not
+                # the host's own unmanaged copy (which grows past the window under the method).
+                compact_key = (parsed.get("prompt_cache_key") or self.headers.get("session_id")
+                               or self.headers.get("conversation_id") or "default")
+                try:
+                    projected, projection = rewriter.project_compaction(parsed, compact_key)
+                except Exception as e:
+                    record(dict(type='experiment_context_rewrite_failed', t=time.time(), status=422,
+                                reason=type(e).__name__, upstream_sent=False, stage='native_compaction'))
+                    self.send_error(422, 'ctxpress compaction projection failed'); return
+                if projection is not None:
+                    info['method_projection'] = projection
+                    parsed = projected
+                    body = json.dumps(projected, ensure_ascii=False).encode('utf-8')
             if compact and body and context_profile and isinstance(parsed, dict):
                 # The host's compaction request is measured against the same window, never cut.
                 from ctxpress.methods.experiment_context import check_body

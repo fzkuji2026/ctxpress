@@ -11,10 +11,12 @@
   - **完整策略**（`full`）管理整段历史，自己在 102400 触发：Complexity Trap Summary / Hybrid、ACON、ReSum、AgentFold、ACM、CWL、Context-Folding、FoldAct、CoMem、LongSeeker、ZipRL。
   - **局部策略**（`local`）只处理部分内容（新进入或旧的工具输出）：Complexity Trap 遮蔽、AgentDiet、SWE-Pruner、TokenPilot、TACO、DTOC，以及对照组 Vanilla Codex。
 - **唯一兜底是宿主原生压缩**：所有方法都保留 Codex 原生压缩，`model_context_window=128000`，触发点用 Codex 自己的规则。离线探针（Codex 0.161.0、假 API）确认：Codex 在发请求之前，用上一次响应的实际输入加上新内容的估算来判断，达到约 115200（窗口的 90%）就先压缩再发，不会等结果。例如上一次 108000，加一条约 10k 的新输出，就先压缩。单条工具输出由 Codex 截到约 10k token。因此 Agent 的普通请求不会超过触发线；唯一可能超过 128000 的是 Codex 的压缩请求本身：它包含压缩前的全部内容，一步里有多条长输出同时返回时会超出（探针中上一次 100000，4 条并行输出，压缩请求约 14 万）。完整策略的 102400 触发线更低，原生压缩只在方法没压下来时才出现。
+- **原生压缩请求用方法当前的历史视图**：方法在代理里改写请求，Codex 本地保存的历史不随之变小；Codex 看到的用量是改写后的请求，所以本地历史会远超窗口。2026-10-14 r2 中，方法组的原生压缩请求实际输入达 31–56 万 token（Vanilla Codex 最高 11.8 万），兜底总结的内容与对照组不同，r2 因此作废。现在代理把原生压缩请求里方法已见过的条目换成方法上一次发给模型的形式（被丢弃的就不发），只有之后新增的条目（最新输出、压缩触发）原样保留；不推进方法的轮次，也不额外截断。日志的 `method_projection` 记录已知条目数、新条目数和前后估算。真实 Codex 0.161 离线探针（假 API）确认压缩请求的历史条目与普通请求一致，可逐条对应。
 - ctxpress 不截断、不拒绝 Agent 请求，也不调用模型补救。发送前估算超过 128000 的请求照常转发，记录在请求日志的 `experiment_context.over_limit`，并在结果中列为不符合窗口条件。原因：真实服务返回 context_length_exceeded 时，Codex 不会压缩重试，而是直接结束本轮（探针中 HTTP 400 和流内失败都是如此），拒绝请求等于让任务失败。宿主自己的压缩请求只记录估算。
 - 摘要/反思等辅助模型调用检查相同上限，超出时该次调用失败并记录，不截断方法的输入。
 - 关闭框架通用摘要兜底。不设置 Agent 总请求数或运行时间上限。同时最多 2 个完整作业（各自独立容器），每个作业评分并发 1，以及已有评分超时；方法服务的网络超时不等于任务预算。
 - **上游模型故障不计成绩**：Codex 会话记录里，某一轮以宿主错误类别 `server_overloaded`（"Selected model is at capacity"）结束，就说明该作业受到 provider 故障影响，作业判为基础设施失败（`provider_failure`），官方分数只作诊断，之后整作业重跑（`eval run --retry`）。ctxpress 不在请求层重试，Agent 行为保持 Codex 默认。2026-10-14 首批中 Vanilla Codex 与 Complexity Trap 同时遇到此错误，作者 harness 的恢复也因同一错误失败，该批作废。
+- **方法工具状态跨恢复延续**：作者 harness 恢复 Agent 时会启动新的 Codex 与 MCP 进程，回执存储也是新的。新存储没有记录时接续上一个启动的已验证控制历史，新 MCP 进程据此重建工具状态。此前只用 Codex 当前保留的调用记录，宿主压缩后会丢掉前面的调用，r2 的 CWL 因此报 `verified control history cannot reproduce author tool state`。
 - 自动按容量压缩的方法使用 102400 的整体触发线；逐步、逐输出、按轮次或由 Agent 主动调用的方法保留自身机制。自主工具方法收到相同窗口说明，是否调用是待测行为：2026-10-13 的试跑中，未训练的 gpt-6.1-sol 一次也没有调用 AgentFold、ACM、LongSeeker、ZipRL 的上下文工具（工具链路已用真实 Codex CLI 验证可用）。
 - 需要额外部署模型的方法属于另一类比较，本轮不测：只有 SWE-Pruner（作者 0.6B 剪枝模型）。只有显式给出剪枝服务地址（`--pruner-url`）时才加入。AgentDiet 的反思模型走同一 API，不需要部署，照常测。
 - 结果报告每个方法的宿主原生压缩次数、超过 128000 的请求数，以及第一次原生压缩之前完成的里程碑。

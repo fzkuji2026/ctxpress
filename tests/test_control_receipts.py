@@ -195,6 +195,37 @@ def test_compacted_control_window_preserves_state_for_live_and_restarted_mcp(tmp
     assert len(receipts.history()) == 2
 
 
+def test_resumed_launch_continues_state_after_host_compacted_earlier_controls(tmp_path, monkeypatch):
+    from ctxpress.live import mcp
+    receipts, body, log = fixture(tmp_path)
+    MethodTools(CWL(), receipts=receipts).adapt(body)
+    monkeypatch.setenv('CTXPRESS_CONTROL_RECEIPTS', '1')
+    monkeypatch.setenv('CTXPRESS_LOG_PATH', str(log))
+    monkeypatch.setenv('CTXPRESS_METHOD_CONFIG', json.dumps({'class': 'CWL'}))
+    monkeypatch.setenv('CTXPRESS_STORE_DIR', str(receipts.store))
+    monkeypatch.setattr(mcp, '_METHOD', [])
+    monkeypatch.setattr(mcp, '_METHOD_RECEIPTS', [])
+    end = dict(action='end', description='looked at source')
+    reply = mcp.handle(dict(id=1, method='tools/call', params=dict(name='delimiter', arguments=end)))['result']
+    window = dict(input=[dict(type='function_call', namespace='mcp__ctxpress', name='delimiter',
+                             call_id='end', arguments=json.dumps(end)),
+                         dict(type='function_call_output', call_id='end', output=[
+                             dict(type='input_text', text=p['text']) for p in reply['content']])])
+    MethodTools(CWL(), receipts=receipts).adapt(window)
+    # The author harness resumes: new launch store, new proxy and MCP; the host kept only the last control.
+    resumed = ControlReceipts(tmp_path/uuid.uuid4().hex, log)
+    assert resumed.history() == receipts.history()
+    MethodTools(CWL(), receipts=resumed).adapt(window)
+    assert [row['receipt'] for row in resumed.history()] == [row['receipt'] for row in receipts.history()]
+    monkeypatch.setenv('CTXPRESS_STORE_DIR', str(resumed.store))
+    mcp._METHOD.clear(); mcp._METHOD_RECEIPTS.clear()
+    again = mcp.handle(dict(id=2, method='tools/call', params=dict(name='delimiter', arguments=dict(action='end'))))['result']
+    assert again['isError'] and 'No active chunk' in again['content'][0]['text']   # replayed state: chunk already ended
+    action = dict(action='start', name='work', type='act', dependencies=['look'])
+    result = mcp.handle(dict(id=3, method='tools/call', params=dict(name='delimiter', arguments=action)))['result']
+    assert not result['isError'] and result['content'][0]['text'] == 'start [act] work dep=look'
+
+
 def test_control_history_reordering_or_changes_fail_without_overwrite(tmp_path):
     receipts, _, _ = fixture(tmp_path)
     rows = [dict(receipt=str(i), name='delimiter', arguments={}, output=str(i)) for i in range(3)]

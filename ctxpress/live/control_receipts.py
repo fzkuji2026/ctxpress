@@ -148,7 +148,26 @@ class ControlReceipts:
         path = self.store/'control-receipts'/'history.json'
         if any(p.is_symlink() for p in [path, *path.parents]):
             raise ValueError('control history path is a symlink')
-        return json.loads(path.read_text(encoding='utf-8')) if path.exists() else []
+        return json.loads(path.read_text(encoding='utf-8')) if path.exists() else self.predecessor_history()
+
+    def predecessor_history(self):
+        """A resumed launch continues the previous launch's executed control state.
+
+        The host may already have compacted away the earlier call/output pairs, so
+        the visible history alone cannot rebuild the tool state on a new process.
+        Launch stores of one agent run are siblings and run one after another.
+        """
+        candidates = []
+        for path in self.store.parent.glob('*/control-receipts/history.json'):
+            if path.parent.parent == self.store or not re.fullmatch('[0-9a-f]{32}', path.parent.parent.name):
+                continue
+            if any(p.is_symlink() for p in [path, *path.parents]):
+                raise ValueError('control history path is a symlink')
+            candidates.append(path)
+        if not candidates:
+            return []
+        latest = max(candidates, key=lambda p: p.stat().st_mtime_ns)
+        return json.loads(latest.read_text(encoding='utf-8'))
 
 
 def route_failures(result):

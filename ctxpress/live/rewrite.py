@@ -356,6 +356,50 @@ class Session:
         self.host_contract = validate(inp, out)
         return out, changed, dropped
 
+    def project(self, inp):
+        """The method's current view applied to a host compaction request, without advancing a turn.
+
+        Items the method has seen take the form it last sent (or are dropped if it dropped them);
+        items newer than the last request (the latest outputs, the compaction trigger) pass unchanged.
+        So the host summarizes what the model actually saw, not its own unmanaged copy of the history.
+        """
+        ctx = self.ctx
+        keys = history_keys(inp)
+        order = ctx.view()
+        view = {v["id"]: v for v in order}
+        before, pending = {}, []
+        for v in order:
+            if v["seg"] == "summary":
+                pending.append(v)
+            elif pending:
+                before[v["id"]] = pending; pending = []
+        out, known, changed, dropped, last_known = [], 0, 0, 0, None
+        for k, item in zip(keys, inp):
+            cid = self.ids.get(k)
+            if cid is None:
+                out.append(item)
+                continue
+            known += 1
+            v = view.get(cid)
+            if v is None:
+                dropped += 1
+                continue
+            for sv in before.pop(cid, []):
+                out.append(self.host.message(sv["text"], role=sv.get("role") or "user")); changed += 1
+            if item.get("type") in OUT_TYPES and (v["form"] != "full" or v.get("rewritten")):
+                item = dict(item); set_output_text(item, v["text"]); changed += 1
+            out.append(item)
+            last_known = len(out)
+        if pending:
+            at = len(out) if last_known is None else last_known
+            out[at:at] = [self.host.message(sv["text"], role=sv.get("role") or "user") for sv in pending]
+            changed += len(pending)
+        out = pair_check(out)
+        return out, dict(items=len(inp), known=known, new=len(inp) - known, kept=len(out), changed=changed,
+                         dropped=dropped,
+                         tokens_before=sum(len(json.dumps(x, ensure_ascii=False)) for x in inp) // 4,
+                         tokens_after=sum(len(json.dumps(x, ensure_ascii=False)) for x in out) // 4)
+
 
 def pair_check(items):
     """Drop any call without its output and any output without its call (the API rejects unpaired items)."""
@@ -417,6 +461,17 @@ class Rewriter:
             with open(self.log, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(info, ensure_ascii=False) + "\n")
         return body, info
+
+    def project_compaction(self, body, session_key):
+        """Apply the session's current method view to a host compaction body; (body, None) without a session."""
+        inp = body.get("input")
+        with self.lock:
+            s = self.sessions.get(session_key)
+        if s is None or not isinstance(inp, list):
+            return body, None
+        with s.lock:
+            out, info = s.project(inp)
+        return dict(body, input=out), info
 
     def context_profile(self, session_key):
         session = self.sessions.get(session_key)

@@ -1,4 +1,4 @@
-"""Native compaction is forwarded intact and billed separately; all API data is synthetic."""
+"""Native compaction carries the method's view and is billed separately; all API data is synthetic."""
 import http.client, json, threading, urllib.error, urllib.request
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -89,6 +89,34 @@ def test_native_log_and_telemetry_must_agree():
         usage=dict(summary_calls=0,native_compaction_calls=0))
     accounting=analyze(result)
     assert not accounting['complete'] and 'native_compaction_calls count disagrees with request records' in accounting['usage_conflicts']
+
+
+@pytest.mark.parametrize('path,metadata',[('/responses/compact',None),('/responses','{"request_kind":"compaction"}')])
+def test_native_compaction_carries_the_method_view_and_new_items_unchanged(tmp_path,path,metadata):
+    from ctxpress.methods import ComplexityTrap
+    log=tmp_path/'requests.jsonl'
+    def turn(i):
+        return [dict(type='function_call',call_id=f'c{i}',name='shell',arguments='{}'),
+                dict(type='function_call_output',call_id=f'c{i}',output=f'output-{i} '+'x'*4000)]
+    history=[dict(type='message',role='user',content=[dict(type='input_text',text='task')])]+turn(1)+turn(2)+turn(3)
+    with fixture(log,method=lambda:ComplexityTrap(n=1)) as (send,got,rw):
+        send('/responses',json.dumps(dict(model='fixture',prompt_cache_key='s',input=history)).encode())
+        sent=json.loads(got[0][1])['input']
+        masked=[i for i in sent if i.get('type')=='function_call_output' and not i['output'].startswith('output-')]
+        assert len(masked)==2
+        trigger=dict(type='message',role='user',content=[dict(type='input_text',text='compact now')])
+        body=dict(model='fixture',prompt_cache_key='s',input=history+turn(4)+[trigger])
+        headers={'x-codex-turn-metadata':metadata} if metadata else {}
+        send(path,json.dumps(body).encode(),headers)
+        compacted=json.loads(got[1][1])['input']
+    outputs={i['call_id']:i['output'] for i in compacted if i.get('type')=='function_call_output'}
+    assert outputs['c1']==next(i['output'] for i in sent if i.get('call_id')=='c1' and 'output' in i)
+    assert not outputs['c1'].startswith('output-1') and outputs['c3'].startswith('output-3')
+    assert outputs['c4'].startswith('output-4') and compacted[-1]==trigger
+    row=[json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()][-1]
+    assert row['type']=='native_compaction' and row['method_projection']['known']==len(history)
+    assert row['method_projection']['new']==3 and row['method_projection']['tokens_after']<row['method_projection']['tokens_before']
+    assert rw.sessions['s'].n==1   # projection does not advance the method's turn
 
 
 def test_interrupted_native_http_body_is_not_a_completed_compaction(tmp_path):
