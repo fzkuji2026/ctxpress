@@ -42,10 +42,20 @@ def catalog_input(environment, model, reasoning):
     return binding
 
 
+# Codex's own tier names; "fast" makes Codex request the priority tier.
+SERVICE_TIERS = ('fast',)
+
+
+def validate_service_tier(value):
+    if value not in SERVICE_TIERS:
+        raise ValueError('service_tier must be one of: ' + ', '.join(SERVICE_TIERS))
+    return value
+
+
 def framework(base, settings):
     settings = copy.deepcopy(settings)
     required = {'runtime', 'bindir', 'logs', 'store', 'method', 'binary_version', 'compact_limit'}
-    if required - set(settings) or set(settings) - required - {'auth_file','upstream','via','private_runtime','channel','profiles','model_catalog'}:
+    if required - set(settings) or set(settings) - required - {'auth_file','upstream','via','private_runtime','channel','profiles','model_catalog','service_tier'}:
         raise ValueError('official Codex hook requires explicit runtime, binary, log/store paths, method and version')
     keys=['runtime','bindir','logs','store']+[key for key in ('channel','profiles','model_catalog') if key in settings]
     for key in keys:
@@ -59,6 +69,7 @@ def framework(base, settings):
     if not isinstance(settings['binary_version'], str) or not settings['binary_version']:
         raise ValueError('binary version must be explicit')
     validate_live(settings['method'], settings.get('profiles'))
+    if 'service_tier' in settings:validate_service_tier(settings['service_tier'])
     private=settings.get('private_runtime',False)
     if type(private) is not bool:raise ValueError('private_runtime must be boolean')
     if private:
@@ -203,6 +214,7 @@ if source.is_file():
             if settings['compact_limit'] is not None:           # None: the host's own default threshold
                 overrides+=['-c', f"model_auto_compact_token_limit={settings['compact_limit']}"]
             if 'model_catalog' in settings:overrides+=['-c','model_catalog_json='+json.dumps(catalog_target)]
+            if 'service_tier' in settings:overrides+=['-c','service_tier='+json.dumps(settings['service_tier'])]
             return shlex.join(args + overrides) + ' ' + command[len('codex '):]
 
         def build_run_command(self, model, session_id, prompt_path):

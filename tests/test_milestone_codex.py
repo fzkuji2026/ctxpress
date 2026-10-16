@@ -162,3 +162,26 @@ def test_private_output_mounts_follow_agent_uid_and_preserve_host_group(tmp_path
         for path in mapping.values():
             assert ('owner', path, 1001, path.stat().st_gid) in changed
             assert ('mode', path, 0o2770) in changed
+
+
+def test_fast_service_tier_reaches_codex_only_when_requested():
+    plain=shlex.split(framework(OfficialFixture,settings())().build_run_command('fixture',None,'/tmp/prompt'))
+    assert not any(value.startswith('service_tier=') for value in plain)
+    fast=framework(OfficialFixture,dict(settings(),service_tier='fast'))()
+    for command in (fast.build_run_command('fixture',None,'/tmp/prompt'),
+                    fast.build_resume_command('fixture','fixture-id','/tmp/message')):
+        args=shlex.split(command)
+        assert args[args.index('service_tier="fast"')-1]=='-c'
+    with pytest.raises(ValueError,match='service_tier'):
+        framework(OfficialFixture,dict(settings(),service_tier='flex'))
+
+
+def test_milestone_run_accepts_service_tier_only_for_task_start():
+    from ctxpress.benchmarks.milestone.adapter import SWEMilestone
+    adapter=SWEMilestone()
+    assert 'service_tier' in adapter.run_fields()
+    assert adapter.normalize_run({'service_tier':'fast'},1)=={'service_tier':'fast'}
+    with pytest.raises(ValueError,match='service_tier'):
+        adapter.normalize_run({'service_tier':'priority'},1)
+    with pytest.raises(ValueError,match='service_tier'):
+        adapter.compile_plan({'start_mode':'checkpoint','run':{'service_tier':'fast'}})

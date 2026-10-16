@@ -51,6 +51,8 @@ class SWEMilestone:
     def compile_plan(self, config, base_dir=None):
         if 'grading_workers' in config.get('run', {}) and config.get('start_mode') != 'task_start':
             raise ValueError('grading_workers requires task_start native execution')
+        if 'service_tier' in config.get('run', {}) and config.get('start_mode') != 'task_start':
+            raise ValueError('service_tier requires task_start native execution')
         if config.get('start_mode') == 'task_start':
             from ctxpress.benchmarks.task_plan import compile_plan
         else:
@@ -58,12 +60,15 @@ class SWEMilestone:
         return compile_plan(config, base_dir)
 
     def run_fields(self):
-        return {"grading_workers"}
+        return {"grading_workers", "service_tier"}
 
     def normalize_run(self, settings, repeats):
         if "grading_workers" in settings:
             from ctxpress.benchmarks.milestone.grading_concurrency import validate_workers
             validate_workers(settings["grading_workers"])
+        if "service_tier" in settings:
+            from ctxpress.benchmarks.milestone.codex_hook import validate_service_tier
+            validate_service_tier(settings["service_tier"])
         return settings
 
     def task_instances(self, data):

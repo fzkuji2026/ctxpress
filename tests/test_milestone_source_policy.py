@@ -33,4 +33,4 @@ def test_repository_config_lists_win_and_absent_lists_use_author_defaults():
 
 
 def test_no_per_run_source_policy_switch():
-    assert SWEMilestone().run_fields() == {'grading_workers'}
+    assert SWEMilestone().run_fields() == {'grading_workers', 'service_tier'}

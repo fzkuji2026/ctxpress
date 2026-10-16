@@ -41,6 +41,7 @@ def validate(request):
     if 'grading_workers' in run:
         from ctxpress.benchmarks.milestone.grading_concurrency import validate_workers
         validate_workers(run['grading_workers'])
+    if 'service_tier' in run:milestone_codex.validate_service_tier(run['service_tier'])
     milestone_resources.identity(settings['project'],settings['label'])
     for name in ('timeout','max_calls'):
         if run.get(name) is not None:eval_plan._positive(run.get(name),name,integer=name!='timeout')
@@ -111,6 +112,7 @@ def run(request, source):
             method=settings['method'],binary_version=settings['binary_version'],compact_limit=settings['compact_limit'],
             profiles=settings['profiles'],channel=str(socket),private_runtime=True,upstream=settings['upstream'])
         if 'model_catalog' in settings:private['model_catalog']=settings['model_catalog']
+        if 'service_tier' in run:private['service_tier']=run['service_tier']
         with milestone_codex.installed(private):
             def initialize(owner,framework):
                 if catalog_metadata is not None:
@@ -147,6 +149,7 @@ def run(request, source):
                     **{name:metadata.get(name,[]) for name in ('repo_src_dirs','test_dirs','exclude_patterns','generated_patterns','modifiable_test_patterns')})
                 author_metadata['ctxpress_grading_workers'] = run.get('grading_workers', 4)
                 author_metadata['ctxpress_grading_workers_override'] = 'grading_workers' in run
+                author_metadata['ctxpress_service_tier'] = run.get('service_tier')
                 if catalog_metadata is not None:author_metadata['ctxpress_model_catalog']=catalog_metadata
                 artifact_io.atomic_json(trial/'trial_metadata.json',author_metadata)
                 owner=native.container_setup.ctxpress_owner
