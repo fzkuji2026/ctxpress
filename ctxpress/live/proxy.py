@@ -30,6 +30,9 @@ from ctxpress.core.params import DEFAULT
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding",
        "upgrade", "host", "content-length", "accept-encoding"}
 ERROR_BODY_LIMIT = 1024 * 1024
+# Waits before re-sending a request whose upstream connection failed before any response (e.g. a TLS drop).
+# The same body is sent again; each failed attempt is logged as a failed request, never billed.
+CONNECT_RETRY_WAITS = (2, 4, 8, 16, 32)
 _CONTEXT_ERROR = re.compile(r"context_length_exceeded|prompt (?:is )?too long|too many tokens|"
     r"(?:exceed\w*|maximum).{0,80}context|context.{0,30}(?:length|window).{0,80}(?:exceed|limit)|"
     r"input tokens.{0,80}exceed", re.IGNORECASE | re.DOTALL)
@@ -318,7 +321,7 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
             headers["Content-Length"] = str(len(body))
             headers["Accept-Encoding"] = "identity"
             t0 = time.time()
-            attempt, buffered = 0, b""
+            attempt, buffered, connect_failures = 0, b"", 0
             while True:
                 c = connect()
                 try:
@@ -329,7 +332,13 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                     c.close()
                     if info is not None or passthrough is not None:
                         record(dict(info if info is not None else passthrough, status=None, seconds=round(time.time()-t0,2),
-                                    usage=None, http_attempt=attempt, upstream_error=type(e).__name__))
+                                    usage=None, http_attempt=attempt, upstream_error=type(e).__name__,
+                                    connect_retry=connect_failures))
+                    if connect_failures < len(CONNECT_RETRY_WAITS):
+                        time.sleep(CONNECT_RETRY_WAITS[connect_failures])
+                        connect_failures += 1
+                        t0 = time.time()
+                        continue
                     self.send_error(502, f"upstream: {e!r}"); return
                 buffered = b""
                 if r.status == 400 and info is not None and "request" in info and dialect == "responses" and attempt < max_overflow_retries:

@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 from ctxpress.live.telemetry import summary
 from ctxpress.live.usage import analyze
+from ctxpress.live import proxy as proxy_module
 from ctxpress.live.proxy import context_length_error, serve
 from ctxpress.live.rewrite import Rewriter
 from ctxpress.methods import CliffCompaction, NoCompaction, WithMemory, Composed, PinRequirements, Trigger
@@ -173,7 +174,8 @@ def test_retry_does_not_repeat_entry_model_usage_or_initial_decision_estimate():
     assert rw.sessions['session'].ctx.M['overhead']==56
 
 
-def test_retry_connection_failure_is_logged_as_an_attempt_with_unknown_usage(tmp_path):
+def test_retry_connection_failure_is_logged_as_an_attempt_with_unknown_usage(tmp_path, monkeypatch):
+    monkeypatch.setattr(proxy_module, 'CONNECT_RETRY_WAITS', ())
     log=tmp_path/'log'
     with fixture(CliffCompaction(t=100000),log,disconnect_after=2) as (send,got,_):
         status,_=send(request())
@@ -182,6 +184,18 @@ def test_retry_connection_failure_is_logged_as_an_attempt_with_unknown_usage(tmp
     assert len(rows)==2 and rows[-1]['http_attempt']==1 and rows[-1]['status'] is None
     assert rows[-1]['usage'] is None and rows[-1]['upstream_error']=='RemoteDisconnected'
     assert summary(str(log))['requests']==2
+
+
+def test_connection_failure_is_resent_after_a_wait_instead_of_returning_502(tmp_path, monkeypatch):
+    monkeypatch.setattr(proxy_module, 'CONNECT_RETRY_WAITS', (0,))
+    log=tmp_path/'log'
+    with fixture(CliffCompaction(t=100000),log,disconnect_after=2) as (send,got,_):
+        status,_=send(request())
+        assert status==200 and len(got)==3 and got[1]==got[2]
+    rows=[json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()]
+    assert [row['status'] for row in rows]==[400,None,200]
+    assert rows[1]['upstream_error']=='RemoteDisconnected' and rows[1]['connect_retry']==0
+    assert summary(str(log))['failed_requests']==2   # the rejected overflow attempt and the dropped connection
 
 
 def test_large_error_body_is_forwarded_intact_without_retry(tmp_path):

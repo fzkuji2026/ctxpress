@@ -11,8 +11,11 @@ class ExecutionInfrastructureFailure(RuntimeError):
     """Agent tool infrastructure failed despite a successful model response."""
 
 
-# Host-classified provider failures that end a turn independently of the method under test.
-PROVIDER_FAILURES = ('server_overloaded',)
+# Host-classified provider and transport failures that end a turn independently of the method under test.
+# Codex serializes unit variants as a string and struct variants as a one-key object.
+PROVIDER_FAILURES = ('server_overloaded', 'http_connection_failed', 'response_stream_connection_failed',
+                     'response_stream_disconnected', 'response_too_many_failed_attempts',
+                     'internal_server_error', 'usage_limit_exceeded')
 
 
 def _provider_failure(row):
@@ -20,6 +23,8 @@ def _provider_failure(row):
     payload = row.get('payload') if isinstance(row, dict) and row.get('type') == 'event_msg' else None
     error = payload.get('error') if isinstance(payload, dict) else None
     kind = error.get('codex_error_info') if isinstance(error, dict) else None
+    if isinstance(kind, dict) and len(kind) == 1:
+        kind = next(iter(kind))
     if kind in PROVIDER_FAILURES:
         return dict(kind='provider_failure', error=kind, event_type=payload.get('type'), turn_id=payload.get('turn_id'))
     return None

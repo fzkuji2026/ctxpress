@@ -170,6 +170,18 @@ def test_provider_overload_turn_invalidates_execution_and_survives_session_remov
     assert execution_health.observe(run)['execution_invalid'] and not execution_health.observe(run)['health_unknown']
 
 
+def test_transport_failure_struct_variant_invalidates_execution(tmp_path):
+    # Codex 0.161 writes struct variants as a one-key object (observed: a proxied 502 after a TLS drop).
+    failed = overloaded()
+    failed['payload']['error'] = dict(message='unexpected status 502 Bad Gateway',
+                                      codex_error_info=dict(http_connection_failed=dict(http_status_code=502)))
+    run, path = result(tmp_path, transcript(output='ok') + [failed])
+    observed = execution_health.observe(run)
+    assert observed['execution_invalid'] and observed['tool_runtime_failures'][0]['error'] == 'http_connection_failed'
+    execution_health.retain(run); path.unlink()
+    assert execution_health.observe(run)['execution_invalid'] and not execution_health.observe(run)['health_unknown']
+
+
 def test_other_turn_errors_and_agent_text_do_not_count_as_provider_failure(tmp_path):
     other = overloaded(); other['payload']['error']['codex_error_info'] = 'context_window_exceeded'
     prose = dict(type='event_msg', payload=dict(type='agent_message', message='server_overloaded'))
