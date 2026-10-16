@@ -150,16 +150,37 @@ def test_foldact_explicit_selection_reserves_rendered_tool_overhead(overhead, dr
     measured = []
 
     def measure_history(history):
-        measured.append(history)
-        return host.size() + overhead
+        measured.append([s['id'] for s in history])
+        return host.prefix + sum(s['size'] for s in history) + overhead
 
     host.measure_history = measure_history
     FoldActSource(max_model_len=128000, selection_tokens=102400, max_obs_length=None).step(host, 1)
-    assert measured == [host.ctx]
+    assert measured[0] == ['question']
     assert removed == [f'{kind}{i}' for i in range(dropped_turns) for kind in ('call', 'out')]
     assert not clipped
     kept_tokens = host.prefix + sum(s['size'] for s in host.ctx if s['id'] not in removed)
     assert kept_tokens + max(0, overhead) <= 102400
+
+
+@pytest.mark.parametrize('turns', [40, 100, 400])
+def test_foldact_rendered_overhead_does_not_grow_with_deleted_history(turns):
+    # Rendering adds 20% per item. The reserve must not scale with the history it deletes:
+    # the view keeps the newest turns that fit, however long the history grows.
+    host, clipped, removed = folding_host([10000] * turns, prefix=20)
+    host.measure_history = lambda history: host.prefix + 1.2 * sum(s['size'] for s in history)
+    FoldActSource(max_model_len=128000, selection_tokens=102400, max_obs_length=None).step(host, 1)
+    kept = [s for s in host.ctx if s['id'] not in removed]
+    assert [s['id'] for s in kept[-2:]] == [f'call{turns - 1}', f'out{turns - 1}']
+    assert len(kept) == 1 + 2 * 8
+    assert host.measure_history(kept) <= 102400
+    assert not clipped
+
+
+def test_foldact_view_keeps_only_fixed_items_when_newest_turn_cannot_fit():
+    host, clipped, removed = folding_host([5000, 200000])
+    host.measure_history = lambda history: sum(s['size'] for s in history)
+    FoldActSource(max_model_len=128000, selection_tokens=102400, max_obs_length=None).step(host, 1)
+    assert removed == ['call0', 'out0', 'call1', 'out1']
 
 
 def test_foldact_author_selection_ignores_rendered_tool_overhead():
@@ -184,7 +205,7 @@ def test_foldact_explicit_selection_ignores_noncallable_measurement(measurement)
 def test_foldact_overhead_reservation_still_preserves_protected_tool_pairs():
     host, clipped, removed = folding_host([25500] * 4, prefix=260)
     host.ctx[2]['has_media'] = True
-    host.measure_history = lambda history: host.size() + 25000
+    host.measure_history = lambda history: host.prefix + sum(s['size'] for s in history) + 25000
     FoldActSource(max_model_len=128000, selection_tokens=102400, max_obs_length=None).step(host, 1)
     # Safety keeps the oldest pair despite selection; the shared guard owns the maximum.
     assert not clipped and not removed

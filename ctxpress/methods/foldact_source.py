@@ -6,8 +6,9 @@ The host supplies summaries, turn boundaries and token estimates. FoldAct
 training losses, trained weights and batched token types are not reproduced.
 Observation clipping uses the shared host token
 counter; it is not an assertion of equality with the author's tokenizer.
-Explicit selection_tokens reserves any extra rendered-request overhead when
-the host can measure it. Protected pairs can still exceed the selection target;
+When the host can measure rendered requests, explicit selection_tokens reserves
+the fixed part's rendered overhead and then drops the oldest selected turns until
+the rendered view fits. Protected pairs can still exceed the selection target;
 the shared context guard enforces the final experimental maximum.
 max_obs_length=None disables clipping and its forced three-turn window.
 """
@@ -124,14 +125,40 @@ class FoldActSource(Method):
             turns.append(dict(length=sum(sim.seg_size(s) for s in group),
                               has_info=observations > 20, has_summary=summary))
         initial_tokens = getattr(sim, 'prefix', 0) + sum(sim.seg_size(s) for s in fixed)
-        if self.selection_tokens is not None and callable(getattr(sim, 'measure_history', None)):
-            from ctxpress.methods.experiment_context import context_tokens
-            # Reserve tool declarations, metadata and serialization omitted by size().
-            initial_tokens += max(0, context_tokens(sim) - sim.size())
+        measure = getattr(sim, 'measure_history', None) if self.selection_tokens is not None else None
+        if not callable(measure):
+            measure = None
+        if measure:
+            # Reserve what the fixed part renders beyond size() (tool declarations, metadata, serialization).
+            # Measured on the fixed items only: measuring the whole history would grow the reserve with every
+            # item later deleted, until nothing but the fixed head fits.
+            initial_tokens = max(initial_tokens, measure(fixed))
         offset = max(0, len(turns) - 3) if self.force_summarized else 0
-        selected = {i + offset for i in select_turns(
+        selected = [i + offset for i in select_turns(
             turns[offset:], initial_tokens,
-            self.max_model_len, selection_tokens=self.selection_tokens)}
+            self.max_model_len, selection_tokens=self.selection_tokens)]
+        if measure:
+            selected = self._fit(sim, groups, fixed, selected, measure)
+        sim.delete(self._removal(sim, groups, set(selected)))
+
+    def _fit(self, sim, groups, fixed, selected, measure):
+        """Drop the oldest selected turns until the rendered selection fits selection_tokens (binary search).
+        Pairs kept only for API safety stay outside the measured selection, as with the author estimate."""
+        base = {s['id'] for s in fixed}
+
+        def fits(k):
+            chosen = base | {s['id'] for i in selected[k:] for s in groups[i]}
+            return measure([s for s in sim.ctx if s['id'] in chosen]) <= self.selection_tokens
+        lo, hi = 0, len(selected)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if fits(mid):
+                hi = mid
+            else:
+                lo = mid + 1
+        return selected[lo:]
+
+    def _removal(self, sim, groups, selected):
         removed = [s for i, group in enumerate(groups) if i not in selected for s in group]
         # Never corrupt the native API when a tool spans request boundaries or
         # carries media. This intentionally differs from token-level truncation.
@@ -145,5 +172,5 @@ class FoldActSource(Method):
             if ({s['seg'] for s in items} != {'call', 'out'} or
                     any(s['id'] not in candidate_ids for s in items)):
                 protected_pairs.add(cid)
-        sim.delete([s for s in removed if not s.get('has_media') and
-                    (not s.get('call_id') or s['call_id'] not in protected_pairs)])
+        return [s for s in removed if not s.get('has_media') and
+                (not s.get('call_id') or s['call_id'] not in protected_pairs)]
