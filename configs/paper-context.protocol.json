@@ -886,7 +886,7 @@
     "timeout": null,
     "compact_limit": null,
     "grade": true,
-    "grading_timeout": 3600,
+    "grading_timeout": 14400,
     "grading_workers": 1
   },
   "pricing": {
