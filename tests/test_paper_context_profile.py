@@ -3,6 +3,7 @@ import copy
 import json
 import http.client
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -228,6 +229,66 @@ def test_published_config_matches_generated_profile():
             expected['reflect_model'] = document['models']['agentdiet_reflection']
         assert entry['args'] == expected
     assert document['run']['max_calls'] is None and document['run']['timeout'] is None
+
+
+@pytest.mark.parametrize('window', [32000, 64000, 128000, 256000])
+def test_every_token_setting_follows_the_window(window):
+    from ctxpress.methods.paper_profile import arguments
+    trigger, headroom = round(window * 0.8), window - round(window * 0.8)
+    entries = {e['class']: e for e in method_entries(window=window)}
+    for entry in entries.values():
+        m = build(entry)
+        assert m.context_profile == dict(version=1, max_context_tokens=window, compression_trigger_tokens=trigger)
+        assert m.codex_config['model_context_window'] == window
+    args = lambda name: entries[name]['args']
+    assert args('ACONSource')['t_hist'] == args('ACONSource')['trigger_tokens'] == trigger
+    assert args('ACONSource')['t_obs'] == args('TokenPilotLifecycle')['entry_budget'] == headroom
+    assert args('ContextFoldingTools')['branch_tokens'] == headroom
+    assert args('FoldActSource')['max_model_len'] == window and args('FoldActSource')['selection_tokens'] == trigger
+    assert args('ReSumSource')['context_k'] == window // 1024 and args('CWL')['budget'] == trigger
+    for name in ('ComplexityTrap', 'ComplexityTrapSummary', 'ComplexityTrapHybrid', 'CoMem', 'ReSumSource'):
+        assert args(name)['trigger_tokens'] == trigger
+    published = json.loads((Path(__file__).resolve().parents[1] / f'configs/paper-context-{window // 1000}k.methods.json').read_text())
+    assert published['methods'] == method_entries(window=window)
+    assert arguments('ACONSource', window) == args('ACONSource')
+
+
+@pytest.mark.parametrize('outputs,masked', [(3, False), (12, True)])
+def test_window_complexity_trap_masks_only_once_the_input_reaches_the_trigger(outputs, masked):
+    request = history(outputs, size=40000)   # 10k tokens each
+    result, _ = Rewriter(factory('ComplexityTrap', n=1, trigger_tokens=102400)).rewrite_body(copy.deepcopy(request), 's')
+    kept = [i['output'] for i in result['input'] if i.get('type') == 'function_call_output']
+    assert (sum('omitted' in text for text in kept) == outputs - 1) is masked
+    assert masked or kept == [i['output'] for i in request['input'] if i.get('type') == 'function_call_output']
+
+
+def test_window_complexity_trap_summary_checkpoints_all_but_latest_m_at_the_trigger():
+    from ctxpress.live.context import LiveContext
+    calls = []
+
+    class Service:
+        def summarize_prompt(self, system, user, purpose, **kw):
+            calls.append(purpose)
+            return 'checkpoint'
+
+    ctx = LiveContext(build({'class': 'ComplexityTrapSummary', 'args': dict(n=21, m=2, trigger_tokens=102400)}),
+                      summarizer=Service())
+    for i in range(5):
+        ctx.add_message('assistant', 'inspect')
+        ctx.add_call(str(i), 'ls')
+        ctx.add_output(str(i), 'result')
+    ctx.measure_history = lambda _: 102399
+    ctx.before_request()
+    assert not calls
+    ctx.measure_history = lambda _: 102400
+    ctx.before_request()
+    assert len(calls) == 1
+    assert len(ctx.method.turns(ctx)) == 2 and any(s['seg'] == 'summary' for s in ctx.ctx)
+
+
+def test_author_turn_schedule_is_unchanged_without_a_trigger():
+    m = build({'class': 'ComplexityTrapSummary', 'args': dict(n=21, m=10)})
+    assert m.trigger_tokens is None and build({'class': 'ComplexityTrap', 'args': dict(n=10)}).trigger_tokens is None
 
 
 def test_anthropic_capacity_trigger_counts_the_system_prompt():

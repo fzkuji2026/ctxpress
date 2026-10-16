@@ -139,13 +139,20 @@ class ComplexityTrapSummary(Method):
     source = "arXiv 2508.21433"
     requires_summary = True
 
-    def __init__(self, n=21, m=10):
+    def __init__(self, n=21, m=10, trigger_tokens=None):
         if n <= 0 or m < 0:
             raise ValueError("n must be positive and m non-negative")
+        if trigger_tokens is not None and (type(trigger_tokens) is not int or trigger_tokens <= 0):
+            raise ValueError('trigger_tokens must be a positive integer or None')
         self.n, self.m = n, m
+        # Window adaptation (not the author's schedule): when the complete input reaches trigger_tokens, every
+        # unsummarized turn except the newest m becomes the next checkpoint. None keeps the n + m turn schedule.
+        self.trigger_tokens = trigger_tokens
         self.name = f"Complexity Trap LLM-Summary（N = {n}，M = {m}）"
-        self.framework = dict(L1="无", L2=f"未摘要的轮数达到 {n}+{m} 时，最早 {n} 轮换成一条检查点摘要（读原文与上一检查点）", L3="无",
-                              cross="无", memory="无", decider="固定轮数")
+        rule = (f"未摘要的轮数达到 {n}+{m} 时，最早 {n} 轮" if trigger_tokens is None else
+                f"输入达到 {trigger_tokens} token 时，最近 {m} 轮之外的未摘要轮")
+        self.framework = dict(L1="无", L2=f"{rule}换成一条检查点摘要（读原文与上一检查点）", L3="无",
+                              cross="无", memory="无", decider="固定轮数" if trigger_tokens is None else "输入长度")
         self.summaries, self.hidden = [], []
 
     def reset(self, sim):
@@ -196,11 +203,17 @@ class ComplexityTrapSummary(Method):
                 sim.ctx[at:at] = [s for s in self.hidden if not any(s is x for x in sim.ctx)]
             self.hidden = []
         turns = self.turns(sim)
-        if len(turns) < self.n + self.m:
-            return
-        chosen = turns[:self.n]
+        if self.trigger_tokens is None:
+            if len(turns) < self.n + self.m:
+                return
+            chosen = turns[:self.n]
+        else:
+            from ctxpress.methods.experiment_context import context_tokens
+            if len(turns) <= self.m or context_tokens(sim) < self.trigger_tokens:
+                return
+            chosen = turns[:len(turns) - self.m]
         new = sim.summarize_segment([s for t in chosen for s in t], prompt=(CT_SUMMARY_SYSTEM, self.prompt(sim, chosen)),
-                                    text_format=f"Checkpoint for the last {self.n} turns:\n{{summary}}", role="assistant")
+                                    text_format=f"Checkpoint for the last {len(chosen)} turns:\n{{summary}}", role="assistant")
         if new is None:                                       # no service or a failed call: history stays
             return
         self.hidden = [s for s in self.summaries if s in sim.ctx]
@@ -215,8 +228,9 @@ class ComplexityTrapHybrid(Composed):
     source = "arXiv 2508.21433"
     paper = "arXiv 2508.21433"
 
-    def __init__(self, n=43, m=10, w=10, polling=1):
-        super().__init__([ComplexityTrapSummary(n, m), ComplexityTrap(w, polling=polling)])
+    def __init__(self, n=43, m=10, w=10, polling=1, trigger_tokens=None):
+        super().__init__([ComplexityTrapSummary(n, m, trigger_tokens=trigger_tokens),
+                          ComplexityTrap(w, polling=polling, trigger_tokens=trigger_tokens)])
         self.name = f"Complexity Trap 混合（N = {n}，M = {m}，W = {w}）"
 
 

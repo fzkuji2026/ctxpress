@@ -50,6 +50,24 @@ ctxpress eval plan configs/local-papers.json --output runs/paper-plan.json
 
 新配置将比较参考方法设为 ComplexityTrap，保留原配置的 benchmark 与运行预算，workers 固定为 1。模型与费率仍须在实际协议中明确。使用完整协议生成器时选 [新论文协议](../configs/paper-context.protocol.json)，先冻结任务并填入服务地址；方法清单见 [机器可读清单](../configs/paper-context.methods.json)。
 
+### 按窗口长度生成参数
+
+`--window W`（默认 128000）决定所有与长度有关的参数，其余保持作者原值：
+
+| 量 | 取值 | 用到的方法 |
+|---|---|---|
+| 实验窗口 | W | 所有方法（Codex 原生压缩也在 W） |
+| 压缩触发点 T | 0.8 W | ACON、ReSum、CWL、CoMem、FoldAct 选择预算；ComplexityTrap 三种在 T 时才按作者规则屏蔽 / 摘要 |
+| 余量 H | W − T | ACON 单条输出阈值、TokenPilot 单条上限、Context-Folding 分支容量 |
+| ReSum context_k | W // 1024 | ReSum |
+| 不随窗口变 | 作者值 | AgentDiet、TACO 的单条大小阈值；AgentFold、ACM、DTOC、LongSeeker、ZipRL 由模型自行决定（提示词里告知 W 和 T） |
+
+```bash
+ctxpress eval paper-methods --window 64000 --config configs/local-benchmark.json --output configs/local-papers-64k.json
+```
+
+已发布 32k / 64k / 128k / 256k 四份清单：`configs/paper-context-<k>k.methods.json`。
+
 ## 对照证据与未复现部分
 
 本轮新增的本地合成对照：AgentFold 步骤替换/格式化 2000/2000；FoldAct 窗口选择 500/500（NumPy 张量替身）；Context-Folding 完成分支投影 286/286，覆盖 100 组会话；此前 ReSum 提示/解析/触发/续接 227/227。均不调用真实模型，不是任务成绩。其他已有源码对照见 [repro 说明](../repro/README.md)。

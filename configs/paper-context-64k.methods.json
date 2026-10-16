@@ -1,0 +1,809 @@
+{
+  "version": "online-context-papers-20261012-v2",
+  "context_profile": {
+    "version": "paper-context-64k-20261016-v4",
+    "context": {
+      "version": 1,
+      "max_context_tokens": 64000,
+      "compression_trigger_tokens": 51200
+    },
+    "counting": "complete rendered agent input; shared chars/4 and media estimate, not exact provider tokens",
+    "scope": "Shared agent input limit. Every method keeps the host native compaction at the window as the only fallback; ctxpress never cuts or refuses an agent request, and a request over the window is forwarded and recorded (over_limit). Auxiliary-model inputs over the window fail and are recorded. Per-call generation limits are unchanged.",
+    "fallback": "host native compaction",
+    "external_request_or_time_caps": false,
+    "methods": [
+      {
+        "method": "HostDefault",
+        "role": "local",
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "Control: the host alone; its native compaction at the 64000 window."
+      },
+      {
+        "method": "ComplexityTrap",
+        "role": "local",
+        "args": {
+          "n": 10,
+          "pin_spec": false,
+          "polling": 1,
+          "trigger_tokens": 51200,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "Author rolling mask (latest 10 outputs) fires only when the complete input reaches 51200; masked outputs stay masked."
+      },
+      {
+        "method": "ComplexityTrapSummary",
+        "role": "full",
+        "args": {
+          "n": 21,
+          "m": 10,
+          "trigger_tokens": 51200,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "When the complete input reaches 51200, all unsummarized turns except the latest 10 become one checkpoint (author 21+10 turn schedule replaced by the window trigger)."
+      },
+      {
+        "method": "ComplexityTrapHybrid",
+        "role": "full",
+        "args": {
+          "n": 43,
+          "m": 10,
+          "w": 10,
+          "polling": 1,
+          "trigger_tokens": 51200,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "Checkpoint and latest-10 masking both fire at 51200, summary first as in the author order."
+      },
+      {
+        "method": "AgentDiet",
+        "role": "local",
+        "args": {
+          "a": 2,
+          "b": 1,
+          "threshold": 500,
+          "min_saving": 400,
+          "max_ratio": 0.8,
+          "reflect_model": "gpt-6-luna",
+          "bypass_filter": false,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "500 is a per-step eligibility threshold, 400 minimum saving, 0.8 acceptance ratio; these are not context caps."
+      },
+      {
+        "method": "ACONSource",
+        "role": "full",
+        "args": {
+          "t_hist": 51200,
+          "trigger_tokens": 51200,
+          "t_obs": 12800,
+          "keep_turns": 2,
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "History uses the complete-input 51200 trigger. Per-observation threshold is 12800 (window headroom); retain 2 recent turns."
+      },
+      {
+        "method": "ReSumSource",
+        "role": "full",
+        "args": {
+          "context_k": 62,
+          "trigger_tokens": 51200,
+          "interval": null,
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "Explicit 51200 complete-input trigger (context_k 62) replaces the implicit 32k-derived trigger; periodic 40-turn trigger disabled."
+      },
+      {
+        "method": "AgentFoldSource",
+        "role": "full",
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "Agent chooses fold ranges and summary using its tool/visible tags; shared threshold is guidance, not a forced model call."
+      },
+      {
+        "method": "SWEPruner",
+        "role": "local",
+        "args": {
+          "threshold": 0.5,
+          "min_chars": 500,
+          "chunk_overlap_tokens": 50,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "0.5 relevance score, 500 characters and 50-token overlap retained; focus question and real service remain required."
+      },
+      {
+        "method": "TokenPilotLifecycle",
+        "role": "local",
+        "args": {
+          "entry_budget": 12800,
+          "batch_turns": 8,
+          "min_chars": 256,
+          "estimator_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "Per-output cap increased from 2000 to 12800; lifecycle estimation every 8 requests retained, 256 is characters."
+      },
+      {
+        "method": "ACM",
+        "role": "full",
+        "args": {
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "Agent-selected segments and archival retrieval; same window guidance, no forced replacement algorithm."
+      },
+      {
+        "method": "CWL",
+        "role": "full",
+        "args": {
+          "budget": 51200,
+          "full_context": true,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "51200 complete-input estimate including fixed instructions replaces 80000 conversation-only estimate; dependencies can still restore history."
+      },
+      {
+        "method": "DTOC",
+        "role": "local",
+        "args": {
+          "strategy": true,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "Agent controls hide/show; shared window guidance; strategy instructions enabled."
+      },
+      {
+        "method": "ContextFoldingTools",
+        "role": "full",
+        "args": {
+          "max_branches": null,
+          "branch_max_turns": null,
+          "branch_timeout": null,
+          "branch_tokens": 12800,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "Remove lifetime branch count and branch time/turn caps; 12800 branch-growth allowance uses shared headroom, complete-pair protection retained."
+      },
+      {
+        "method": "FoldActSource",
+        "role": "full",
+        "args": {
+          "max_model_len": 64000,
+          "selection_tokens": 51200,
+          "max_obs_length": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "64000 model-length setting, explicit 51200 selection budget; remove 4096 observation clipping and its forced last-three-turn side effect."
+      },
+      {
+        "method": "TACO",
+        "role": "local",
+        "args": {
+          "uncovered_threshold": 3000,
+          "freeze_rules": false,
+          "task_category": "software-engineering",
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "3000 uncovered characters triggers rule induction, not a token cap; rule feedback and dynamic planning retained."
+      },
+      {
+        "method": "CoMem",
+        "role": "full",
+        "args": {
+          "trigger_tokens": 51200,
+          "interval": 1,
+          "lag": 1,
+          "summary_model": null,
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "Only schedule a new async summary at 51200; retain one-step lag, settle pending calls and preserve full source archive."
+      },
+      {
+        "method": "LongSeeker",
+        "role": "full",
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "Agent chooses among five operations; shared window guidance, no forced summary mechanism."
+      },
+      {
+        "method": "ZipRL",
+        "role": "full",
+        "args": {
+          "context_profile": {
+            "version": 1,
+            "max_context_tokens": 64000,
+            "compression_trigger_tokens": 51200
+          }
+        },
+        "note": "Agent chooses compression level 1–5 and summary; shared window guidance, no artificial length replacement."
+      }
+    ]
+  },
+  "papers": [
+    {
+      "id": "2508.21433",
+      "name": "The Complexity Trap",
+      "repository": "https://github.com/JetBrains-Research/the-complexity-trap",
+      "methods": [
+        "ComplexityTrap",
+        "ComplexityTrapSummary",
+        "ComplexityTrapHybrid"
+      ],
+      "comparison": [
+        "repro/complexity_trap_compare.py",
+        "repro/complexity_trap_summary_compare.py"
+      ],
+      "limits": "Summary comparisons use deterministic model substitutes; host trajectories and real model outputs differ.",
+      "paper_url": "https://arxiv.org/abs/2508.21433",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2509.23586",
+      "name": "AgentDiet",
+      "repository": "https://doi.org/10.6084/m9.figshare.30073654",
+      "source_kind": "author research artifact",
+      "methods": [
+        "AgentDiet"
+      ],
+      "comparison": [
+        "repro/agentdiet_compare.py"
+      ],
+      "limits": "Fake reflection model and token/compression libraries in source comparisons; Responses prefill is adapted.",
+      "paper_url": "https://arxiv.org/abs/2509.23586",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2510.00615",
+      "name": "ACON",
+      "repository": "https://github.com/microsoft/acon",
+      "methods": [
+        "ACONSource"
+      ],
+      "comparison": [
+        "repro/acon_compare.py"
+      ],
+      "limits": "Published AppWorld guidelines and optimizer protocol only; no guideline optimization or distillation.",
+      "paper_url": "https://arxiv.org/abs/2510.00615",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2509.13313",
+      "name": "ReSum",
+      "repository": "https://github.com/Alibaba-NLP/DeepResearch/tree/main/WebAgent/WebResummer",
+      "methods": [
+        "ReSumSource"
+      ],
+      "comparison": [
+        "repro/resum_compare.py"
+      ],
+      "limits": "Author inference prompts and trigger; no ReSumTool weights or GRPO training; host turn/token mapping differs.",
+      "paper_url": "https://arxiv.org/abs/2509.13313",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2510.24699",
+      "name": "AgentFold",
+      "repository": "https://github.com/Alibaba-NLP/DeepResearch/tree/main/WebAgent/AgentFold",
+      "methods": [
+        "AgentFoldSource"
+      ],
+      "comparison": [
+        "repro/folding_compare.py"
+      ],
+      "limits": "Author step replacement/formatting and visible compress-block parsing; native host tool execution, protected history and prompt serialization differ; trained policy not loaded.",
+      "paper_url": "https://arxiv.org/abs/2510.24699",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2601.16746",
+      "name": "SWE-Pruner",
+      "repository": "https://github.com/Ayanami1314/swe-pruner",
+      "methods": [
+        "SWEPruner"
+      ],
+      "comparison": [
+        "repro/swe_pruner_compare.py"
+      ],
+      "requires": [
+        "author pruning model service"
+      ],
+      "limits": "Requires real pruning endpoint; 271/405 published text matches, residual differences unresolved; heuristic fallback excluded.",
+      "paper_url": "https://arxiv.org/abs/2601.16746",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2606.17016",
+      "name": "TokenPilot",
+      "repository": "https://github.com/zjunlp/LightRSI",
+      "methods": [
+        "TokenPilotLifecycle"
+      ],
+      "comparison": [
+        "repro/tokenpilot_compare.py"
+      ],
+      "limits": "Author selection core; host lifecycle estimation prompt, serialization and scheduling differ.",
+      "paper_url": "https://arxiv.org/abs/2606.17016",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2607.23809",
+      "name": "ACM",
+      "repository": "https://github.com/lixiaochuan2020/agentic-context-management",
+      "methods": [
+        "ACM"
+      ],
+      "comparison": [
+        "repro/acm_compare.py"
+      ],
+      "limits": "Within-task context editing; common host policy, not author trained 9B policy. Fake summaries in source tests.",
+      "paper_url": "https://arxiv.org/abs/2607.23809",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2606.11213",
+      "name": "CWL",
+      "repository": "https://github.com/Kiz8-Team/pi-cwl",
+      "methods": [
+        "CWL"
+      ],
+      "comparison": [
+        "repro/cwl_compare.py"
+      ],
+      "limits": "Author filter and delimiter port; cannot prevent native host file edits inside exploration chunks.",
+      "paper_url": "https://arxiv.org/abs/2606.11213",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2609.26121",
+      "name": "DTOC",
+      "repository": "https://github.com/chaturvediabhay24/opencode",
+      "methods": [
+        "DTOC"
+      ],
+      "comparison": [
+        "repro/dtoc_compare.py"
+      ],
+      "limits": "Author output registry/visibility port; host timestamps, strategy instruction delivery and error mapping differ.",
+      "paper_url": "https://arxiv.org/abs/2609.26121",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2510.11967",
+      "name": "Context-Folding",
+      "repository": "https://github.com/MiaoLu3/Context_Folding",
+      "methods": [
+        "ContextFoldingTools"
+      ],
+      "comparison": [
+        "repro/context_folding_compare.py"
+      ],
+      "limits": "Host branch/return and request-boundary budget/fallback adaptation; cannot interrupt in-flight native tools or reproduce separate author generation/RL policy.",
+      "paper_url": "https://arxiv.org/abs/2510.11967",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2512.22733",
+      "name": "FoldAct",
+      "repository": "https://github.com/SHAO-Jiaqi757/FoldAct",
+      "methods": [
+        "FoldActSource"
+      ],
+      "comparison": [
+        "repro/folding_compare.py"
+      ],
+      "limits": "Author inference window selector, observation-prefix clipping and persistent forced last-three-turn mode; host token estimates and native turn grouping differ; no trained weights or loss functions.",
+      "paper_url": "https://arxiv.org/abs/2512.22733",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2604.19572",
+      "name": "TACO",
+      "repository": "https://github.com/multimodal-art-projection/TACO",
+      "methods": [
+        "TACO"
+      ],
+      "comparison": [
+        "repro/context_additions_compare.py"
+      ],
+      "limits": "作者规则过滤、生成与反馈修正规则；任务内规则池，未复现跨任务演化实验；辅助模型走统一计费。",
+      "paper_url": "https://arxiv.org/abs/2604.19572",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2605.30842",
+      "name": "CoMem",
+      "repository": "https://github.com/horizon-llm/CoMem",
+      "methods": [
+        "CoMem"
+      ],
+      "comparison": [
+        "repro/context_additions_compare.py"
+      ],
+      "limits": "作者提示词与异步k步摘要；统一宿主消息与计数适配，未复现训练及推理引擎预填优化。",
+      "paper_url": "https://arxiv.org/abs/2605.30842",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2605.05191",
+      "name": "LongSeeker",
+      "repository": "https://github.com/PolarSeeker/LongSeeker",
+      "methods": [
+        "LongSeeker"
+      ],
+      "comparison": [
+        "repro/context_additions_compare.py"
+      ],
+      "limits": "作者五种上下文操作；统一宿主工具接口与调用配对保护，未加载训练权重。",
+      "paper_url": "https://arxiv.org/abs/2605.05191",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    },
+    {
+      "id": "2605.28069",
+      "name": "ZipRL",
+      "repository": "https://github.com/huzhexin/ZipRL",
+      "methods": [
+        "ZipRL"
+      ],
+      "comparison": [
+        "repro/context_additions_compare.py"
+      ],
+      "limits": "作者摘要等级提示词与解析器；原搜索循环适配为宿主工具，未复现RL训练与权重。",
+      "paper_url": "https://arxiv.org/abs/2605.28069",
+      "interface_registered": true,
+      "full_paper_reproduction": false
+    }
+  ],
+  "paper_count": 16,
+  "method_count": 18,
+  "controls": [
+    "HostDefault"
+  ],
+  "extra_model_methods": [
+    "SWEPruner"
+  ],
+  "scope": "Online interaction-history and tool-output compression with public author code; fixed cohort.",
+  "evidence": "Source-function comparisons and host contract tests are not trained-policy or real benchmark equivalence.",
+  "methods": [
+    {
+      "class": "HostDefault",
+      "args": {
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "Vanilla Codex"
+    },
+    {
+      "class": "ComplexityTrap",
+      "args": {
+        "n": 10,
+        "pin_spec": false,
+        "polling": 1,
+        "trigger_tokens": 51200,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "ComplexityTrap"
+    },
+    {
+      "class": "ComplexityTrapSummary",
+      "args": {
+        "n": 21,
+        "m": 10,
+        "trigger_tokens": 51200,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "ComplexityTrapSummary"
+    },
+    {
+      "class": "ComplexityTrapHybrid",
+      "args": {
+        "n": 43,
+        "m": 10,
+        "w": 10,
+        "polling": 1,
+        "trigger_tokens": 51200,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "ComplexityTrapHybrid"
+    },
+    {
+      "class": "AgentDiet",
+      "args": {
+        "a": 2,
+        "b": 1,
+        "threshold": 500,
+        "min_saving": 400,
+        "max_ratio": 0.8,
+        "reflect_model": "gpt-6-luna",
+        "bypass_filter": false,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "AgentDiet"
+    },
+    {
+      "class": "ACONSource",
+      "args": {
+        "t_hist": 51200,
+        "trigger_tokens": 51200,
+        "t_obs": 12800,
+        "keep_turns": 2,
+        "summary_model": null,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "ACONSource"
+    },
+    {
+      "class": "ReSumSource",
+      "args": {
+        "context_k": 62,
+        "trigger_tokens": 51200,
+        "interval": null,
+        "summary_model": null,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "ReSumSource"
+    },
+    {
+      "class": "AgentFoldSource",
+      "args": {
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "AgentFoldSource"
+    },
+    {
+      "class": "TokenPilotLifecycle",
+      "args": {
+        "entry_budget": 12800,
+        "batch_turns": 8,
+        "min_chars": 256,
+        "estimator_model": null,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "TokenPilotLifecycle"
+    },
+    {
+      "class": "ACM",
+      "args": {
+        "summary_model": null,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "ACM"
+    },
+    {
+      "class": "CWL",
+      "args": {
+        "budget": 51200,
+        "full_context": true,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "CWL"
+    },
+    {
+      "class": "DTOC",
+      "args": {
+        "strategy": true,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "DTOC"
+    },
+    {
+      "class": "ContextFoldingTools",
+      "args": {
+        "max_branches": null,
+        "branch_max_turns": null,
+        "branch_timeout": null,
+        "branch_tokens": 12800,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "ContextFoldingTools"
+    },
+    {
+      "class": "FoldActSource",
+      "args": {
+        "max_model_len": 64000,
+        "selection_tokens": 51200,
+        "max_obs_length": null,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "FoldActSource"
+    },
+    {
+      "class": "TACO",
+      "args": {
+        "uncovered_threshold": 3000,
+        "freeze_rules": false,
+        "task_category": "software-engineering",
+        "summary_model": null,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "TACO"
+    },
+    {
+      "class": "CoMem",
+      "args": {
+        "trigger_tokens": 51200,
+        "interval": 1,
+        "lag": 1,
+        "summary_model": null,
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "CoMem"
+    },
+    {
+      "class": "LongSeeker",
+      "args": {
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "LongSeeker"
+    },
+    {
+      "class": "ZipRL",
+      "args": {
+        "context_profile": {
+          "version": 1,
+          "max_context_tokens": 64000,
+          "compression_trigger_tokens": 51200
+        }
+      },
+      "label": "ZipRL"
+    }
+  ]
+}

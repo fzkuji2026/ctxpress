@@ -15,7 +15,7 @@
     },
     "source_catalog": "ctxpress.methods.paper_catalog",
     "context_design": {
-      "version": "paper-context-128k-20261014-v3",
+      "version": "paper-context-128k-20261016-v4",
       "context": {
         "version": 1,
         "max_context_tokens": 128000,
@@ -45,13 +45,14 @@
             "n": 10,
             "pin_spec": false,
             "polling": 1,
+            "trigger_tokens": 102400,
             "context_profile": {
               "version": 1,
               "max_context_tokens": 128000,
               "compression_trigger_tokens": 102400
             }
           },
-          "note": "Rolling masking retains 10 latest outputs; no global length trigger in this algorithm."
+          "note": "Author rolling mask (latest 10 outputs) fires only when the complete input reaches 102400; masked outputs stay masked."
         },
         {
           "method": "ComplexityTrapSummary",
@@ -59,13 +60,14 @@
           "args": {
             "n": 21,
             "m": 10,
+            "trigger_tokens": 102400,
             "context_profile": {
               "version": 1,
               "max_context_tokens": 128000,
               "compression_trigger_tokens": 102400
             }
           },
-          "note": "Author 21+10-turn checkpoint schedule retained; 102400 is not a substitute for turn counts."
+          "note": "When the complete input reaches 102400, all unsummarized turns except the latest 10 become one checkpoint (author 21+10 turn schedule replaced by the window trigger)."
         },
         {
           "method": "ComplexityTrapHybrid",
@@ -75,13 +77,14 @@
             "m": 10,
             "w": 10,
             "polling": 1,
+            "trigger_tokens": 102400,
             "context_profile": {
               "version": 1,
               "max_context_tokens": 128000,
               "compression_trigger_tokens": 102400
             }
           },
-          "note": "Author 43+10-turn summary and latest-10 masking retained."
+          "note": "Checkpoint and latest-10 masking both fire at 102400, summary first as in the author order."
         },
         {
           "method": "AgentDiet",
@@ -133,7 +136,7 @@
               "compression_trigger_tokens": 102400
             }
           },
-          "note": "Explicit 102400 complete-input trigger replaces the implicit 32k-derived trigger; periodic 40-turn trigger disabled."
+          "note": "Explicit 102400 complete-input trigger (context_k 125) replaces the implicit 32k-derived trigger; periodic 40-turn trigger disabled."
         },
         {
           "method": "AgentFoldSource",
@@ -306,7 +309,7 @@
           "note": "Agent chooses compression level 1–5 and summary; shared window guidance, no artificial length replacement."
         }
       ],
-      "validation": "local synthetic contract tests; no real execution after reconfiguration",
+      "validation": "local synthetic contract tests; no real execution after the v4 window derivation",
       "interpretation": "128k means 128000 tokens. Experimental input limit, not model physical capacity; 131072 remainder is excluded."
     }
   },
@@ -642,6 +645,7 @@
           "n": 10,
           "pin_spec": false,
           "polling": 1,
+          "trigger_tokens": 102400,
           "context_profile": {
             "version": 1,
             "max_context_tokens": 128000,
@@ -655,6 +659,7 @@
         "args": {
           "n": 21,
           "m": 10,
+          "trigger_tokens": 102400,
           "context_profile": {
             "version": 1,
             "max_context_tokens": 128000,
@@ -670,6 +675,7 @@
           "m": 10,
           "w": 10,
           "polling": 1,
+          "trigger_tokens": 102400,
           "context_profile": {
             "version": 1,
             "max_context_tokens": 128000,

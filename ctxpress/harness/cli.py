@@ -16,6 +16,8 @@ def main(argv=None):
     p.add_argument('--config', help='existing benchmark configuration to copy; original is untouched')
     p.add_argument('--output', help='new configuration in the same directory, preserving relative paths')
     p.add_argument('--pruner-url', help='real SWE-Pruner endpoint; without it the extra-model method is left out')
+    p.add_argument('--window', type=int, help='experimental context window in tokens (default 128000); '
+                   'every method setting is derived from it')
     p = sub.add_parser('benchmarks', help='list built-in benchmark adapters and their supported scope')
     p.add_argument('--start-mode', choices=tasks.MODES)
     p.add_argument('--evidence', action='append', default=[], help='review.json bundle; repeat to show bounded real-run evidence')
@@ -78,7 +80,7 @@ def main(argv=None):
         if not args.config:
             if args.output:
                 ap.error('--output requires --config')
-            print(json.dumps(describe(), indent=2, ensure_ascii=False))
+            print(json.dumps(describe(args.window), indent=2, ensure_ascii=False))
             return
         if not args.output:
             ap.error('--config requires --output')
@@ -87,11 +89,13 @@ def main(argv=None):
             ap.error('keep the new config in the source directory so relative resource paths remain valid')
         if source == target or target.exists():
             ap.error('output must be a new file; existing configurations are never overwritten')
-        config = configure(json.loads(source.read_text()), args.pruner_url)
+        config = configure(json.loads(source.read_text()), args.pruner_url, args.window)
         with target.open('x', encoding='utf-8') as stream:
             json.dump(config, stream, ensure_ascii=False, indent=2)
             stream.write('\n')
-        print(json.dumps(dict(output=str(target), cohort=describe()['version'], methods=len(config['methods']),
+        print(json.dumps(dict(output=str(target), cohort=describe()['version'],
+                              context_profile=describe(args.window)['context_profile']['version'],
+                              methods=len(config['methods']),
                               workers=1, started=False), ensure_ascii=False))
         return
     if args.command == 'benchmarks':

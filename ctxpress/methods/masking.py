@@ -13,14 +13,24 @@ class ComplexityTrap(Method):
     source = "arXiv 2508.21433"
     budget_spec = BudgetSpec("n", "outputs", "recent tool outputs", 10)
 
-    def __init__(self, n=None, pin_spec=False, polling=1, *, budget=None):
+    def __init__(self, n=None, pin_spec=False, polling=1, *, budget=None, trigger_tokens=None):
         n = self.budget_spec.resolve(budget, n)
+        if trigger_tokens is not None and (type(trigger_tokens) is not int or trigger_tokens <= 0):
+            raise ValueError('trigger_tokens must be a positive integer or None')
         self.budget = n
         self.n, self.pin_spec, self.polling = n, pin_spec, polling
+        # Window adaptation (not the author's rule): mask only on requests whose complete input reaches
+        # trigger_tokens; outputs masked then stay masked. None keeps the author's every-request rolling mask.
+        self.trigger_tokens = trigger_tokens
         self.name = f"Complexity Trap（N = {n}）"
-        self.framework = dict(L1=f"每次请求，最近 {n} 条之外的工具输出换成占位符", L2="无", L3="无", cross="无", memory="无", decider="固定规则")
+        when = "每次请求" if trigger_tokens is None else f"输入达到 {trigger_tokens} token 时"
+        self.framework = dict(L1=f"{when}，最近 {n} 条之外的工具输出换成占位符", L2="无", L3="无", cross="无", memory="无", decider="固定规则")
 
     def step(self, sim, r):
+        if self.trigger_tokens is not None:
+            from ctxpress.methods.experiment_context import context_tokens
+            if context_tokens(sim) < self.trigger_tokens:
+                return
         outs = sim.outputs()
         cut = max(0, ((len(outs) + 1) // self.polling) * self.polling - self.n - 1)   # +1/-1: their count includes the task
         sim.to_placeholder([s for s in outs[:cut] if replaceable(s) and not (self.pin_spec and s["kind"] == "spec")])

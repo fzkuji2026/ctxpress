@@ -6,7 +6,17 @@ Token counts use the shared rendered-prompt estimate, not provider guarantees.
 from copy import deepcopy
 import math
 
-PROFILE = dict(version=1, max_context_tokens=128000, compression_trigger_tokens=102400)
+TRIGGER_FRACTION = 0.8  # every method's compression threshold is 80% of the experimental window
+
+
+def profile(window):
+    """The shared context profile for one experimental window (decimal tokens)."""
+    if type(window) is not int or window <= 0:
+        raise ValueError('window must be a positive integer')
+    return dict(version=1, max_context_tokens=window, compression_trigger_tokens=round(window * TRIGGER_FRACTION))
+
+
+PROFILE = profile(128000)
 
 
 def validate(profile):

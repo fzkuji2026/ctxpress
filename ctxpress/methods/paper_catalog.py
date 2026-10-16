@@ -63,28 +63,30 @@ def needs_extra_model(paper):
     return bool(paper.get('requires'))
 
 
-def describe():
+def describe(window=None):
     from ctxpress.methods import REGISTRY
+    from ctxpress.methods.paper_profile import WINDOW
+    window = window or WINDOW
     papers = deepcopy(list(PAPERS))
     for paper in papers:
         paper['paper_url'] = 'https://arxiv.org/abs/' + paper['id']
         paper['interface_registered'] = all(name in REGISTRY for name in paper['methods'])
         paper['full_paper_reproduction'] = False
     from ctxpress.methods.paper_profile import describe as profile_description
-    return dict(version=VERSION, context_profile=profile_description(), papers=papers, paper_count=len(papers),
+    return dict(version=VERSION, context_profile=profile_description(window), papers=papers, paper_count=len(papers),
                 method_count=sum(len(p['methods']) for p in papers), controls=list(CONTROLS),
                 extra_model_methods=[name for p in PAPERS if needs_extra_model(p) for name in p['methods']],
                 scope='Online interaction-history and tool-output compression with public author code; fixed cohort.',
                 evidence='Source-function comparisons and host contract tests are not trained-policy or real benchmark equivalence.')
 
 
-def method_entries(pruner_url=None, *, normalized=True):
+def method_entries(pruner_url=None, *, normalized=True, window=None):
     from ctxpress.methods import build
-    from ctxpress.methods.paper_profile import arguments
+    from ctxpress.methods.paper_profile import WINDOW, arguments
     entries = []
     papers = [paper for paper in PAPERS if pruner_url or not needs_extra_model(paper)]
     for name in (*CONTROLS, *(name for paper in papers for name in paper['methods'])):
-        args = arguments(name) if normalized else {}
+        args = arguments(name, window or WINDOW) if normalized else {}
         if name == 'SWEPruner' and pruner_url:
             args['url'] = pruner_url
         entry = {'class': name, 'args': args, 'label': LABELS.get(name, name)}
@@ -112,10 +114,10 @@ def validate_entries(entries, require_services=True):
     return True
 
 
-def configure(base, pruner_url=None):
-    """Replace an explicit new experiment's methods; never launch or alter old runs."""
+def configure(base, pruner_url=None, window=None):
+    """Replace an explicit new experiment's methods (settings for `window`); never launch or alter old runs."""
     config = deepcopy(base)
-    config['methods'] = method_entries(pruner_url)
+    config['methods'] = method_entries(pruner_url, window=window)
     validate_entries(config['methods'])
     config['workers'] = 1
     if isinstance(config.get('comparison'), dict):
