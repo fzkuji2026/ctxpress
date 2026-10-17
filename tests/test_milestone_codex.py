@@ -185,3 +185,15 @@ def test_milestone_run_accepts_service_tier_only_for_task_start():
         adapter.normalize_run({'service_tier':'priority'},1)
     with pytest.raises(ValueError,match='service_tier'):
         adapter.compile_plan({'start_mode':'checkpoint','run':{'service_tier':'fast'}})
+
+
+def test_stale_evaluation_login_is_refused_before_dispatch(tmp_path):
+    import datetime
+    from ctxpress.benchmarks.milestone.runner import check_auth_fresh
+    login=tmp_path/'auth.json'
+    now=datetime.datetime(2026,10,17,4,tzinfo=datetime.timezone.utc)
+    login.write_text(json.dumps({'last_refresh':'2026-10-17T03:48:59.688409410Z'}))
+    check_auth_fresh(login,now)
+    login.write_text(json.dumps({'last_refresh':'2026-10-09T03:48:59.688409410Z'}))
+    with pytest.raises(ValueError,match='last refreshed'):
+        check_auth_fresh(login,now)

@@ -15,7 +15,9 @@ class ExecutionInfrastructureFailure(RuntimeError):
 # Codex serializes unit variants as a string and struct variants as a one-key object.
 PROVIDER_FAILURES = ('server_overloaded', 'http_connection_failed', 'response_stream_connection_failed',
                      'response_stream_disconnected', 'response_too_many_failed_attempts',
-                     'internal_server_error', 'usage_limit_exceeded')
+                     'internal_server_error', 'usage_limit_exceeded', 'unauthorized')
+# A token refresh the host could not send (classified 'other'): the agent never reached the model.
+_AUTH_REFRESH_FAILURE = re.compile(r'https://auth\.openai\.com/oauth/token')
 
 
 def _provider_failure(row):
@@ -27,6 +29,9 @@ def _provider_failure(row):
         kind = next(iter(kind))
     if kind in PROVIDER_FAILURES:
         return dict(kind='provider_failure', error=kind, event_type=payload.get('type'), turn_id=payload.get('turn_id'))
+    message = error.get('message') if isinstance(error, dict) else None
+    if isinstance(message, str) and _AUTH_REFRESH_FAILURE.search(message):
+        return dict(kind='auth_failure', error=message[:300], event_type=payload.get('type'), turn_id=payload.get('turn_id'))
     return None
 
 
@@ -98,7 +103,8 @@ def observe(result):
             isinstance(stored.get('tool_runtime_failures'), list) and
             all(isinstance(row, dict) and isinstance(row.get('error'), str) and
                 (row.get('kind') in ('code_mode_host_spawn_failure', 'method_tool_route_failure') and isinstance(row.get('call_id'), str) or
-                 row.get('kind') == 'provider_failure' and row['error'] in PROVIDER_FAILURES)
+                 row.get('kind') == 'provider_failure' and row['error'] in PROVIDER_FAILURES or
+                 row.get('kind') == 'auth_failure' and _AUTH_REFRESH_FAILURE.search(row['error']) is not None)
                 for row in stored['tool_runtime_failures']) and
             stored['execution_invalid'] == bool(stored['tool_runtime_failures']))
         if stored is not None and not valid:

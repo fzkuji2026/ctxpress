@@ -187,3 +187,15 @@ def test_other_turn_errors_and_agent_text_do_not_count_as_provider_failure(tmp_p
     prose = dict(type='event_msg', payload=dict(type='agent_message', message='server_overloaded'))
     run, _ = result(tmp_path, transcript(output='ok') + [other, prose])
     assert not execution_health.observe(run)['execution_invalid']
+
+
+def test_failed_token_refresh_invalidates_execution(tmp_path):
+    # Observed 10-16: an expired copied login, and the agent container cannot reach the token endpoint.
+    failed = overloaded()
+    failed['payload']['error'] = dict(message='error sending request for url (https://auth.openai.com/oauth/token)',
+                                      codex_error_info='other')
+    run, path = result(tmp_path, transcript(output='ok') + [failed])
+    observed = execution_health.observe(run)
+    assert observed['execution_invalid'] and observed['tool_runtime_failures'][0]['kind'] == 'auth_failure'
+    execution_health.retain(run); path.unlink()
+    assert execution_health.observe(run)['execution_invalid'] and not execution_health.observe(run)['health_unknown']

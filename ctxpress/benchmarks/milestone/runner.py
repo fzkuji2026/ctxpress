@@ -11,6 +11,23 @@ from ctxpress.harness.jobs import resources as task_resources
 from ctxpress.benchmarks.milestone import codex_hook as milestone_codex
 
 
+# Codex refreshes a login whose last refresh is older than 8 days. The Agent container cannot reach the
+# token endpoint, so every turn would fail; refuse to start unless the login stays fresh for a long job.
+AUTH_FRESH_DAYS=6
+
+
+def check_auth_fresh(path,now=None):
+    import json
+    try:last=json.loads(Path(path).read_text()).get('last_refresh')
+    except (OSError,ValueError):last=None
+    if not isinstance(last,str):return
+    stamp=datetime.datetime.fromisoformat(re.sub(r'(\.\d{6})\d*','\1',last).replace('Z','+00:00'))
+    now=now or datetime.datetime.now(datetime.timezone.utc)
+    if now-stamp>datetime.timedelta(days=AUTH_FRESH_DAYS):
+        raise ValueError(f'evaluation login was last refreshed {last}; Codex would try to refresh it inside the '
+                         'Agent container, which cannot reach the token endpoint. Refresh the host login first.')
+
+
 @contextlib.contextmanager
 def activated_policy(author,binding):
     keys=set(author.RUNTIME_POLICY_ENV_KEYS)|{'SWE_MILESTONE_UNPROTECTED'}
@@ -74,6 +91,7 @@ def run(request, source):
     auth=os.environ.get('CTXPRESS_CODEX_AUTH_FILE')
     if not auth or Path(auth).is_symlink() or not Path(auth).is_file():
         raise ValueError('native dispatch requires separately supplied existing authentication')
+    check_auth_fresh(auth)
     prepared=milestone_native.prepare(task,source,folder/'native-preparation')
     workspace,trial,metadata=prepared['workspace'],prepared['trial'],prepared['metadata']
     (trial/'log').mkdir()
