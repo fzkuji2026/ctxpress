@@ -37,3 +37,22 @@ def set_order(directory, methods, reason):
         connection.execute("INSERT OR REPLACE INTO metadata VALUES ('dispatch_priority_history',?)", (json.dumps(entries),))
         connection.execute("INSERT OR REPLACE INTO metadata VALUES ('dispatch_priority',?)", (json.dumps(record),))
     return record
+
+
+def hold(directory, reason):
+    """Withdraw pending jobs from dispatch without touching running ones.
+
+    Unlike cancel, live workers keep running under the same scheduler, which exits
+    once they finish. Held jobs stay recorded; run them later under a new plan.
+    """
+    from .queue import database
+    if not reason.strip():
+        raise ValueError('holding dispatch requires a reason')
+    with database(directory) as connection:
+        connection.execute('BEGIN IMMEDIATE')
+        held = [row[0] for row in connection.execute("SELECT id FROM jobs WHERE status='pending' ORDER BY id")]
+        connection.execute("UPDATE jobs SET status='cancelled',finished=?,error=? WHERE status='pending'",
+                           (time.time(), 'held: ' + reason))
+        record = dict(held=held, reason=reason, updated=time.time())
+        connection.execute("INSERT OR REPLACE INTO metadata VALUES ('dispatch_hold',?)", (json.dumps(record),))
+    return record

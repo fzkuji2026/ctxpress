@@ -56,6 +56,8 @@ def main(argv=None):
     p = sub.add_parser('prioritize', help='change pending dispatch order without changing frozen jobs')
     p.add_argument('--directory', required=True); p.add_argument('--methods', nargs='+', required=True)
     p.add_argument('--reason', required=True)
+    p = sub.add_parser('hold', help='stop dispatching pending jobs; running jobs finish normally')
+    p.add_argument('--directory', required=True); p.add_argument('--reason', required=True)
     p = sub.add_parser("report"); p.add_argument("--directory", required=True)
     p = sub.add_parser('review', help='read-only quality, cost, exclusions, cleanup and process analysis bundle')
     p.add_argument('--directory', required=True); p.add_argument('--reference', required=True)
@@ -199,6 +201,9 @@ def main(argv=None):
     elif args.command == 'prioritize':
         from ctxpress.harness.jobs.priority import set_order
         result = set_order(args.directory, args.methods, args.reason)
+    elif args.command == 'hold':
+        from ctxpress.harness.jobs.priority import hold
+        result = hold(args.directory, args.reason)
     elif args.command in ('cancel', 'recover', 'resume'):
         from ctxpress.harness.jobs import control as eval_control
         if args.command == 'resume':

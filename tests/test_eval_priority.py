@@ -43,3 +43,18 @@ def test_history_keeps_previous_order(prepared):
     priority.set_order(prepared, ['C', 'B', 'A'], 'updated evidence')
     with queue.database(prepared) as c:
         assert json.loads(c.execute("SELECT value FROM metadata WHERE key='dispatch_priority_history'").fetchone()[0]) == [first]
+
+
+def test_hold_withdraws_pending_jobs_and_leaves_running_ones(tmp_path):
+    with queue.database(tmp_path) as c:
+        c.execute('CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT)')
+        c.execute('CREATE TABLE jobs (id TEXT, status TEXT, finished REAL, error TEXT)')
+        c.executemany('INSERT INTO jobs VALUES (?,?,NULL,NULL)', [('j0', 'running'), ('j1', 'pending'), ('j2', 'pending')])
+    record = priority.hold(tmp_path, 'replan grading workers')
+    assert record['held'] == ['j1', 'j2']
+    with queue.database(tmp_path) as c:
+        rows = {r['id']: (r['status'], r['error']) for r in c.execute('SELECT * FROM jobs')}
+    assert rows == {'j0': ('running', None), 'j1': ('cancelled', 'held: replan grading workers'),
+                    'j2': ('cancelled', 'held: replan grading workers')}
+    with pytest.raises(ValueError, match='reason'):
+        priority.hold(tmp_path, ' ')
