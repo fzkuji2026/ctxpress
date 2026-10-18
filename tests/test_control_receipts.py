@@ -237,3 +237,13 @@ def test_control_history_reordering_or_changes_fail_without_overwrite(tmp_path):
         assert receipts.history() == rows
     receipts.publish_history(rows[1:])
     assert receipts.history() == rows
+
+
+def test_receipt_compacted_before_its_output_reached_the_model_is_not_a_route_failure():
+    # Observed 10-17 (AgentFold, CWL): the call ran, then the host compacted before the next request.
+    issued = dict(type='method_tool_receipt_issued', receipt='a' * 32 + ':' + 'b' * 32)
+    compaction = dict(type='native_compaction', t=1)
+    assert route_failures(dict(rewrites=[dict(request=1), issued, compaction, dict(request=2)])) == []
+    # A request after issuance should have carried the pair; a later compaction does not excuse it.
+    failures = route_failures(dict(rewrites=[issued, dict(request=2), compaction]))
+    assert [f['call_id'] for f in failures] == [issued['receipt']]

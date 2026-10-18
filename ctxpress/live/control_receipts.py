@@ -177,15 +177,22 @@ def route_failures(result):
                 for row in rows if row.get('type') == 'method_tool_route_failed']
     failures.extend(dict(kind='host_contract_failure', call_id='', error=row.get('reason', 'host contract failed'))
                     for row in rows if row.get('type') == 'host_contract_failed')
-    issued, observed = set(), set()
+    issued, observed, compacted = set(), set(), set()
+    waiting = set()                       # issued, and no model request has been rewritten since
     for row in rows:
         if row.get('type') == 'method_tool_receipt_issued':
-            issued.add(row['receipt'])
+            issued.add(row['receipt']); waiting.add(row['receipt'])
         elif row.get('type') == 'method_tool_receipt_observed':
             observed.add(row['receipt'])
         elif row.get('type') == 'method_tool_receipt_audit':
             issued.update(row.get('issued', []))
-    for receipt in sorted(issued - observed):
+        elif row.get('type') == 'native_compaction':
+            # The host compacted before sending the call's output to the model: the pair was
+            # summarized away, so no later request can carry its boundary. Not a routing failure.
+            compacted |= waiting; waiting = set()
+        elif 'request' in row:
+            waiting = set()
+    for receipt in sorted(issued - observed - compacted):
         failures.append(dict(kind='method_tool_route_failure', call_id=receipt,
             error='MCP control invocation has no verified direct call/output boundary'))
     latest = {}

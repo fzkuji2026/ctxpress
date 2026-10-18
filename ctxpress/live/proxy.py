@@ -293,7 +293,7 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                 except Exception as e:
                     if rewriter.context_profile(key) is not None:
                         record(dict(type='experiment_context_rewrite_failed', t=time.time(), status=422,
-                                    reason=type(e).__name__, upstream_sent=False))
+                                    reason=type(e).__name__, message=str(e)[:500], upstream_sent=False))
                         self.send_error(422, 'ctxpress experiment context rewrite failed'); return
                     from ctxpress.live.method_tools import MethodToolRouteError
                     if isinstance(e, MethodToolRouteError):
