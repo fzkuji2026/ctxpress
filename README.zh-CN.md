@@ -63,6 +63,20 @@ response = client.responses.create(**request)
 
 `ctxpress list` 列出每个方法的来源、是否需要额外模型，以及与原实现的差别。
 
+## 本项目方法：infinite-context V5
+
+本项目的方法是 `InfiniteContext(version=5, ...)`（注册名 `infinite-context`，代码 `ctxpress/methods/infinite_v5.py`）。
+每次请求前执行 C_t = R_t(C_{t-1} + 新内容)，R_t 是一列按顺序执行的算子。每个算子是一组显式开关：**何时**动手
+（内容进入时、一段工作结束时、话题切换时、超过阈值时），内容**变成什么**（结构化保留、头尾截断、编号占位符、摘要、交给宿主自己压缩），
+**谁**写替换（机械、模型、混合），以及**是否值得做**（总是做，或按成本门槛比较节省的输入与缓存重建、写摘要、预计找回和长上下文的质量代价）。
+被移出的原文存档，可用 `infinite_context_search` / `infinite_context_read` 读回。
+
+- 默认开关与 CliffCompaction 逐请求一致（24,995 次记录请求，`repro/infinite_v5_cliff_compare.py`）；Codex 原生压缩也是一个算子。结果差异都能追溯到具体开关。
+- 重放中，进入时缩短 + 工作段占位符 + 话题切换摘要一起比 CliffCompaction 少发约 28% 的 token，估算费用低约 21%；重放不能比较任务质量。
+- **状态：**尚未在真实 benchmark 上评测，论文基线跑完后按同一设置评测。详见 [docs/infinite-context.md](docs/infinite-context.md#v5本项目方法)。
+
+此前版本（`WorkingView`、`CostModel` / `AutoCostModel`、历史拟合的 `infinite-context` 策略 v2–v4、`infinite-context-rules`）保留用于复现，不是本文方法。
+
 ## 方法
 后续研究固定使用 **16 篇论文 / 18 个方法配置**，全部走统一接口。见[作者源码清单与适配差异](docs/paper-baselines.md)，或运行 `ctxpress eval paper-methods`。新论文协议拒绝旧近似版与项目自研候选。
 
@@ -91,7 +105,8 @@ response = client.responses.create(**request)
 | ReSum：周期近似 / 作者推理流程适配 | `ReSum`, `ReSumSource` | [arXiv:2509.13313](https://arxiv.org/abs/2509.13313) |
 | Context-Folding：分支/返回的宿主适配，非 FoldGRPO 训练复现 | `ContextFoldingTools` | [arXiv:2510.11967](https://arxiv.org/abs/2510.11967) |
 | FoldAct：作者推理窗口规则，使用宿主策略 | `FoldActSource` | [arXiv:2512.22733](https://arxiv.org/abs/2512.22733) |
-| 成本模型（固定参数或离线筛选的策略） | `CostModel`、`AutoCostModel` | 本项目 |
+| **infinite-context V5：本项目方法**（算子列表；CliffCompaction 与 Codex 压缩都是其特例） | `InfiniteContext(version=5)` | 本项目 |
+| 本项目此前版本：成本模型、Working View、历史拟合策略 | `CostModel`、`AutoCostModel`、`WorkingView`、`InfiniteContext`（策略 v2–v4）、`InfiniteContextRules` | 本项目（保留用于复现） |
 | 打分方法基类 | `ScoredMethod` | 本项目 |
 
 包装器用于组合方法：`Composed`、`EntryTruncation`、`PinRequirements`、`WithMemory`、`Trigger`。各方法的参数、预算单位和与原实现的
@@ -99,15 +114,20 @@ response = client.responses.create(**request)
 
 所有变体共用 `ctxpress codex`、`ctxpress claude`、Python API 和 `ctxpress eval` 接口。`repro/` 中的作者源码对照用于验证实现，不是独立 baseline 运行入口。离线对照通过不等于完整复现论文，也不能替代真实评测成绩；适配范围和未复现部分见 [方法说明](docs/methods.md#新增源码适配与统一入口)。
 
-## 重跑状态
+## 结果：SWE-Milestone（进行中）
 
-固定 **16 篇论文 / 18 个方法配置**，全部按新配置重新评测：
+Codex 0.161.0，gpt-6.1-sol（medium，Fast 档），128k 窗口，Codex 原生压缩为唯一兜底；作者 Score-1000（满分 100），每个方法每个场景 1 次。
+轻场景（ripgrep、scikit-learn、go-zero）18 个配置全部完成；重场景（dubbo、element-web、nushell）在跑。
 
-- **输入设计上限：**128000 token；按整体上下文长度触发的方法使用 **102400 token 触发参考线**。这是实验窗口设置，实际输入合规仍需逐请求核验。
-- **Agent 执行：**无总请求预算及运行总时长预算；保留取消、网络故障处理和评分测试超时。
-- **调度：**单作业串行，覆盖执行、官方评分与资源清理；全部结束后才进入下一作业，评分并发为 1。
-- **状态：**用户要求暂停，等待评测代码修复。初始化作业及其余队列已取消，自动跟进已暂停；暂无已完成的新成绩。
-- **费用口径：**API 费用估算在本地按记录用量计算，采用本轮配置中声明的模型费率；缺失用量或价格时费用保持未知，不能按零计。本地 GPU 成本另列且未定价。
+| | 轻场景平均分 | 成本相对 Vanilla |
+|---|---|---|
+| Vanilla Codex | 81.7 | 1.00×（$18.87） |
+| 18 个中的 14 个方法 | 78.9–82.7 | 0.94–1.27× |
+| CWL / FoldActSource | 82.0 / 81.8 | 2.24× / 4.00× |
+| AgentDiet / ComplexityTrap | 58.4 / 52.4 | 1.31× / 3.32× |
+
+多数方法与 Vanilla 相差不到 1 分，单次运行无法区分。成本为按标准价格估算的 API 等价费用。完整表格、缓存命中、原因和有效性规则见
+[docs/results-swe-milestone.md](docs/results-swe-milestone.md)。
 
 ## 工作方式
 
@@ -175,6 +195,8 @@ ctxpress smoke --output runs/smoke     # 每个方法经过真实代理，对接
 | 方法 | [docs/methods.md](docs/methods.md) · [添加新方法](docs/new_method.md) |
 | 真实执行：代理与改写 | [docs/live.md](docs/live.md) |
 | 评测与 benchmark 适配器 | [docs/evaluation.md](docs/evaluation.md) · [docs/benchmarks.md](docs/benchmarks.md) |
+| 本项目方法（infinite-context V5） | [docs/infinite-context.md](docs/infinite-context.md#v5本项目方法) |
+| SWE-Milestone 结果 | [docs/results-swe-milestone.md](docs/results-swe-milestone.md) |
 | 重放模拟器与成本模型 | [docs/replay.md](docs/replay.md) · [docs/cost_policy.md](docs/cost_policy.md) |
 | ACM 接入 | [docs/acm.md](docs/acm.md) |
 | 代码结构 | [docs/architecture.md](docs/architecture.md) |

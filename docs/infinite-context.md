@@ -7,7 +7,36 @@
 此前基于 Cliff 的原型保留为 **infinite-context-rules**，用于对照；当前
 **infinite-context** 不再调用 Cliff 压缩器。
 
-## 实际决策流程
+## V5：本项目方法
+
+**本项目的方法是 infinite-context V5**（`InfiniteContext(version=5, ...)`，注册名 `infinite-context`，实现在
+`ctxpress/methods/infinite_v5.py`）。下文的 V2–V4（历史拟合策略）以及 `infinite-context-rules`、`WorkingView`、
+`CostModel` / `AutoCostModel` 都是此前的版本，保留用于复现，不是本文方法。
+
+做法：每次请求前更新上下文 C_t = R_t(C_{t-1} + 新内容)，R_t 是一列按顺序执行的算子。每个算子是一组显式开关：
+
+- **何时动手**：内容进入时 / 一段工作结束时 / 话题切换时 / 超过阈值 t 时。
+- **作用范围**：开头的指令与任务从不动；最近若干轮保留；可保护用户消息和需求文档读取。
+- **变成什么**：结构化保留（测试失败、搜索路径）/ 头尾截断 / 编号占位符 / 摘要 / 交给宿主自己压缩。
+- **谁来写替换**：机械渲染 / 模型 / 模型写任务状态加机械行（hybrid）。
+- **是否值得做**：总是做，或按成本门槛（节省的输入是否抵得上缓存重建、写摘要、预计找回和长上下文的质量代价）。
+- **可找回**：被移出的原文存档，Agent 可用 `infinite_context_search` / `infinite_context_read` 读回。
+
+三层算子默认都关：L1 内容进入时缩短单条长输出（只决定一次，之后不破坏缓存）；L2 一段工作结束时把这段的长输出成批换成占位符；
+L3 话题切换时提前摘要。运行时信号（工作阶段、移除后是否重读、复用记忆）只用已发生的请求调节这些算子。
+
+与已有方法的关系：
+
+- 默认开关（只有一个算子：超过阈值时机械摘要）与 CliffCompaction 逐请求逐字节一致（97 条会话 × 阈值 2 万 / 5 万 / 10 万，
+  共 24,995 次请求），核对脚本 `repro/infinite_v5_cliff_compare.py`。Codex 原生压缩也是一个算子
+  （`repro/codex_compact_compare.py`）。因此结果差异都能追溯到具体开关。
+- 重放（83 条会话，阈值 10 万）：L1 + L2 + L3 一起比 CliffCompaction 少发约 28% 的 token，估算费用低约 21%。
+  重放只能比较大小和费用，不能比较任务质量。
+
+状态：尚未在真实 benchmark 上评测；论文方法基线（[SWE-Milestone 结果](results-swe-milestone.md)）跑完后，
+按同一设置（128k、Codex 原生压缩兜底）评测 V5。单元测试：`tests/test_infinite_v5.py`。
+
+## V2–V4（此前版本）：实际决策流程
 
 1. 用户消息、系统/开发者指令、规格和媒体保留；工具调用与输出保持原有结构。
 2. 工具输出由现有 LiveContext 存档。每次压缩前核对文件与原文；缺失、损坏或没有
