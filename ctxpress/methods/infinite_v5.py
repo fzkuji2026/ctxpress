@@ -48,11 +48,12 @@ checks that on recorded sessions. Every other setting is a departure from Cliff 
 difference in results can be traced to the switches that produced it.
 """
 from __future__ import annotations
-import dataclasses, json, re
+import collections, dataclasses, json, re
 from ctxpress.methods.cliff import (CliffCompaction, Knobs, SUMMARY_HEADER, _TASK_NOTIFICATION_RE, group_turns,
                                     is_summary, truncate)
 from ctxpress.core.engine import is_model
 from ctxpress.methods.reuse_memory import ReuseMemory
+from ctxpress.core.cache_model import Cache, RHO
 
 K = 1000
 STATE_GUIDANCE = ("Write the working state a coding agent needs to continue after these steps are removed from its "
@@ -68,6 +69,7 @@ DECIDERS = ("always", "cost")
 TRIGGERS = ("size", "always")
 DIALECTS = ("wire", "full")
 HOLDS = ("window", "value")
+CHOOSERS = ("fixed", "cost")
 
 
 @dataclasses.dataclass
@@ -125,12 +127,29 @@ class Spec(Knobs):
                                           # again, same command run again) are never held and go at the next batch
     spec_keep_frac: float = 0.0           # resident requirements: the newest spec outputs (SRS, design docs), together
                                           # at most this share of t, stay verbatim through every operator (0 = off)
+    choose: str = "fixed"                 # fixed: the operators the switches list; cost: at every request each
+                                          # available operator is a candidate and the cost model picks one (§9.7)
+    writers: tuple = ("mechanical",)      # cost: summary writers that are candidates (mechanical, hybrid)
+    state_recovery_factor: float = 0.5    # cost, hybrid: share of recoveries still needed with a written task state
+                                          # (assumed; to be set by trials)
+    cache_rho: tuple = RHO                # cost: provider cache retention after an edit (core/cache_model.py)
+    summary_at: str = "any"               # cost: summary candidate at any request above topic_min_frac of t (the rent
+                                          # account times it) or only after a topic change ("topic")
+    candidates: tuple = ("placeholder", "summary")   # cost: candidate operators (ablation removes one)
 
     def check(self):
         for name, allowed in (("trigger", TRIGGERS), ("writer", WRITERS), ("previous", PREVIOUS), ("decider", DECIDERS),
                               ("tool_dialect", DIALECTS)):
             if getattr(self, name) not in allowed:
                 raise ValueError(f"{name} must be one of {allowed}")
+        if self.choose not in CHOOSERS or not self.writers or set(self.writers) - {"mechanical", "hybrid"}:
+            raise ValueError(f"choose must be one of {CHOOSERS}; writers from mechanical, hybrid")
+        if set(self.candidates) - {"placeholder", "summary"}:
+            raise ValueError("candidates from placeholder, summary")
+        if self.summary_at not in ("any", "topic"):
+            raise ValueError("summary_at must be any or topic")
+        if not (0 <= self.state_recovery_factor <= 1) or len(self.cache_rho) < 1:
+            raise ValueError("state_recovery_factor in [0, 1]; cache_rho nonempty")
         if self.keep_recent < 0 or self.output_keep_chars < 0 or self.writer_tokens < 1 or self.horizon < 1:
             raise ValueError("counts and sizes must be non-negative")
         if not (0 < self.entry_frac and 0 <= self.segment_min_frac and 0 <= self.topic_min_frac
@@ -269,6 +288,11 @@ class InfiniteContextV5(CliffCompaction):
         if unknown:
             raise ValueError("unknown switches: " + ", ".join(sorted(unknown)))
         t = switches.pop("t", 100 * K)
+        if switches.get("choose") == "cost":       # hard constraints of §9.7, not switches: nothing unseen or in use
+            switches = {"guard": True, "protect_spec": True, "recall": True, **switches}   # changes; specs stay
+        for name in ("writers", "cache_rho", "candidates"):
+            if isinstance(switches.get(name), list):
+                switches[name] = tuple(switches[name])
         spec = Spec(**{**CLIFF, **switches}).check()
         super().__init__(t=t, keep_recent=spec.keep_recent, result_max_chars=spec.output_keep_chars,
                          cmd_max_chars=spec.cmd_max_chars)
@@ -285,7 +309,8 @@ class InfiniteContextV5(CliffCompaction):
                 self.codex_config = {"model_auto_compact_token_limit": spec.host_t}
             else:
                 self.host_compaction = "default"     # launchers pass no compaction override, as for HostDefault
-        stores = any(o.transform in ("shorten", "structure", "truncate", "placeholder") for o in ops)
+        stores = spec.choose == "cost" or any(o.transform in ("shorten", "structure", "truncate", "placeholder")
+                                              for o in ops)
         archived = spec.recall or stores
         self.memory = "id" if stores else None
         self.agent_tools = _tools() if archived else ()
@@ -293,7 +318,8 @@ class InfiniteContextV5(CliffCompaction):
         by = lambda *whens: "；".join(o.describe(t) for o in ops if o.when in whens) or "无"
         self.framework = dict(L1=by("entry"), L2=by("segment_end"), L3=by("topic", "size"),
                               cross=("可按编号读回原文" if archived else "无"), memory=("归档" if archived else "无"),
-                              decider=spec.decider + ("＋运行时信号（阶段、找回）" if spec.adaptive else "")
+                              decider=("每次请求按成本模型选算子（含缓存命中）" if spec.choose == "cost" else spec.decider)
+                              + ("＋运行时信号（阶段、找回）" if spec.adaptive else "")
                               + ("＋长短期再用记忆" if spec.reuse_profile is not None else "")
                               + ("＋先看后动、正在用的不动" if spec.guard else ""))
         self.ops = build_ops(spec)
@@ -316,6 +342,12 @@ class InfiniteContextV5(CliffCompaction):
         self._held = frozenset()          # ids the guard holds at this request
         self._pressure = 0.0              # value hold: marginal rebuild cost of one kept token per request
         self._since = None                # requests since the last compaction
+        self._cache = None                # cost: the provider cache of this session (requests sent so far)
+        self._sizes = []                  # cost: request sizes sent, for growth per request
+        self._topic_pending = False       # cost: a topic change since the last summary
+        self._cycle = 0                   # cost: index in _sizes of the first request after the last summary
+        self._wait_from = None            # cost: request at which a placeholder batch started waiting
+        self._ph_seg = -1                 # cost: segment id at the last placeholder batch
 
     # ------------------------------------------------------------------ runtime signals
     def _phase(self):
@@ -355,6 +387,9 @@ class InfiniteContextV5(CliffCompaction):
                 sim.M["v5_refetch"] += 1
             return
         if item["seg"] != "out" or item.get("protected") or item.get("has_media"):
+            return
+        if s.choose == "cost":
+            self._entry_cost(sim, item)
             return
         for op in self.ops:
             if op.when == "entry" and op.touches(item):
@@ -398,17 +433,24 @@ class InfiniteContextV5(CliffCompaction):
             self._harm_seg = cur - 1
         return True
 
-    def _segment_pass(self, sim, op):
-        """Once per closed segment, the long outputs of all closed segments are transformed in one batch."""
+    def _closed_outputs(self, sim, op=None, held=True):
+        """Long outputs of closed segments that L2 may transform: not the last segment's tests, nothing protected,
+        held, kept by the reuse memory or re-read after a removal; protected specs stay."""
         s, cur = self.spec, getattr(sim, "segid", 0)
         last_tests = {x["id"] for x in sim.ctx if x["seg"] == "out" and x.get("test") and x.get("segid") == cur - 1}
         old = lambda x: x.get("segid", cur) < cur or (s.supersede and self._use.superseded(x))
-        cands = [x for x in sim.ctx if x["seg"] == "out" and old(x) and op.touches(x)
-                 and x.get("form", "full") in ("full", "truncated", "structured")
-                 and not x.get("protected") and not x.get("has_media") and x["id"] not in last_tests
-                 and len(x.get("text") or "") > s.output_keep_chars
-                 and not (set(x.get("res") or ()) & self._sticky) and x["id"] not in self._keep
-                 and x["id"] not in self._held]
+        return [x for x in sim.ctx if x["seg"] == "out" and old(x) and (op is None or op.touches(x))
+                and x.get("form", "full") in ("full", "truncated", "structured")
+                and not x.get("protected") and not x.get("has_media") and x["id"] not in last_tests
+                and len(x.get("text") or "") > s.output_keep_chars
+                and not (s.choose == "cost" and s.protect_spec and x.get("kind") == "spec")
+                and not (set(x.get("res") or ()) & self._sticky) and x["id"] not in self._keep
+                and (not held or x["id"] not in self._held)]
+
+    def _segment_pass(self, sim, op):
+        """Once per closed segment, the long outputs of all closed segments are transformed in one batch."""
+        s = self.spec
+        cands = self._closed_outputs(sim, op)
         if sum(sim.seg_size(x) for x in cands) < op.frac * self.t:
             return False                          # too little to pay for the cache rebuild; wait for more
         if op.transform == "placeholder":
@@ -555,7 +597,10 @@ class InfiniteContextV5(CliffCompaction):
             self._held = self._holding(sim)
         before = {x["id"]: x for x in sim.ctx if x["seg"] == "out"} if s.adaptive else {}
         try:
-            self._step(sim, r)
+            if s.choose == "cost":
+                self._choose(sim, r)
+            else:
+                self._step(sim, r)
         finally:
             if before:                            # outputs a summary just removed
                 now = {x["id"] for x in sim.ctx}
@@ -633,6 +678,250 @@ class InfiniteContextV5(CliffCompaction):
         writer = 0.0 if s.writer == "mechanical" else removed + s.writer_tokens * s.output_price
         return saving - rebuild - recovery - writer
 
+    # ------------------------------------------------------------------ choose = cost: the cost model picks (§9.7)
+    # Candidates at a request: (b) placeholders for the long outputs of closed segments, once per closed segment,
+    # (c) an early summary (any request above topic_min_frac of t, or only after a topic change), (d) the summary
+    # above the hard limit (forced; it is `t` unless hard_t is set, so never later than Cliff), each written
+    # mechanically or, if listed in `writers`, as hybrid; (e) nothing. (a), shortening a new output, is decided as
+    # it enters (_entry_cost). Prices are in uncached-input-token units. A placeholder batch: what this request
+    # costs more or less (the provider cache, core/cache_model.py), the tokens saved on the following requests
+    # until the content would go anyway, the expected recoveries. A summary: the rent paid since the last summary
+    # against the new cycle's uncached first request, the recoveries and the writer (_summary_net). The best
+    # positive candidate runs; none = nothing changes.
+    def _keys(self, sim, items):
+        keys, sizes = [], []
+        for x in items:
+            keys.append(("v", hash(x.get("text"))) if x.get("virtual") else (x["id"], x.get("form", "full"), x.get("kept")))
+            sizes.append((self._chars(sim, x) + 2) // 4)
+        return keys, sizes
+
+    def _cache_for(self, sim):
+        fixed = (sim.fixed_chars if sim.fixed_chars is not None else sim.prefix * 4) // 4
+        if self._cache is None:
+            self._cache = Cache(fixed=fixed, rho=self.spec.cache_rho)
+        self._cache.fixed = fixed
+        return self._cache
+
+    def _hard(self):
+        return self.spec.hard_t or self.t
+
+    def _stay(self, size_now):
+        """Requests a saving lasts: until the context would reach the hard limit anyway (then everything old goes),
+        at the growth per request seen so far, or (cost, with summaries) until the next summary; at most
+        `horizon`."""
+        s = self.spec
+        d = [b - a for a, b in zip(self._sizes, self._sizes[1:]) if b > a][-10:]
+        growth = max(1.0, sum(d) / len(d)) if d else 1000.0
+        stay = min(float(s.horizon), (self._hard() - size_now) / growth)
+        if s.choose == "cost" and "summary" in s.candidates and self._sizes:
+            # the next summary comes when the rent pays for the new cycle's first request: in the renewal model
+            # a cycle lasts sqrt(2 F / (p g)) requests, F the first request of a cycle (uncached body), p the rent
+            left = self._sizes[self._cycle] - (self._cache.fixed if self._cache else 0)
+            first = (1 - s.cached_price) * max(left, 1)
+            cycle = (2 * first / ((s.cached_price + s.length_penalty) * growth)) ** 0.5
+            stay = min(stay, cycle - (len(self._sizes) - self._cycle))
+        return max(1.0, stay)
+
+    def _recovery(self, sim, lost, stay, after):
+        """Expected cost of getting removed outputs back: P(needed within the stay) x (the output again, one more
+        request on the new context, the model's extra work)."""
+        s, n = self.spec, max(1, int(stay))
+        return sum(self._use.p_reuse(x, n) * (sim.seg_size(x) + s.refetch_work + after * s.cached_price) for x in lost)
+
+    def _net(self, sim, now, new, lost, writer_cost=0.0, recovery_scale=1.0):
+        s, cache = self.spec, self._cache_for(sim)
+        keys, sizes = now
+        nkeys, nsizes = new
+        removed = sum(sizes) - sum(nsizes)
+        if removed <= 0:
+            return None
+        size_now = cache.fixed + sum(sizes)
+        stay = self._stay(size_now)
+        this = -cache.rebuild(keys, sizes, nkeys, nsizes, s.cached_price) + s.length_penalty * removed
+        later = removed * (stay - 1) * (s.cached_price + s.length_penalty)
+        risk = recovery_scale * self._recovery(sim, lost, stay, cache.fixed + sum(nsizes))
+        return this + later - risk - writer_cost
+
+    def _summary_net(self, sim, now, new, lost, writer_cost=0.0, recovery_scale=1.0):
+        """A summary starts a new cycle; it pays once the rent of keeping the context paid since the last summary
+        exceeds what the new cycle's first request loses (ski rental). Rent of a request is what it paid for the
+        tokens above the size the summary leaves (at most what it removes). In the renewal model of a context
+        growing g per request from a, this stops at S - a = sqrt(2 F g / p), the size of least cost per request;
+        counting above the size left, not below the size now, stays right when placeholders shrink the context."""
+        s, cache = self.spec, self._cache_for(sim)
+        keys, sizes = now
+        nkeys, nsizes = new
+        removed = sum(sizes) - sum(nsizes)
+        if removed <= 0:
+            return None
+        p = s.cached_price + s.length_penalty
+        size_now = cache.fixed + sum(sizes)
+        left = cache.fixed + sum(nsizes)
+        rent = sum(p * min(removed, z - left) for z in self._sizes[self._cycle:] if z > left)
+        first = cache.cost(nkeys, nsizes, s.cached_price) - s.cached_price * (cache.fixed + sum(nsizes))
+        risk = recovery_scale * self._recovery(sim, lost, self._stay(size_now), cache.fixed + sum(nsizes))
+        return rent - first - risk - writer_cost
+
+    def _placeholder_gain(self, sim, now, items):
+        ids, ph = {x["id"] for x in items}, sim.placeholder_size("memid")
+        keys, sizes = now
+        nkeys, nsizes = [], []
+        for x, k, z in zip(sim.sent(), keys, sizes):
+            if not x.get("virtual") and x.get("id") in ids:
+                nkeys.append((x["id"], "memid", ph)); nsizes.append(ph + 1)
+            else:
+                nkeys.append(k); nsizes.append(z)
+        return self._net(sim, now, (nkeys, nsizes), items)
+
+    def _plan_placeholder(self, sim, now):
+        """(b), with the option of waiting: outputs of closed segments held only because the model used them
+        recently become free within guard_active requests; one batch then costs one cache rebuild instead of
+        several. Waiting w requests gives up w requests of the saving now. A batch is weighed only once a new
+        segment closed since the last one: outputs close a segment at a time, and a batch per request edits the
+        prompt on consecutive requests, where the provider keeps least (core/cache_model.py)."""
+        s = self.spec
+        if getattr(sim, "segid", 0) <= self._ph_seg:
+            return None
+        cands = self._closed_outputs(sim)
+        if not cands:
+            return None
+        gain = self._placeholder_gain(sim, now, cands)
+        if gain is None:
+            return None
+        ids = {x["id"] for x in cands}
+        soon = [x for x in self._closed_outputs(sim, held=False) if x["id"] not in ids]
+        req = self._use.req
+        if soon and (self._wait_from is None or req - self._wait_from < s.guard_active):   # one wait, not a stall
+            wait = max(1, max(s.guard_active - (req - self._use.last(x)) for x in soon))
+            later = self._placeholder_gain(sim, now, cands + soon)
+            removed = sum(sim.seg_size(x) for x in cands)
+            if later is not None and later - wait * removed * s.cached_price > gain:
+                if self._wait_from is None:
+                    self._wait_from = req
+                sim.M["v5_choose_wait"] += 1
+                return None
+        return dict(action="placeholder", gain=gain, items=cands)
+
+    def _plan_summaries(self, sim, now, knobs):
+        """The summary now, written mechanically and (if listed and the host can write) as hybrid."""
+        s = self.spec
+        res = self._compact(list(sim.sent()), knobs)
+        if res is None:
+            return []
+        lost = [x for x in res["summary"]["members"]
+                if x["seg"] == "out" and len(x.get("text") or "") > s.output_keep_chars]
+        nkeys, nsizes = self._keys(sim, res["new"])
+        plans = []
+        gain = self._summary_net(sim, now, (nkeys, nsizes), lost)
+        if gain is not None:
+            plans.append(dict(action="summary", writer="mechanical", gain=gain))
+        if "hybrid" in s.writers and hasattr(sim, "_summary_text"):
+            at = next(i for i, x in enumerate(res["new"]) if x is res["summary"])
+            hsizes = list(nsizes)
+            hsizes[at] += s.writer_tokens
+            members = sum(sim.seg_size(x) for x in res["summary"]["members"])
+            gain = self._summary_net(sim, now, (nkeys, hsizes), lost,
+                                     writer_cost=members + s.writer_tokens * s.output_price,
+                                     recovery_scale=s.state_recovery_factor)
+            if gain is not None:
+                plans.append(dict(action="summary", writer="hybrid", gain=gain))
+        return plans
+
+    def _choose(self, sim, r):
+        s = self.spec
+        knobs = s if not s.adaptive else dataclasses.replace(s, keep_recent=self._keep_recent())
+        cache = self._cache_for(sim)
+        if self._topic_changed(sim):
+            self._topic_pending = True
+        size = sim.request_chars() // 4
+        self._summarized = False
+        try:
+            now = self._keys(sim, sim.sent())
+            plans = []
+            p = self._plan_placeholder(sim, now) if "placeholder" in s.candidates else None
+            if p is not None:
+                plans.append(p)
+            forced = size > self._hard()
+            if forced or ("summary" in s.candidates and (self._topic_pending or s.summary_at == "any")
+                          and size > s.topic_min_frac * self.t):
+                plans += self._plan_summaries(sim, now, knobs)
+            sim.M["v5_choices"] += 1
+            if forced and self._sizes and self._cycle == len(self._sizes) - 1 and self._sizes[-1] > self._hard():
+                sim.M["v5_choose_stuck"] += 1     # the last request's summary left it above the limit: what stays
+                return                            # (in use, specs, media) cannot go; summarizing again only rebuilds
+            if forced:                            # above the hard limit a summary must run: the cheaper writer
+                best = max((p for p in plans if p["action"] == "summary"), key=lambda p: p["gain"], default=None)
+                self.knobs = knobs
+                try:
+                    if best is not None and best["writer"] == "hybrid" and self._model_compaction(sim, "hybrid"):
+                        self._compacted = True
+                    else:
+                        CliffCompaction.step(self, sim, r)
+                finally:
+                    self.knobs = s
+                sim.M["v5_choose_forced"] += 1
+                if self._compacted:
+                    self._topic_pending, self._summarized = False, True
+                return
+            best = max(plans, key=lambda p: p["gain"], default=None)
+            if best is None or best["gain"] <= 0:
+                sim.M["v5_choose_nothing"] += 1
+                return
+            if best["action"] == "placeholder":
+                sim.to_placeholder(best["items"], "memid")
+                self._audit(sim, best["items"])
+                for x in best["items"]:
+                    self._forget(x)
+                self._compacted, self._wait_from, self._ph_seg = True, None, getattr(sim, "segid", 0)
+                sim.M["v5_segment"] += 1
+                sim.M["v5_choose_placeholder"] += 1
+                return
+            self.knobs = knobs
+            try:
+                done = (self._model_compaction(sim, "hybrid") if best["writer"] == "hybrid"
+                        else self._chain(sim, knobs, force=True))
+            finally:
+                self.knobs = s
+            if done:
+                self._compacted, self._topic_pending, self._summarized = True, False, True
+                sim.M["v5_topic"] += 1
+                sim.M["v5_choose_summary_" + best["writer"]] += 1
+        finally:
+            keys, sizes = self._keys(sim, sim.sent())
+            cache.record(keys, sizes)
+            self._sizes.append(cache.fixed + sum(sizes))
+            if self._summarized:
+                self._cycle = len(self._sizes) - 1
+            if self._compacted:
+                self._after, self._since = self._sizes[-1], 0
+
+    def _entry_cost(self, sim, item):
+        """(a) A new long output: shortened as it enters only if that pays (no cache cost, it was never sent; the
+        risk is needing it back). Rule R1 holds: only outputs above guard_oversize_frac of t."""
+        s = self.spec
+        if (sim.seg_size(item) <= s.guard_oversize_frac * self.t or (s.protect_spec and item.get("kind") == "spec")
+                or set(item.get("res") or ()) & self._sticky):
+            return
+        saved_item, saved_m = dict(item), collections.Counter(sim.M)
+        before = sim.seg_size(item)
+        budget = s.entry_frac * self.t
+        if content_kind(item) in ("test", "search"):
+            sim.structure(item)
+        if sim.seg_size(item) > budget:
+            sim.truncate(item, budget)
+        removed = before - sim.seg_size(item)
+        size_now = sim.request_chars() // 4
+        stay = self._stay(size_now)
+        gain = removed * (1 + (stay - 1) * (s.cached_price + s.length_penalty)) \
+            - self._use.p_reuse(item, max(1, int(stay))) * (before + s.refetch_work + size_now * s.cached_price)
+        if removed <= 0 or gain <= 0:
+            item.clear(); item.update(saved_item)
+            sim.M.clear(); sim.M.update(saved_m)
+            return
+        self._forget(item)
+        sim.M["v5_entry"] += 1
+        self._audit(sim, [item])
+
     # ------------------------------------------------------------------ scope and previous replacements
     def _compact(self, working, k):
         first = next((i for i, x in enumerate(working) if is_model(x)), None)
@@ -646,11 +935,12 @@ class InfiniteContextV5(CliffCompaction):
         if len(turns) <= keep:
             return None
         old = [x for t in turns[:len(turns) - keep] for x in t]
+        media = {x.get("call_id") for x in old if x.get("has_media") and x.get("call_id")}
 
-        def stays(x):
+        def stays(x):                             # the host contract keeps media and the call it answers
             return (x.get("protected") or (k.protect_user and x["seg"] == "msg" and x.get("role") == "user")
                     or (k.protect_spec and x.get("kind") == "spec") or x.get("id") in self._keep
-                    or x.get("id") in self._held)
+                    or x.get("id") in self._held or x.get("has_media") or x.get("call_id") in media - {None})
         gone = [x for x in old if not stays(x)]
         if not gone:
             return None
@@ -671,7 +961,8 @@ class InfiniteContextV5(CliffCompaction):
         return dict(new=new, head=head, summary=summary, cut=len(working) - len(kept))
 
     # ------------------------------------------------------------------ model-written replacements
-    def _model_compaction(self, sim):
+    def _model_compaction(self, sim, writer=None):
+        writer = writer or self.spec.writer
         res = self._compact(list(sim.sent()), self.knobs)
         if res is None:
             return False
@@ -680,8 +971,8 @@ class InfiniteContextV5(CliffCompaction):
         if not members:
             return False
         state = sim.summarize_segment(members, size=self.spec.writer_tokens, guidance=STATE_GUIDANCE, billed=True,
-                                      cliff=True) if self.spec.writer == "llm" else None
-        if self.spec.writer == "llm":
+                                      cliff=True) if writer == "llm" else None
+        if writer == "llm":
             if state is None:
                 sim.M["v5_writer_failed"] += 1
                 return False
