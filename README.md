@@ -73,10 +73,10 @@ response = client.responses.create(**request)
 `ctxpress list` shows every method with its source, whether it needs a model of its own, and how it differs from
 the original implementation.
 
-## Our method: infinite-context V5
+## Our method: infinite-context
 
-`InfiniteContext(version=5, ...)` (registry name `infinite-context`, code in `ctxpress/methods/infinite_v5.py`) is
-this project's method. Before every request it applies C_t = R_t(C_{t-1} + new items), where R_t is an ordered list
+**infinite-context** (registry name `infinite-context`; in code currently selected with `InfiniteContext(version=5, ...)`,
+`ctxpress/methods/infinite_v5.py`) is this project's method. Before every request it applies C_t = R_t(C_{t-1} + new items), where R_t is an ordered list
 of operators. Each operator is a set of explicit switches: **when** it acts (on entry, when a piece of work closes,
 on a topic change, above a threshold), **what** content becomes (structured keep, head and tail, numbered
 placeholder, summary, or hand-off to the host's own compaction), **who** writes the replacement (mechanical, model,
@@ -90,9 +90,9 @@ readable again through `infinite_context_search` / `infinite_context_read`.
 - In replay, entry shortening + segment placeholders + topic-change summaries send about 28% fewer tokens than
   CliffCompaction at about 21% lower estimated cost. Replay cannot measure task quality.
 - **Status:** not yet evaluated on a real benchmark; it runs under the same settings once the baseline cohort
-  finishes. Details: [docs/infinite-context.md](docs/infinite-context.md#v5本项目方法).
+  finishes. Details: [docs/infinite-context.md](docs/infinite-context.md#本项目方法).
 
-Earlier versions (`WorkingView`, `CostModel` / `AutoCostModel`, history-fitted `infinite-context` policies v2–v4,
+Earlier versions (`WorkingView`, `CostModel` / `AutoCostModel`, history-fitted `infinite-context` old versions 1–4,
 `infinite-context-rules`) are kept for reproduction and are not the method of the paper.
 
 ## Methods
@@ -123,8 +123,8 @@ The fixed research cohort is **16 papers / 18 method configurations**, all using
 | ReSum: periodic approximation / author inference adaptation | `ReSum`, `ReSumSource` | [arXiv:2509.13313](https://arxiv.org/abs/2509.13313) |
 | Context-Folding: host branch/return adaptation (not FoldGRPO training) | `ContextFoldingTools` | [arXiv:2510.11967](https://arxiv.org/abs/2510.11967) |
 | FoldAct: author inference window selector, host policy | `FoldActSource` | [arXiv:2512.22733](https://arxiv.org/abs/2512.22733) |
-| **infinite-context V5 — our method** (operator list; CliffCompaction and Codex compaction are special cases) | `InfiniteContext(version=5)` | this project |
-| Earlier versions of this project: cost model, Working View, history-fitted policies | `CostModel`, `AutoCostModel`, `WorkingView`, `InfiniteContext` (policies v2–v4), `InfiniteContextRules` | this project (kept for reproduction) |
+| **infinite-context — our method** (operator list; CliffCompaction and Codex compaction are special cases) | `InfiniteContext(version=5)` | this project |
+| Earlier versions of this project: cost model, Working View, history-fitted policies | `CostModel`, `AutoCostModel`, `WorkingView`, `InfiniteContext` (old versions 1–4, from a fitted policy), `InfiniteContextRules` | this project (kept for reproduction) |
 | Scored method base class | `ScoredMethod` | this project |
 
 Wrappers compose methods: `Composed`, `EntryTruncation`, `PinRequirements`, `WithMemory`, `Trigger`. Details,
@@ -224,7 +224,7 @@ pruning model when it has one, and yields the unified statistics; its usage is s
 | Methods | [docs/methods.md](docs/methods.md) · [adding a method](docs/new_method.md) |
 | Real execution: proxy and rewriting | [docs/live.md](docs/live.md) |
 | Evaluation and benchmark adapters | [docs/evaluation.md](docs/evaluation.md) · [docs/benchmarks.md](docs/benchmarks.md) |
-| Our method (infinite-context V5) | [docs/infinite-context.md](docs/infinite-context.md#v5本项目方法) |
+| Our method (infinite-context) | [docs/infinite-context.md](docs/infinite-context.md#本项目方法) |
 | SWE-Milestone results | [docs/results-swe-milestone.md](docs/results-swe-milestone.md) |
 | Replay simulator and the cost model | [docs/replay.md](docs/replay.md) · [docs/cost_policy.md](docs/cost_policy.md) |
 | ACM integration | [docs/acm.md](docs/acm.md) |

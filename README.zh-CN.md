@@ -63,9 +63,9 @@ response = client.responses.create(**request)
 
 `ctxpress list` 列出每个方法的来源、是否需要额外模型，以及与原实现的差别。
 
-## 本项目方法：infinite-context V5
+## 本项目方法：infinite-context
 
-本项目的方法是 `InfiniteContext(version=5, ...)`（注册名 `infinite-context`，代码 `ctxpress/methods/infinite_v5.py`）。
+本项目的方法是 **infinite-context**（注册名 `infinite-context`；代码中目前用 `InfiniteContext(version=5, ...)` 选用，`ctxpress/methods/infinite_v5.py`）。
 每次请求前执行 C_t = R_t(C_{t-1} + 新内容)，R_t 是一列按顺序执行的算子。每个算子是一组显式开关：**何时**动手
 （内容进入时、一段工作结束时、话题切换时、超过阈值时），内容**变成什么**（结构化保留、头尾截断、编号占位符、摘要、交给宿主自己压缩），
 **谁**写替换（机械、模型、混合），以及**是否值得做**（总是做，或按成本门槛比较节省的输入与缓存重建、写摘要、预计找回和长上下文的质量代价）。
@@ -73,9 +73,9 @@ response = client.responses.create(**request)
 
 - 默认开关与 CliffCompaction 逐请求一致（24,995 次记录请求，`repro/infinite_v5_cliff_compare.py`）；Codex 原生压缩也是一个算子。结果差异都能追溯到具体开关。
 - 重放中，进入时缩短 + 工作段占位符 + 话题切换摘要一起比 CliffCompaction 少发约 28% 的 token，估算费用低约 21%；重放不能比较任务质量。
-- **状态：**尚未在真实 benchmark 上评测，论文基线跑完后按同一设置评测。详见 [docs/infinite-context.md](docs/infinite-context.md#v5本项目方法)。
+- **状态：**尚未在真实 benchmark 上评测，论文基线跑完后按同一设置评测。详见 [docs/infinite-context.md](docs/infinite-context.md#本项目方法)。
 
-此前版本（`WorkingView`、`CostModel` / `AutoCostModel`、历史拟合的 `infinite-context` 策略 v2–v4、`infinite-context-rules`）保留用于复现，不是本文方法。
+此前版本（`WorkingView`、`CostModel` / `AutoCostModel`、历史拟合的 `infinite-context` 旧版 1–4、`infinite-context-rules`）保留用于复现，不是本文方法。
 
 ## 方法
 后续研究固定使用 **16 篇论文 / 18 个方法配置**，全部走统一接口。见[作者源码清单与适配差异](docs/paper-baselines.md)，或运行 `ctxpress eval paper-methods`。新论文协议拒绝旧近似版与项目自研候选。
@@ -105,8 +105,8 @@ response = client.responses.create(**request)
 | ReSum：周期近似 / 作者推理流程适配 | `ReSum`, `ReSumSource` | [arXiv:2509.13313](https://arxiv.org/abs/2509.13313) |
 | Context-Folding：分支/返回的宿主适配，非 FoldGRPO 训练复现 | `ContextFoldingTools` | [arXiv:2510.11967](https://arxiv.org/abs/2510.11967) |
 | FoldAct：作者推理窗口规则，使用宿主策略 | `FoldActSource` | [arXiv:2512.22733](https://arxiv.org/abs/2512.22733) |
-| **infinite-context V5：本项目方法**（算子列表；CliffCompaction 与 Codex 压缩都是其特例） | `InfiniteContext(version=5)` | 本项目 |
-| 本项目此前版本：成本模型、Working View、历史拟合策略 | `CostModel`、`AutoCostModel`、`WorkingView`、`InfiniteContext`（策略 v2–v4）、`InfiniteContextRules` | 本项目（保留用于复现） |
+| **infinite-context：本项目方法**（算子列表；CliffCompaction 与 Codex 压缩都是其特例） | `InfiniteContext(version=5)` | 本项目 |
+| 本项目此前版本：成本模型、Working View、历史拟合策略 | `CostModel`、`AutoCostModel`、`WorkingView`、`InfiniteContext`（旧版 1–4，由拟合策略选用）、`InfiniteContextRules` | 本项目（保留用于复现） |
 | 打分方法基类 | `ScoredMethod` | 本项目 |
 
 包装器用于组合方法：`Composed`、`EntryTruncation`、`PinRequirements`、`WithMemory`、`Trigger`。各方法的参数、预算单位和与原实现的
@@ -195,7 +195,7 @@ ctxpress smoke --output runs/smoke     # 每个方法经过真实代理，对接
 | 方法 | [docs/methods.md](docs/methods.md) · [添加新方法](docs/new_method.md) |
 | 真实执行：代理与改写 | [docs/live.md](docs/live.md) |
 | 评测与 benchmark 适配器 | [docs/evaluation.md](docs/evaluation.md) · [docs/benchmarks.md](docs/benchmarks.md) |
-| 本项目方法（infinite-context V5） | [docs/infinite-context.md](docs/infinite-context.md#v5本项目方法) |
+| 本项目方法（infinite-context） | [docs/infinite-context.md](docs/infinite-context.md#本项目方法) |
 | SWE-Milestone 结果 | [docs/results-swe-milestone.md](docs/results-swe-milestone.md) |
 | 重放模拟器与成本模型 | [docs/replay.md](docs/replay.md) · [docs/cost_policy.md](docs/cost_policy.md) |
 | ACM 接入 | [docs/acm.md](docs/acm.md) |

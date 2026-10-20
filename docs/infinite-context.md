@@ -7,10 +7,10 @@
 此前基于 Cliff 的原型保留为 **infinite-context-rules**，用于对照；当前
 **infinite-context** 不再调用 Cliff 压缩器。
 
-## V5：本项目方法
+## 本项目方法
 
-**本项目的方法是 infinite-context V5**（`InfiniteContext(version=5, ...)`，注册名 `infinite-context`，实现在
-`ctxpress/methods/infinite_v5.py`）。下文的 V2–V4（历史拟合策略）以及 `infinite-context-rules`、`WorkingView`、
+**本项目的方法是 infinite-context**（注册名 `infinite-context`；代码中目前用 `InfiniteContext(version=5, ...)` 选用，实现在
+`ctxpress/methods/infinite_v5.py`）。下文的旧版 1–4（历史拟合策略）以及 `infinite-context-rules`、`WorkingView`、
 `CostModel` / `AutoCostModel` 都是此前的版本，保留用于复现，不是本文方法。
 
 做法：每次请求前更新上下文 C_t = R_t(C_{t-1} + 新内容)，R_t 是一列按顺序执行的算子。每个算子是一组显式开关：
@@ -34,9 +34,9 @@ L3 话题切换时提前摘要。运行时信号（工作阶段、移除后是�
   重放只能比较大小和费用，不能比较任务质量。
 
 状态：尚未在真实 benchmark 上评测；论文方法基线（[SWE-Milestone 结果](results-swe-milestone.md)）跑完后，
-按同一设置（128k、Codex 原生压缩兜底）评测 V5。单元测试：`tests/test_infinite_v5.py`。
+按同一设置（128k、Codex 原生压缩兜底）评测本文方法。单元测试：`tests/test_infinite_v5.py`。
 
-## V2–V4（此前版本）：实际决策流程
+## 旧版 1–4：实际决策流程
 
 1. 用户消息、系统/开发者指令、规格和媒体保留；工具调用与输出保持原有结构。
 2. 工具输出由现有 LiveContext 存档。每次压缩前核对文件与原文；缺失、损坏或没有
@@ -224,7 +224,7 @@ ctxpress infinite-candidates --manifest configs/infinite-context-history.yaml \
 - 归档检索针对工具输出，不是所有助手推理和完整会话的统一长期记忆库。
 - 无需隐瞒这些边界：流程会拒绝把未识别参数或持平结果包装成“最优”。
 
-## V2：2026-10-10 容量失败修复
+## 旧版 2：2026-10-10 容量失败修复
 
 策略 `version: 2` 仍通过 `infinite-context` 加载，由独立实现 `infinite_v2.py`
 执行；version 1 的决策行为保留，旧实验不重写。
@@ -251,7 +251,7 @@ go-zero 已是开发数据，后续同任务运行只能称回归，不能称独
 Agent 机制回归及真实对照实验，不能作为已验证的部署策略。
 
 模型证据预算和摘要质量需要真实模型实验才能识别最优值；离线联合搜索不等于
-所有参数已被可靠拟合，也不保证全局最优。V2 control 延后判断至触发点，因此
+所有参数已被可靠拟合，也不保证全局最优。旧版 2 control 延后判断至触发点，因此
 机械 off 模式的 cooldown/min_gain 搜索结果不构成 control 模式的实测最优值。
 
 真实摘要回归入口（会调用已配置的 DeepSeek）：
@@ -265,12 +265,12 @@ python -m ctxpress.harness.infinite_live_check --rollout /absolute/rollout.jsonl
 它经过真实 LiveContext、归档、宿主配对检查和摘要接口，但后续 Agent 行为仍是
 录制轨迹，不能证明质量不下降或真实总费用降低。
 
-## V3：完整分层工作记忆（实现，不代表效果已验证）
+## 旧版 3：完整分层工作记忆（实现，不代表效果已验证）
 
-V1/V2 保留用于复现；V3 必须显式使用 version=3、agent_mode=control。
-下面替代前文中 V1/V2 的流程描述，不改变旧策略的行为。
+旧版 1/旧版 2 保留用于复现；旧版 3 必须显式使用 version=3、agent_mode=control。
+下面替代前文中 旧版 1/旧版 2 的流程描述，不改变旧策略的行为。
 
-| 原设计环节 | V3 落点 |
+| 原设计环节 | 旧版 3 落点 |
 | --- | --- |
 | 完整记录与调用组归档 | `infinite_memory.py`：内容寻址、校验、原始 wire、用户/助手/推理/调用/输出，全量保存 |
 | 后台标注 | `infinite_v3.py`：有界线程池；后台只产候选，主线程才提交；新任务绑定新候选 |
@@ -288,11 +288,11 @@ V1/V2 保留用于复现；V3 必须显式使用 version=3、agent_mode=control�
 | 原文恢复 | memory_read 分页返回本层及 children，memory_search 搜索全历史与阶段；已有工具输出检索保留 |
 | 费用 | 主/辅助调用沿用真实服务记录；缓存重建、预期重读和摘要开销进入周期门控，压力费用明确标注 |
 | 恢复观测 | 分开标记显式 memory 引用和同资源重访；不能把相关性当因果恢复 |
-| 同策略拟合 | V3 禁止 off/shadow 模式；control 历史回放与真实任务用同一个 Rewriter/方法；实际任务选择器绑定模式及全部策略哈希 |
+| 同策略拟合 | 旧版 3 禁止 off/shadow 模式；control 历史回放与真实任务用同一个 Rewriter/方法；实际任务选择器绑定模式及全部策略哈希 |
 
 容量的触发、候选比较和提交后测量，均由真实宿主 render 回调构造完整请求，
 使用同一个 billable_chars/4。它仍是字符估算，不是供应商 tokenizer。
-V3 因此把 capacity 当作整理预算，不凭估算制造 HTTP 422；明确的上游长度拒绝才触发
+旧版 3 因此把 capacity 当作整理预算，不凭估算制造 HTTP 422；明确的上游长度拒绝才触发
 一次额外压力处理。若保护内容本身超过目标，记录 protected_floor/target_feasible，
 不偷偷删除用户指令，不声称有无限容量保证。
 
@@ -300,13 +300,13 @@ V3 因此把 capacity 当作整理预算，不凭估算制造 HTTP 422；明确�
 在服务超时内稍后返回，只缓存结果、不自行提交。代理正常关闭时 drain 后台任务，
 保证服务用量有机会写完。强制杀进程仍可能缺用量，必须在结果完整性中报告。
 
-原设计的“相似内容”不是去掉所有近似文本：V3 用 Agent 的 goal/phase 加词集合相似度
+原设计的“相似内容”不是去掉所有近似文本：旧版 3 用 Agent 的 goal/phase 加词集合相似度
 形成候选，归并仍由 Agent 基于时间顺序做语义总结；没有引入另一个未声明的 embedding
 模型。新用户消息与保护单元是不可跨越的边界。
 
 ### 参数与验证顺序
 
-基础 11 参数仍属于策略；V3 另外明确声明 long_tokens、eviction_k、compact_m、
+基础 11 参数仍属于策略；旧版 3 另外明确声明 long_tokens、eviction_k、compact_m、
 group_tokens、similarity、pressure_seconds、max_aux_calls、annotation_workers、retry_seconds。
 这些都可由候选网格变化；价格、质量容忍度、模型和容量约束不能由优化器自行放宽。
 
@@ -317,13 +317,13 @@ python -m ctxpress.harness.infinite_live_check --rollout HISTORY.jsonl --policy 
 
 导出不派发任务。历史回放只能验证机制与在固定轨迹上的开销，不给出任务质量。
 最终部署仍须由 `infinite-select` 对完整的真实 control 配对结果按开发组选择并单独
-验证留出组。不能使用 V2 off-mode 拟合结果宣称 V3 已经最优。
+验证留出组。不能使用 旧版 2 off-mode 拟合结果宣称 旧版 3 已经最优。
 
 执行门槛：先完成本表所有环节的实现与本地不变量检查，再做真实小模型历史回归；
 只有整体流程通过后才启动新的任务对照。任何阶段失败都修复并保留证据，不以
 局部通过代替完整实现，不修改已经冻结运行的旧实验。
 
-V3 集成补充：局部 unit 清理先于块合并，块候选失败不撤销已独立验证的局部候选。
+旧版 3 集成补充：局部 unit 清理先于块合并，块候选失败不撤销已独立验证的局部候选。
 达到目标就停止追加压缩。周期 K 只统计新的、已完成标注的候选身份。
 同一任务/材料/预算的不合格返回负缓存；仅改变全局缩减缺口不会重复付费请求同一个摘要。
 网络失败仍按退避处理，任务、证据或预算变化才形成新候选。
@@ -334,9 +334,9 @@ V3 集成补充：局部 unit 清理先于块合并，块候选失败不撤销�
 **不证明语义等价**，语义损失必须由任务实测检验。归档同时保留模型原返回作为审核证据，
 检索不会把这些未验证的候选当作已提交的记忆。
 
-## V4：上下文容量与总成本共同决定压缩
+## 旧版 4：上下文容量与总成本共同决定压缩
 
-V4 保留 V3 的完整分块、事实覆盖校验和不可变归档，但改变压缩决策：
+旧版 4 保留 旧版 3 的完整分块、事实覆盖校验和不可变归档，但改变压缩决策：
 先根据显式模型配置计算输入预算 `C − O`，再计算工作预算 `C − O − G − U`。
 `C` 是配置声明的有效模型窗口，`O` 是实际发出的输出上限，`G` 是历史增长预留，
 `U` 是 token 估算误差。物理容量与服务输出上限是约束，不能拟合成更大的数字。

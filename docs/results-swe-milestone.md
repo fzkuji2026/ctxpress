@@ -65,4 +65,4 @@
 - 登录刷新失败（容器内无法刷新登录）的回合判为无效（`auth_failure`）；任务启动前检查登录新鲜度。
 - 方法工具调用刚发出就被 Codex 原生压缩收进摘要的情况不算路由失败（此前误判，已修复并复核）。
 
-本项目自己的方法（infinite-context V5）尚未进入这轮真实评测，见 [infinite-context.md](infinite-context.md#v5本项目方法)。
+本项目自己的方法（infinite-context）尚未进入这轮真实评测，见 [infinite-context.md](infinite-context.md#本项目方法)。
