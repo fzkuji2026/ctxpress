@@ -14,7 +14,7 @@ points (a point resolves H requests after it was asked), and the prediction is t
 how well each has predicted this session so far (Bayesian model averaging). So the session decides which habit
 fits it; before it has evidence the weights are equal.
 
-repro/memory_reuse_check.py measured these estimators on recorded sessions (experiment.zh.html, finding 21);
+repro/memory_reuse_check.py measured these estimators on recorded sessions (experiment-method.zh.html, finding 21);
 repro/build_reuse_profile.py writes a profile for one session's attributes.
 """
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""The framework table (experiment.zh.html table 23) generated from the methods' own declarations, so the
+"""The framework table (experiment-method.zh.html table 23) generated from the methods' own declarations, so the
 documentation and the code cannot drift apart."""
 from __future__ import annotations
 from ctxpress.methods.base import FRAMEWORK_KEYS, FRAMEWORK_TITLES

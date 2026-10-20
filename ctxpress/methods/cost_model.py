@@ -1,4 +1,4 @@
-"""The cost model (this paper, experiment.zh.html §8–§9).
+"""The cost model (this paper, experiment-method.zh.html §8–§9).
 
 Before each request it compares, in expected cost (input + output + recovery + re-exploration + lambda x
 weighted silent misses), these options and takes the cheapest:

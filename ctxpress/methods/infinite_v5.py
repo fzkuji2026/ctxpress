@@ -1,6 +1,6 @@
 """infinite-context V5: one context-update rule R_t with every factor an explicit switch.
 
-C_t = R_t(C_{t-1} + new items). The switches, grouped as in experiment.zh.html §8-9:
+C_t = R_t(C_{t-1} + new items). The switches, grouped as in experiment-method.zh.html §8-9:
 
   trigger      when R_t acts: request size above `t` tokens (chars / 4 of the request as the host sends it), or
                every request (`always`).

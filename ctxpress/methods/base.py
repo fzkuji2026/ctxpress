@@ -12,7 +12,7 @@ Class attributes
              (and a label of what it was); recovery is a retrieval instead of re-running the call
   hint       after a session summary, tell the agent to re-read the requirements and the files it is editing
   unbounded  True only for "no compaction" (the shared window fallback is off)
-  framework  where the method sits in the framework (experiment.zh.html §9): one value per layer / part
+  framework  where the method sits in the framework (experiment-method.zh.html §9): one value per layer / part
   agent_tools  tools the method gives the agent ({name, description, inputSchema}); the host exposes them (Codex:
              `ctxpress mcp`), calls go to call_tool(name, args) -> (text, is_error) on a method object of that tool
              process, and the method sees the calls and their outputs in later requests like any other tool's
