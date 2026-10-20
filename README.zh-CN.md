@@ -114,10 +114,10 @@ response = client.responses.create(**request)
 
 所有变体共用 `ctxpress codex`、`ctxpress claude`、Python API 和 `ctxpress eval` 接口。`repro/` 中的作者源码对照用于验证实现，不是独立 baseline 运行入口。离线对照通过不等于完整复现论文，也不能替代真实评测成绩；适配范围和未复现部分见 [方法说明](docs/methods.md#新增源码适配与统一入口)。
 
-## 结果：SWE-Milestone（进行中）
+## 结果：SWE-Milestone
 
 Codex 0.161.0，gpt-6.1-sol（medium，Fast 档），128k 窗口，Codex 原生压缩为唯一兜底；作者 Score-1000（满分 100），每个方法每个场景 1 次。
-轻场景（ripgrep、scikit-learn、go-zero）18 个配置全部完成；重场景（dubbo、element-web、nushell）在跑。
+轻场景（ripgrep、scikit-learn、go-zero）18 个配置全部完成；重场景（dubbo、element-web、nushell）因模型额度用完停止，完成 4 个方法。
 
 | | 轻场景平均分 | 成本相对 Vanilla |
 |---|---|---|

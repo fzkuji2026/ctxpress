@@ -136,11 +136,11 @@ author-source comparisons in `repro/` are test oracles, not standalone baseline 
 Offline source comparisons do not establish full paper reproduction or replace real-model benchmark evidence.
 The adaptation scope, pinned sources and remaining differences are documented in [the method guide](docs/methods.md#新增源码适配与统一入口).
 
-## Results: SWE-Milestone (in progress)
+## Results: SWE-Milestone
 
 Codex 0.161.0, gpt-6.1-sol (medium, Fast tier), 128k window, Codex native compaction as the only fallback; author
 Score-1000 (max 100), one run per method and task. Light tasks (ripgrep, scikit-learn, go-zero) are complete for all
-18 configurations; heavy tasks (dubbo, element-web, nushell) are running.
+18 configurations; heavy tasks (dubbo, element-web, nushell) stopped when the model quota ran out, with 4 methods complete.
 
 | | Mean score (light) | Cost vs. Vanilla |
 |---|---|---|
