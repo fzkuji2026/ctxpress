@@ -117,7 +117,7 @@ L2 要攒够阈值的 5%（`segment_min_frac`）才做；L3 一判定话题切�
 
 其他修正：主机压缩（history rebase）后开始新一轮，重发的用户消息不算话题切换；找回能读到同一会话在其他启动目录的存档，搜索从新到旧；Code Mode 单元里可以调用只读的找回工具；缓存模型保留第一个请求作为缓存点。测试 `tests/test_infinite_cost.py`。
 
-状态：修正前的配置（54577ec）在 SWE-Milestone light 3 上开始了一次真实运行；修正后的配置尚未运行。单元测试：`tests/test_infinite_v5.py`。
+状态：修正前的配置（54577ec）在 SWE-Milestone 轻场景 3 个上跑了一次（标准档）：ripgrep 98.8、scikit-learn 81.7、go-zero 64.4，平均 81.6（Vanilla 81.7）；费用 $17.78（Vanilla $18.87，0.94×；同一价格表），缓存命中 94.4%（Vanilla 94.7%）。但本文方法只做了 6 次摘要，Codex 原生压缩做了 14 次（Vanilla 17 次）：大部分压缩仍是 Codex 做的，正是上面修正的空档。省下的钱来自请求数少（961 对 1091）；按每次请求算反而贵 7%。单次运行，这些差别分不出是不是波动。修正后的配置尚未运行。单元测试：`tests/test_infinite_v5.py`。
 
 ## 旧版 1–4：实际决策流程
 
