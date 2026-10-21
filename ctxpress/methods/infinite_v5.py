@@ -289,7 +289,11 @@ class InfiniteContextV5(CliffCompaction):
             raise ValueError("unknown switches: " + ", ".join(sorted(unknown)))
         t = switches.pop("t", 100 * K)
         if switches.get("choose") == "cost":       # hard constraints of §9.7, not switches: nothing unseen or in use
-            switches = {"guard": True, "protect_spec": True, "recall": True, **switches}   # changes; specs stay
+            # changes; specs stay. Superseded reads released and at most 20% of t held: what is held cannot be
+            # summarized, and the hold carried 32 outputs per request at 30% (发现 24). The value hold holds as many
+            # tokens as the window on recorded Codex sessions, so the window stays.
+            switches = {"guard": True, "protect_spec": True, "recall": True, "supersede": True,
+                        "guard_keep_frac": 0.2, **switches}
         for name in ("writers", "cache_rho", "candidates"):
             if isinstance(switches.get(name), list):
                 switches[name] = tuple(switches[name])

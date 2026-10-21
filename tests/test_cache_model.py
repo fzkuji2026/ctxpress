@@ -64,6 +64,7 @@ def test_cost_chooser_runs_and_never_exceeds_the_hard_limit():
 def test_cost_chooser_keeps_specs_and_holds_by_default():
     m = InfiniteContext(version=5, t=1000, choose="cost")
     assert m.spec.guard and m.spec.protect_spec and m.spec.recall
+    assert m.spec.hold == "window" and m.spec.supersede and m.spec.guard_keep_frac == 0.2
     assert "成本模型" in m.framework["decider"]
 
 
