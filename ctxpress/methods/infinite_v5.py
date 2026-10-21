@@ -680,9 +680,9 @@ class InfiniteContextV5(CliffCompaction):
 
     # ------------------------------------------------------------------ choose = cost: the cost model picks (§9.7)
     # Candidates at a request: (b) placeholders for the long outputs of closed segments, once per closed segment,
-    # (c) an early summary (any request above topic_min_frac of t, or only after a topic change), (d) the summary
-    # above the hard limit (forced; it is `t` unless hard_t is set, so never later than Cliff), each written
-    # mechanically or, if listed in `writers`, as hybrid; (e) nothing. (a), shortening a new output, is decided as
+    # (c) an early summary (any request above topic_min_frac of t, or only after a topic change), each written
+    # mechanically or, if listed in `writers`, as hybrid; (e) nothing. Above the hard limit (`t` unless hard_t is
+    # set) nothing is chosen: the host compacts (Codex native compaction). (a), shortening a new output, is decided as
     # it enters (_entry_cost). Prices are in uncached-input-token units. A placeholder batch: what this request
     # costs more or less (the provider cache, core/cache_model.py), the tokens saved on the following requests
     # until the content would go anyway, the expected recoveries. A summary: the rent paid since the last summary
@@ -835,6 +835,8 @@ class InfiniteContextV5(CliffCompaction):
             self._topic_pending = True
         size = sim.request_chars() // 4
         self._summarized = False
+        if self._sizes and size < 0.6 * self._sizes[-1]:   # the host compacted (Codex native): a new cycle
+            self._cycle, self._topic_pending = len(self._sizes), False
         try:
             now = self._keys(sim, sim.sent())
             plans = []
@@ -842,26 +844,12 @@ class InfiniteContextV5(CliffCompaction):
             if p is not None:
                 plans.append(p)
             forced = size > self._hard()
-            if forced or ("summary" in s.candidates and (self._topic_pending or s.summary_at == "any")
+            if not forced and ("summary" in s.candidates and (self._topic_pending or s.summary_at == "any")
                           and size > s.topic_min_frac * self.t):
                 plans += self._plan_summaries(sim, now, knobs)
             sim.M["v5_choices"] += 1
-            if forced and self._sizes and self._cycle == len(self._sizes) - 1 and self._sizes[-1] > self._hard():
-                sim.M["v5_choose_stuck"] += 1     # the last request's summary left it above the limit: what stays
-                return                            # (in use, specs, media) cannot go; summarizing again only rebuilds
-            if forced:                            # above the hard limit a summary must run: the cheaper writer
-                best = max((p for p in plans if p["action"] == "summary"), key=lambda p: p["gain"], default=None)
-                self.knobs = knobs
-                try:
-                    if best is not None and best["writer"] == "hybrid" and self._model_compaction(sim, "hybrid"):
-                        self._compacted = True
-                    else:
-                        CliffCompaction.step(self, sim, r)
-                finally:
-                    self.knobs = s
-                sim.M["v5_choose_forced"] += 1
-                if self._compacted:
-                    self._topic_pending, self._summarized = False, True
+            if forced:                            # above the hard limit the host compacts: Codex native compaction,
+                sim.M["v5_choose_host"] += 1      # the one fallback every method has
                 return
             best = max(plans, key=lambda p: p["gain"], default=None)
             if best is None or best["gain"] <= 0:
