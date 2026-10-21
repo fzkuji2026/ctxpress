@@ -73,8 +73,8 @@ class Cache:
             self.edits.append(self.common(self.prev, keys) < len(self.prev))
         self.prev = keys
         self.ends.append((keys, self.fixed + sum(sizes)))
-        if len(self.ends) > 64:                # old points are short prefixes; keep the newest
-            self.ends = self.ends[-64:]
+        if len(self.ends) > 64:                # old points are short prefixes; keep the newest and the first, the
+            self.ends = self.ends[:1] + self.ends[-63:]   # head a summary falls back to
 
     # ------------------------------------------------------------------ planning
     def cost(self, keys, sizes, cached_price):

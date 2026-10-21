@@ -139,6 +139,10 @@ class Spec(Knobs):
     boundary_early: float = 0.5           # boundary: rent/F from which a topic change is taken (L = 0.71 L*)
     boundary_late: float = 2.0            # boundary: rent/F at which it summarizes without one (L = 1.41 L*)
     boundary_window: int = 3              # boundary: requests after a topic change that still count as at it
+    at_hard: str = "summary"              # cost, above t: our mechanical summary (the deadline), or leave it to the
+                                          # host ("host"). t is chars/4 of the request, the unit every method's trigger
+                                          # uses; Codex compacts only near 115k provider tokens (136-195k of it)
+    summary_min_frac: float = 0.15        # cost: a summary must remove at least this share of t
     candidates: tuple = ("placeholder", "summary")   # cost: candidate operators (ablation removes one)
 
     def check(self):
@@ -152,6 +156,8 @@ class Spec(Knobs):
             raise ValueError("candidates from placeholder, summary")
         if self.summary_at not in ("any", "topic", "boundary"):
             raise ValueError("summary_at must be any, topic or boundary")
+        if self.at_hard not in ("summary", "host") or not 0 <= self.summary_min_frac < 1:
+            raise ValueError("at_hard must be summary or host; 0 <= summary_min_frac < 1")
         if not (0 < self.boundary_early <= 1 <= self.boundary_late) or self.boundary_window < 0:
             raise ValueError("0 < boundary_early <= 1 <= boundary_late; boundary_window >= 0")
         if not (0 <= self.state_recovery_factor <= 1) or len(self.cache_rho) < 1:
@@ -303,8 +309,13 @@ class InfiniteContextV5(CliffCompaction):
             # follows it at 0.95 and saves 0.05 per removed token per request, so it pays back only after
             # ~19 x (tokens after it / tokens removed) requests, longer than a cycle; it also removes outputs while
             # their topic may still be open.
+            # Specs stay as a bounded resident set (newest first, superseded released, at most spec_keep_frac of
+            # t): kept unbounded they reached 49-74k by the end of a session. Later user messages (task queue
+            # updates) stay, as Codex native compaction keeps them. Re-reads come within 10 requests 69% of the
+            # time and within 15 about 75%, so an output stays in use for 15 requests.
             switches = {"guard": True, "protect_spec": True, "recall": True, "supersede": True,
-                        "guard_keep_frac": 0.2, "cached_price": 0.05, "output_price": 5.0,
+                        "protect_user": True, "guard_active": 15, "guard_keep_frac": 0.2, "spec_keep_frac": 0.2,
+                        "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0,
                         "candidates": ("summary",), **switches}
         for name in ("writers", "cache_rho", "candidates"):
             if isinstance(switches.get(name), list):
@@ -365,6 +376,10 @@ class InfiniteContextV5(CliffCompaction):
         self._wait_from = None            # cost: request at which a placeholder batch started waiting
         self._ph_seg = -1                 # cost: segment id at the last placeholder batch
         self._topic_req = None            # cost: index in _sizes of the last topic change
+        self._rebases = 0                 # cost: host history rebases seen (Codex native compaction)
+        self._spec_calls = set()          # call ids that read a requirements document
+        self._spec_paths = set()          # requirements documents read so far
+        self._new_spec = False            # a requirements document never read before was read (topic)
 
     # ------------------------------------------------------------------ runtime signals
     def _phase(self):
@@ -393,6 +408,13 @@ class InfiniteContextV5(CliffCompaction):
         if item["seg"] == "call":
             self._calls += 1
             res = set(item.get("res") or ())
+            specs = _spec_paths(item.get("text"))
+            if specs:
+                self._spec_calls.add(item.get("call_id"))
+                if specs - self._spec_paths and self._spec_paths:
+                    self._new_spec = True
+                self._spec_paths |= specs
+            res = {p for p in res if not _SPEC_PATH.search(p)}   # polled queue / SRS reads are not the work
             if res:
                 self._paths = (self._paths + [res])[-16:]
             if item.get("kind") == "edit":       # reading an edited file again is normal, not a loss
@@ -405,6 +427,8 @@ class InfiniteContextV5(CliffCompaction):
             return
         if item["seg"] != "out" or item.get("protected") or item.get("has_media"):
             return
+        if item.get("call_id") in self._spec_calls:    # an SRS read in a mixed command is still the SRS
+            item["kind"] = "spec"
         if s.choose == "cost":
             self._entry_cost(sim, item)
             return
@@ -488,10 +512,11 @@ class InfiniteContextV5(CliffCompaction):
         b = set().union(*recent) if recent else set()
         cooled = self._calls - self._topic_at >= self.spec.topic_gap
         shifted = self.spec.topic_shift and cooled and len(a) >= 3 and len(b) >= 3 and not (a & b)
-        if new_user or shifted:
+        new_spec, self._new_spec = self._new_spec, False
+        if new_user or shifted or new_spec:
             self._paths = self._paths[-6:]        # the new topic starts here
             self._topic_at = self._calls
-        return new_user or shifted
+        return new_user or shifted or new_spec
 
     def _audit(self, sim, items):
         """R1/R2 counters: changes to outputs the model had not seen, or was still using (0 with the guard, except
@@ -514,7 +539,8 @@ class InfiniteContextV5(CliffCompaction):
             held = [x for x in live if not self._use.seen(x) or self._use.active(x, s.hold_floor)
                     or (not (s.supersede and self._use.superseded(x)) and self._worth(sim, x, size_now))]
         else:
-            held = [x for x in live if not self._use.seen(x) or self._use.active(x, s.guard_active)]
+            held = [x for x in live if not (s.supersede and self._use.superseded(x))
+                    and (not self._use.seen(x) or self._use.active(x, s.guard_active))]
         keep, used, budget = set(), 0, s.guard_keep_frac * self.t
         calls = {x.get("call_id"): x["id"] for x in sim.ctx if x["seg"] == "call" and x.get("call_id")}
         for x in sorted(held, key=lambda x: -self._use.last(x)):
@@ -540,7 +566,7 @@ class InfiniteContextV5(CliffCompaction):
         for x in reversed(specs):
             size = sim.seg_size(x)
             if used + size > budget:
-                break
+                continue                          # an older, smaller document may still fit
             used += size
             keep.add(x["id"])
             if x.get("call_id") in calls:
@@ -769,7 +795,7 @@ class InfiniteContextV5(CliffCompaction):
         keys, sizes = now
         nkeys, nsizes = new
         removed = sum(sizes) - sum(nsizes)
-        if removed <= 0:
+        if removed <= 0 or removed < s.summary_min_frac * self.t:
             return None
         p = s.cached_price + s.length_penalty
         size_now = cache.fixed + sum(sizes)
@@ -859,12 +885,15 @@ class InfiniteContextV5(CliffCompaction):
         s = self.spec
         knobs = s if not s.adaptive else dataclasses.replace(s, keep_recent=self._keep_recent())
         cache = self._cache_for(sim)
+        rebases = sim.M.get("history_rebases", 0)
+        size = sim.request_chars() // 4
+        host = rebases != self._rebases or (self._sizes and size < 0.6 * self._sizes[-1])
+        if host:                                  # the host compacted (Codex native): a new cycle; the user
+            self._rebases = rebases               # messages it re-sent are not a new topic
+            self._cycle, self._topic_pending, self._topic_req, self._new_user = len(self._sizes), False, None, False
         if self._topic_changed(sim):
             self._topic_pending, self._topic_req = True, len(self._sizes)
-        size = sim.request_chars() // 4
         self._summarized = False
-        if self._sizes and size < 0.6 * self._sizes[-1]:   # the host compacted (Codex native): a new cycle
-            self._cycle, self._topic_pending = len(self._sizes), False
         try:
             now = self._keys(sim, sim.sent())
             plans = []
@@ -876,8 +905,8 @@ class InfiniteContextV5(CliffCompaction):
                           and size > s.topic_min_frac * self.t):
                 plans += self._plan_summaries(sim, now, knobs)
             sim.M["v5_choices"] += 1
-            if forced:                            # above the hard limit the host compacts: Codex native compaction,
-                sim.M["v5_choose_host"] += 1      # the one fallback every method has
+            if forced:
+                self._deadline(sim, knobs)
                 return
             best = max(plans, key=lambda p: p["gain"], default=None)
             if best is None or best["gain"] <= 0:
@@ -910,6 +939,28 @@ class InfiniteContextV5(CliffCompaction):
                 self._cycle = len(self._sizes) - 1
             if self._compacted:
                 self._after, self._since = self._sizes[-1], 0
+
+    def _deadline(self, sim, knobs):
+        """Above t our own mechanical summary runs (the deadline every method's trigger has); the host (Codex native
+        compaction) is left only what a summary cannot remove: less than summary_min_frac of t, or a summary on
+        the last request that left the context above t."""
+        s = self.spec
+        stuck = self._sizes and self._cycle == len(self._sizes) - 1 and self._sizes[-1] > self._hard()
+        res = None if (s.at_hard == "host" or stuck) else self._compact(list(sim.sent()), knobs)
+        if res is not None:
+            _, before = self._keys(sim, sim.sent())
+            _, after = self._keys(sim, res["new"])
+            if sum(before) - sum(after) >= s.summary_min_frac * self.t:
+                self.knobs = knobs
+                try:
+                    done = self._chain(sim, knobs, force=True)
+                finally:
+                    self.knobs = s
+                if done:
+                    self._compacted, self._topic_pending, self._summarized = True, False, True
+                    sim.M["v5_choose_deadline"] += 1
+                    return
+        sim.M["v5_choose_host"] += 1
 
     def _entry_cost(self, sim, item):
         """(a) A new long output: shortened as it enters only if that pays (no cache cost, it was never sent; the
@@ -955,7 +1006,9 @@ class InfiniteContextV5(CliffCompaction):
 
         def stays(x):                             # the host contract keeps media and the call it answers
             return (x.get("protected") or (k.protect_user and x["seg"] == "msg" and x.get("role") == "user")
-                    or (k.protect_spec and x.get("kind") == "spec") or x.get("id") in self._keep
+                    or (k.protect_spec and x.get("kind") == "spec" and (self.spec.choose != "cost"
+                                                                         or x.get("id") in self._held))
+                    or x.get("id") in self._keep
                     or x.get("id") in self._held or x.get("has_media") or x.get("call_id") in media - {None})
         gone = [x for x in old if not stays(x)]
         if not gone:
@@ -1097,11 +1150,13 @@ class Usage:
 
     def p_reuse(self, x, horizon):
         """P(reused again within `horizon` requests) for an output last reused `a` requests ago."""
-        self.horizon = horizon
         a = self.req - self.last(x)
         b = max([j for j, age in enumerate(AGE_BUCKETS) if age <= a] or [0])
         prior = AGE_PRIOR * AGE_DECAY ** b
-        return (self.k[b] + prior * AGE_N0) / (self.n[b] + AGE_N0)
+        p = (self.k[b] + prior * AGE_N0) / (self.n[b] + AGE_N0)   # within the fixed resolution horizon
+        if horizon == self.horizon:
+            return p
+        return 1 - (1 - min(p, 0.999)) ** (horizon / self.horizon)   # constant hazard over the horizon asked
 
     def superseded(self, x):
         return x.get("id") in self.newer
@@ -1162,6 +1217,19 @@ class Usage:
 
     def active(self, x, window):
         return self.req - self.last(x) <= window
+
+
+_SPEC_PATH = re.compile(r"(^|/)srs/|SRS\.md$|(^|/)TASK_QUEUE\.md$|(^|/)requirements?\.md$", re.I)
+
+
+def _spec_paths(text):
+    """Requirements documents a call reads: a read command naming a strong requirements path (srs/, *SRS.md,
+    TASK_QUEUE.md), even when the same command also reads code (trace.classify calls that 'read')."""
+    from ctxpress.core import trace
+    s = trace.unescape(text or "")
+    if not trace.READ.search(s):
+        return set()
+    return {p for p in (trace.norm(m.group(1)) for m in trace.PATH.finditer(s)) if _SPEC_PATH.search(p)}
 
 
 def _command(text):

@@ -32,10 +32,25 @@ def directory(root, session=None):
     return candidate
 
 
+def bases(root, session=None):
+    """The session's archive in this launch, then in sibling launches: a shared proxy archives into the store of
+    the launch that started it, and a resumed task is a later launch (as ctxpress_retrieve does)."""
+    base=directory(root,session)
+    found=[base]
+    if session is not None:
+        here=Path(root).resolve()
+        for other in sorted(here.parent.iterdir()) if here.parent.is_dir() else []:
+            candidate=other/session
+            if (re.fullmatch('[0-9a-f]{32}',other.name) and other.resolve()!=here and not other.is_symlink()
+                    and candidate.is_dir() and not candidate.is_symlink()):
+                found.append(candidate)
+    return found
+
+
 def read(root, iid, *, session=None, offset=0, chars=4000):
     if type(iid) is not int or iid<0 or type(offset) is not int or offset<0 or type(chars) is not int or not 1<=chars<=16000:
         raise ValueError('invalid archive ID or page bounds')
-    base=directory(root,session)
+    base=next((b for b in bases(root,session) if (b/f'{iid}.txt').is_file()),directory(root,session))
     path=base/f'{iid}.txt'
     if path.is_symlink():raise ValueError('archive source must not be a symlink')
     text=path.read_text(encoding='utf-8')
@@ -52,10 +67,11 @@ def read(root, iid, *, session=None, offset=0, chars=4000):
 def search(root, query, *, session=None, limit=5):
     if not isinstance(query,str) or not query.strip() or len(query)>512 or type(limit) is not int or not 1<=limit<=20:
         raise ValueError('query and bounded result limit required')
-    base=directory(root,session)
     found=[]
-    for path in sorted(base.glob('*.txt')):
-        if not path.stem.isdecimal() or path.is_symlink():continue
+    paths=[p for b in bases(root,session) for p in b.glob('*.txt') if p.stem.isdecimal()]
+    for path in sorted(paths,key=lambda p:-int(p.stem)):   # newest first
+        base=path.parent
+        if path.is_symlink():continue
         text=path.read_text(encoding='utf-8')
         meta=base/f'{path.stem}.infinite.json'
         if meta.exists() and hashlib.sha256(text.encode()).hexdigest()!=json.loads(meta.read_text())['sha256']:

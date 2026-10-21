@@ -12,6 +12,11 @@ class MethodToolRouteError(ValueError):
     pass
 
 
+# Archive reads change no method state, so they may run inside a Code Mode cell; control tools may not.
+READ_ONLY = {'mcp__ctxpress__' + name for name in ('infinite_context_read', 'infinite_context_search',
+                                                   'infinite_context_memory_read', 'infinite_context_memory_search')}
+
+
 class MethodTools:
     def __init__(self, method, *, receipts=None):
         self.receipts = receipts
@@ -66,7 +71,7 @@ class MethodTools:
             if not isinstance(executed, list) or any(not isinstance(tool, dict) or
                     not isinstance(tool.get('name'), str) for tool in executed):
                 raise MethodToolRouteError('Code Mode tool inventory is malformed')
-            if any(tool['name'] in self.nested_names for tool in executed):
+            if any(tool['name'] in self.nested_names and tool['name'] not in READ_ONLY for tool in executed):
                 raise MethodToolRouteError('method control tool executed inside Code Mode; '
                                           'separate call/output boundaries are required')
             origin = metadata.get('cell_id')
