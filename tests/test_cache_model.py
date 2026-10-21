@@ -65,12 +65,14 @@ def test_cost_chooser_keeps_specs_and_holds_by_default():
     m = InfiniteContext(version=5, t=1000, choose="cost")
     assert m.spec.guard and m.spec.protect_spec and m.spec.recall
     assert m.spec.hold == "window" and m.spec.supersede and m.spec.guard_keep_frac == 0.2
+    assert m.spec.cached_price == 0.05 and m.spec.output_price == 5.0 and m.spec.candidates == ("summary",)
+    assert m.spec.summary_at == "boundary"
     assert "成本模型" in m.framework["decider"]
 
 
 def test_summary_waits_for_rent_then_pays():
     """A summary right after the last one pays no rent and is refused; the same summary after a long cycle pays."""
-    m = InfiniteContext(version=5, t=1000, choose="cost")
+    m = InfiniteContext(version=5, t=1000, choose="cost", summary_at="any", cached_price=0.1)
     m._cache = Cache(fixed=0)
     m._cache.record(keys(10), [100] * 10)
     now, new = (keys(10), [100] * 10), ([("s", 0)], [200])
@@ -88,3 +90,23 @@ def test_cost_chooser_can_wait_for_a_topic_change():
     m = InfiniteContext(version=5, t=1000, choose="cost", summary_at="topic")
     assert m.spec.summary_at == "topic"
     assert run(lambda: InfiniteContext(version=5, t=1000, choose="cost", summary_at="topic"))
+
+
+def test_boundary_takes_a_topic_change_early_and_waits_longer_without_one():
+    """Rent between 0.5 F and 2 F: a summary pays at a recent topic change, not elsewhere; above 2 F it pays."""
+    m = InfiniteContext(version=5, t=1000, choose="cost")
+    m._cache = Cache(fixed=0)
+    m._cache.record(keys(10), [100] * 10)
+    now, new = (keys(10), [100] * 10), ([("s", 0)], [200])
+
+    class Sim:
+        fixed_chars, prefix = 0, 0
+    first = m._cache.cost(*new, 0.05) - 0.05 * 200
+    m._cycle, m._sizes = 0, [200 + 800] * int(1.0 * first / (0.05 * 800) + 1)   # rent just above F
+    m._topic_req = None
+    assert m._summary_net(Sim(), now, new, []) < 0
+    m._topic_req = len(m._sizes) - 1
+    assert m._summary_net(Sim(), now, new, []) > 0
+    m._topic_req = None
+    m._sizes = [1000] * int(2.0 * first / (0.05 * 800) + 2)                        # rent above 2 F
+    assert m._summary_net(Sim(), now, new, []) > 0

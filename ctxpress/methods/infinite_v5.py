@@ -133,8 +133,12 @@ class Spec(Knobs):
     state_recovery_factor: float = 0.5    # cost, hybrid: share of recoveries still needed with a written task state
                                           # (assumed; to be set by trials)
     cache_rho: tuple = RHO                # cost: provider cache retention after an edit (core/cache_model.py)
-    summary_at: str = "any"               # cost: summary candidate at any request above topic_min_frac of t (the rent
-                                          # account times it) or only after a topic change ("topic")
+    summary_at: str = "boundary"          # cost: when the rent account may summarize (above topic_min_frac of t):
+                                          # any = rent >= F; topic = only after a topic change; boundary = at a
+                                          # topic change once rent >= boundary_early F, else at boundary_late F
+    boundary_early: float = 0.5           # boundary: rent/F from which a topic change is taken (L = 0.71 L*)
+    boundary_late: float = 2.0            # boundary: rent/F at which it summarizes without one (L = 1.41 L*)
+    boundary_window: int = 3              # boundary: requests after a topic change that still count as at it
     candidates: tuple = ("placeholder", "summary")   # cost: candidate operators (ablation removes one)
 
     def check(self):
@@ -146,8 +150,10 @@ class Spec(Knobs):
             raise ValueError(f"choose must be one of {CHOOSERS}; writers from mechanical, hybrid")
         if set(self.candidates) - {"placeholder", "summary"}:
             raise ValueError("candidates from placeholder, summary")
-        if self.summary_at not in ("any", "topic"):
-            raise ValueError("summary_at must be any or topic")
+        if self.summary_at not in ("any", "topic", "boundary"):
+            raise ValueError("summary_at must be any, topic or boundary")
+        if not (0 < self.boundary_early <= 1 <= self.boundary_late) or self.boundary_window < 0:
+            raise ValueError("0 < boundary_early <= 1 <= boundary_late; boundary_window >= 0")
         if not (0 <= self.state_recovery_factor <= 1) or len(self.cache_rho) < 1:
             raise ValueError("state_recovery_factor in [0, 1]; cache_rho nonempty")
         if self.keep_recent < 0 or self.output_keep_chars < 0 or self.writer_tokens < 1 or self.horizon < 1:
@@ -292,8 +298,14 @@ class InfiniteContextV5(CliffCompaction):
             # changes; specs stay. Superseded reads released and at most 20% of t held: what is held cannot be
             # summarized, and the hold carried 32 outputs per request at 30% (发现 24). The value hold holds as many
             # tokens as the window on recorded Codex sessions, so the window stays.
+            # Prices of gpt-6.1-sol per uncached input token: cached $0.1 / $2.0 = 0.05, output $10 / $2 = 5.
+            # Summaries only: at a cached price of 0.05 an edit inside the prompt (a placeholder) rebuilds all that
+            # follows it at 0.95 and saves 0.05 per removed token per request, so it pays back only after
+            # ~19 x (tokens after it / tokens removed) requests, longer than a cycle; it also removes outputs while
+            # their topic may still be open.
             switches = {"guard": True, "protect_spec": True, "recall": True, "supersede": True,
-                        "guard_keep_frac": 0.2, **switches}
+                        "guard_keep_frac": 0.2, "cached_price": 0.05, "output_price": 5.0,
+                        "candidates": ("summary",), **switches}
         for name in ("writers", "cache_rho", "candidates"):
             if isinstance(switches.get(name), list):
                 switches[name] = tuple(switches[name])
@@ -352,6 +364,7 @@ class InfiniteContextV5(CliffCompaction):
         self._cycle = 0                   # cost: index in _sizes of the first request after the last summary
         self._wait_from = None            # cost: request at which a placeholder batch started waiting
         self._ph_seg = -1                 # cost: segment id at the last placeholder batch
+        self._topic_req = None            # cost: index in _sizes of the last topic change
 
     # ------------------------------------------------------------------ runtime signals
     def _phase(self):
@@ -683,15 +696,15 @@ class InfiniteContextV5(CliffCompaction):
         return saving - rebuild - recovery - writer
 
     # ------------------------------------------------------------------ choose = cost: the cost model picks (§9.7)
-    # Candidates at a request: (b) placeholders for the long outputs of closed segments, once per closed segment,
-    # (c) an early summary (any request above topic_min_frac of t, or only after a topic change), each written
-    # mechanically or, if listed in `writers`, as hybrid; (e) nothing. Above the hard limit (`t` unless hard_t is
-    # set) nothing is chosen: the host compacts (Codex native compaction). (a), shortening a new output, is decided as
-    # it enters (_entry_cost). Prices are in uncached-input-token units. A placeholder batch: what this request
-    # costs more or less (the provider cache, core/cache_model.py), the tokens saved on the following requests
-    # until the content would go anyway, the expected recoveries. A summary: the rent paid since the last summary
-    # against the new cycle's uncached first request, the recoveries and the writer (_summary_net). The best
-    # positive candidate runs; none = nothing changes.
+    # Candidates at a request: (b) placeholders for the long outputs of closed segments, once per closed segment
+    # (off by default), (c) an early summary (above topic_min_frac of t; `summary_at` says when the rent account
+    # may take it), each written mechanically or, if listed in `writers`, as hybrid; (e) nothing. Above the hard
+    # limit (`t` unless hard_t is set) nothing is chosen: the host compacts (Codex native compaction). (a),
+    # shortening a new output, is decided as it enters (_entry_cost). Prices are in uncached-input-token units.
+    # A placeholder batch: what this request costs more or less (the provider cache, core/cache_model.py), the
+    # tokens saved on the following requests until the content would go anyway, the expected recoveries. A
+    # summary: the rent paid since the last summary against the new cycle's uncached first request, the
+    # recoveries and the writer (_summary_net). The best positive candidate runs; none = nothing changes.
     def _keys(self, sim, items):
         keys, sizes = [], []
         for x in items:
@@ -764,7 +777,18 @@ class InfiniteContextV5(CliffCompaction):
         rent = sum(p * min(removed, z - left) for z in self._sizes[self._cycle:] if z > left)
         first = cache.cost(nkeys, nsizes, s.cached_price) - s.cached_price * (cache.fixed + sum(nsizes))
         risk = recovery_scale * self._recovery(sim, lost, self._stay(size_now), cache.fixed + sum(nsizes))
-        return rent - first - risk - writer_cost
+        return rent - self._boundary_factor() * first - risk - writer_cost
+
+    def _boundary_factor(self):
+        """How much rent, in units of F, a summary needs now. The cost per request of a cycle of length L is
+        F/L + p g L / 2; relative to its least value at L* it is (x + 1/x) / 2 with x = L/L*, and rent/F = x^2.
+        Taking a topic change anywhere in rent in [0.5 F, 2 F] (x in [0.71, 1.41]) costs at most 6% of that part,
+        and a summary at a topic change drops detail the new topic rarely needs."""
+        s = self.spec
+        if s.summary_at != "boundary":
+            return 1.0
+        at = self._topic_req is not None and len(self._sizes) - self._topic_req <= s.boundary_window
+        return s.boundary_early if at else s.boundary_late
 
     def _placeholder_gain(self, sim, now, items):
         ids, ph = {x["id"] for x in items}, sim.placeholder_size("memid")
@@ -836,7 +860,7 @@ class InfiniteContextV5(CliffCompaction):
         knobs = s if not s.adaptive else dataclasses.replace(s, keep_recent=self._keep_recent())
         cache = self._cache_for(sim)
         if self._topic_changed(sim):
-            self._topic_pending = True
+            self._topic_pending, self._topic_req = True, len(self._sizes)
         size = sim.request_chars() // 4
         self._summarized = False
         if self._sizes and size < 0.6 * self._sizes[-1]:   # the host compacted (Codex native): a new cycle
@@ -848,7 +872,7 @@ class InfiniteContextV5(CliffCompaction):
             if p is not None:
                 plans.append(p)
             forced = size > self._hard()
-            if not forced and ("summary" in s.candidates and (self._topic_pending or s.summary_at == "any")
+            if not forced and ("summary" in s.candidates and (self._topic_pending or s.summary_at != "topic")
                           and size > s.topic_min_frac * self.t):
                 plans += self._plan_summaries(sim, now, knobs)
             sim.M["v5_choices"] += 1
