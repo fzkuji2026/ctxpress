@@ -60,6 +60,16 @@ STATE_GUIDANCE = ("Write the working state a coding agent needs to continue afte
                   "context: goals, constraints and user requirements, decisions, what was verified, failures and their "
                   "causes, unresolved issues, and the next steps. Keep exact identifiers, paths, commands and error "
                   "messages. Do not invent progress. Plain text with short labelled sections.")
+STATE_SYSTEM = ("You keep the working state of a coding agent whose older steps are being removed from its context. "
+                "The input is JSON: previous_state (the state written at the last removal, may be empty) and steps "
+                "(the removed steps, oldest first; long tool outputs are cut, their full text stays archived under "
+                "#ID). Write the updated state the agent needs to continue: the task and the user's requirements "
+                "(from requirement documents and user messages), constraints, decisions and why, files changed, what "
+                "was verified (tests run and their results), failures and their causes, unresolved issues, and the "
+                "next steps. Keep exact identifiers, paths, commands, error messages, and the #ID of outputs worth "
+                "reading again. Carry forward what still holds from previous_state; drop what is finished and no "
+                "longer matters. Do not invent progress. Plain text with short labelled sections, at most CHARS "
+                "characters. Return a JSON object {\"state\": \"<the state>\"}.")
 RECALL_NOTE = ("Removed or shortened tool outputs are archived. Their references look like [archived #ID] or "
                "'stored at #ID'; read one with infinite_context_read (id=ID) or find text with "
                "infinite_context_search.")
@@ -130,6 +140,11 @@ class Spec(Knobs):
     choose: str = "fixed"                 # fixed: the operators the switches list; cost: at every request each
                                           # available operator is a candidate and the cost model picks one (§9.7)
     writers: tuple = ("mechanical",)      # cost: summary writers that are candidates (mechanical, hybrid)
+    writer_model: str = ""                # hybrid: who writes the task state; "" = the host's summary service,
+                                          # "deepseek-flash" = DeepSeek on its own route (ctxpress/live/deepseek.py)
+    writer_input_price: float = 1.0       # cost: the writer's price per input token, in uncached-input units
+    writer_output_price: float = 8.0      # cost: the writer's price per output token, in uncached-input units
+    writer_input_chars: int = 160_000     # hybrid with writer_model: most characters of history the writer reads
     state_recovery_factor: float = 0.5    # cost, hybrid: share of recoveries still needed with a written task state
                                           # (assumed; to be set by trials)
     cache_rho: tuple = RHO                # cost: provider cache retention after an edit (core/cache_model.py)
@@ -162,6 +177,9 @@ class Spec(Knobs):
             raise ValueError("0 < boundary_early <= 1 <= boundary_late; boundary_window >= 0")
         if not (0 <= self.state_recovery_factor <= 1) or len(self.cache_rho) < 1:
             raise ValueError("state_recovery_factor in [0, 1]; cache_rho nonempty")
+        if (self.writer_model not in ("", "deepseek-flash") or self.writer_input_price < 0
+                or self.writer_output_price < 0 or self.writer_input_chars < 1000):
+            raise ValueError("writer_model is '' or deepseek-flash; writer prices >= 0; writer_input_chars >= 1000")
         if self.keep_recent < 0 or self.output_keep_chars < 0 or self.writer_tokens < 1 or self.horizon < 1:
             raise ValueError("counts and sizes must be non-negative")
         if not (0 < self.entry_frac and 0 <= self.segment_min_frac and 0 <= self.topic_min_frac
@@ -313,10 +331,18 @@ class InfiniteContextV5(CliffCompaction):
             # t): kept unbounded they reached 49-74k by the end of a session. Later user messages (task queue
             # updates) stay, as Codex native compaction keeps them. Re-reads come within 10 requests 69% of the
             # time and within 15 about 75%, so an output stays in use for 15 requests.
+            # From the 10-21 run (6 summaries of ours, 14 by Codex in 961 requests): Codex native compaction leaves
+            # 26-29k (chars/4) and loses no score, ours left 41-58k, most of it held outputs and specs at 20% of t
+            # each, so each gets 10%; with that much left the rent point at 2 F lay above t, so the rent summarizes
+            # at F without a topic change. The task state is written by DeepSeek (deepseek-flash, $0.3 / $1.2 per
+            # million = 0.15 / 0.6 of an uncached input token), about the size of Codex's compaction item (3.2-4.2k
+            # output tokens), ahead of the mechanical lines and their archive numbers.
             switches = {"guard": True, "protect_spec": True, "recall": True, "supersede": True,
-                        "protect_user": True, "guard_active": 15, "guard_keep_frac": 0.2, "spec_keep_frac": 0.2,
+                        "protect_user": True, "guard_active": 15, "guard_keep_frac": 0.1, "spec_keep_frac": 0.1,
                         "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0,
-                        "candidates": ("summary",), **switches}
+                        "candidates": ("summary",), "boundary_late": 1.0,
+                        "writers": ("hybrid",), "writer_model": "deepseek-flash", "writer_tokens": 3000,
+                        "writer_input_price": 0.15, "writer_output_price": 0.6, **switches}
         for name in ("writers", "cache_rho", "candidates"):
             if isinstance(switches.get(name), list):
                 switches[name] = tuple(switches[name])
@@ -340,6 +366,8 @@ class InfiniteContextV5(CliffCompaction):
                                               for o in ops)
         archived = spec.recall or stores
         self.memory = "id" if stores else None
+        writes = spec.writer == "hybrid" or (spec.choose == "cost" and "hybrid" in spec.writers)
+        self.writer_model = spec.writer_model if writes else ""   # launchers open DeepSeek's route for it
         self.agent_tools = _tools() if archived else ()
         self.instructions = RECALL_NOTE if archived else ""
         by = lambda *whens: "；".join(o.describe(t) for o in ops if o.when in whens) or "无"
@@ -866,16 +894,19 @@ class InfiniteContextV5(CliffCompaction):
                 if x["seg"] == "out" and len(x.get("text") or "") > s.output_keep_chars]
         nkeys, nsizes = self._keys(sim, res["new"])
         plans = []
+        hybrid = "hybrid" in s.writers and self._can_write(sim)
         gain = self._summary_net(sim, now, (nkeys, nsizes), lost)
-        if gain is not None:
+        if gain is not None and ("mechanical" in s.writers or not hybrid):
             plans.append(dict(action="summary", writer="mechanical", gain=gain))
-        if "hybrid" in s.writers and hasattr(sim, "_summary_text"):
+        if hybrid:
             at = next(i for i, x in enumerate(res["new"]) if x is res["summary"])
             hsizes = list(nsizes)
             hsizes[at] += s.writer_tokens
             members = sum(sim.seg_size(x) for x in res["summary"]["members"])
+            if s.writer_model:
+                members = min(members, s.writer_input_chars // 4)
             gain = self._summary_net(sim, now, (nkeys, hsizes), lost,
-                                     writer_cost=members + s.writer_tokens * s.output_price,
+                                     writer_cost=members * s.writer_input_price + s.writer_tokens * s.writer_output_price,
                                      recovery_scale=s.state_recovery_factor)
             if gain is not None:
                 plans.append(dict(action="summary", writer="hybrid", gain=gain))
@@ -921,16 +952,11 @@ class InfiniteContextV5(CliffCompaction):
                 sim.M["v5_segment"] += 1
                 sim.M["v5_choose_placeholder"] += 1
                 return
-            self.knobs = knobs
-            try:
-                done = (self._model_compaction(sim, "hybrid") if best["writer"] == "hybrid"
-                        else self._chain(sim, knobs, force=True))
-            finally:
-                self.knobs = s
+            done = self._summarize(sim, knobs, best["writer"])
             if done:
                 self._compacted, self._topic_pending, self._summarized = True, False, True
                 sim.M["v5_topic"] += 1
-                sim.M["v5_choose_summary_" + best["writer"]] += 1
+                sim.M["v5_choose_summary_" + done] += 1
         finally:
             keys, sizes = self._keys(sim, sim.sent())
             cache.record(keys, sizes)
@@ -940,10 +966,23 @@ class InfiniteContextV5(CliffCompaction):
             if self._compacted:
                 self._after, self._since = self._sizes[-1], 0
 
+    def _summarize(self, sim, knobs, writer):
+        """One summary with this writer; a hybrid whose writer fails falls back to the mechanical lines. Returns the
+        writer that wrote it, or None when nothing changed."""
+        self.knobs = knobs
+        try:
+            if writer == "hybrid":
+                if self._model_compaction(sim, "hybrid"):
+                    return "hybrid"
+                sim.M["v5_writer_fallback"] += 1
+            return "mechanical" if self._chain(sim, knobs, force=True) else None
+        finally:
+            self.knobs = self.spec
+
     def _deadline(self, sim, knobs):
-        """Above t our own mechanical summary runs (the deadline every method's trigger has); the host (Codex native
-        compaction) is left only what a summary cannot remove: less than summary_min_frac of t, or a summary on
-        the last request that left the context above t."""
+        """Above t our own summary runs (the deadline every method's trigger has), written as the spec says; the
+        host (Codex native compaction) is left only what a summary cannot remove: less than summary_min_frac of
+        t, or a summary on the last request that left the context above t."""
         s = self.spec
         stuck = self._sizes and self._cycle == len(self._sizes) - 1 and self._sizes[-1] > self._hard()
         res = None if (s.at_hard == "host" or stuck) else self._compact(list(sim.sent()), knobs)
@@ -951,12 +990,8 @@ class InfiniteContextV5(CliffCompaction):
             _, before = self._keys(sim, sim.sent())
             _, after = self._keys(sim, res["new"])
             if sum(before) - sum(after) >= s.summary_min_frac * self.t:
-                self.knobs = knobs
-                try:
-                    done = self._chain(sim, knobs, force=True)
-                finally:
-                    self.knobs = s
-                if done:
+                writer = "hybrid" if "hybrid" in s.writers and self._can_write(sim) else "mechanical"
+                if self._summarize(sim, knobs, writer):
                     self._compacted, self._topic_pending, self._summarized = True, False, True
                     sim.M["v5_choose_deadline"] += 1
                     return
@@ -994,9 +1029,12 @@ class InfiniteContextV5(CliffCompaction):
         first = next((i for i, x in enumerate(working) if is_model(x)), None)
         if first is None:
             return None
-        head = first
-        while head > 0 and is_summary(working[head - 1]):
-            head -= 1
+        head = j = first
+        while j > 0 and (is_summary(working[j - 1]) or (k.protect_user and working[j - 1]["seg"] == "msg"
+                                                          and working[j - 1].get("role") == "user")):
+            j -= 1                                # earlier summaries, past user messages kept after them: a new
+            if is_summary(working[j]):            # summary replaces them instead of piling up after the messages
+                head = j
         turns = group_turns(working[head:])
         keep = max(0, k.keep_recent)
         if len(turns) <= keep:
@@ -1049,19 +1087,78 @@ class InfiniteContextV5(CliffCompaction):
             state["chars"] = sim.message_chars(state["text"])
             state["size"] = sim.tokens(state["text"])
             return True
-        # hybrid: a model-written state ahead of the mechanical lines
-        written = sim._summary_text(members, "segment", self.spec.writer_tokens, STATE_GUIDANCE) \
-            if hasattr(sim, "_summary_text") else None
+        # hybrid: a model-written state ahead of the mechanical lines. With a writer model the earlier summaries
+        # are replaced too (their state is carried forward by the writer), as the mechanical chain replaces them.
+        if self.spec.writer_model:
+            members = [x for x in res["summary"]["members"] if x in sim.ctx]
+        written = self._write_state(sim, members)
         if written is None:
             sim.M["v5_writer_failed"] += 1
             return False
         mech = res["summary"]["text"][len(SUMMARY_HEADER):].strip()
         text = SUMMARY_HEADER + "\n\n[state]\n" + written + ("\n\n---\n\n" + mech if mech else "")
-        new = sim.summarize_segment(members, text=text, billed=True, cliff=True)
+        billed = not self.spec.writer_model       # a writer model's call is billed on its own route
+        new = sim.summarize_segment(members, text=text, billed=billed, model_written=not billed, cliff=True)
         if new is not None:
             new["chars"] = sim.message_chars(text)
             new["size"] = sim.tokens(text)
+            sim.M["v5_writer_" + (self.spec.writer_model or "host")] += 1
         return new is not None
+
+    def _can_write(self, sim):
+        return hasattr(sim, "model_text") if self.spec.writer_model else hasattr(sim, "_summary_text")
+
+    def _write_state(self, sim, members):
+        """The task state of a hybrid summary, or None when the writer fails: the host's summary service, or
+        `writer_model` given the earlier state and the removed steps (_writer_input)."""
+        s = self.spec
+        if not s.writer_model:
+            return sim._summary_text(members, "segment", s.writer_tokens, STATE_GUIDANCE) \
+                if hasattr(sim, "_summary_text") else None
+        earlier = [x for x in members if x.get("cliff") or is_summary(x)]
+        steps = [x for x in members if not (x.get("cliff") or is_summary(x))]
+        previous = "\n\n".join(p for p in (_state_of(x.get("text") or "") for x in earlier) if p)
+        body = json.dumps(dict(previous_state=previous, steps=self._writer_input(sim, steps)), ensure_ascii=False)
+        answer = sim.model_text(STATE_SYSTEM.replace("CHARS", str(s.writer_tokens * 4)), body,
+                                purpose="infinite_context_compression", model=s.writer_model)
+        try:
+            state = json.loads(answer)["state"]
+        except (TypeError, ValueError, KeyError):
+            return None
+        if not isinstance(state, str) or not state.strip():
+            return None
+        return truncate(state.strip(), s.writer_tokens * 6)
+
+    def _writer_input(self, sim, steps):
+        """The removed steps as the writer reads them, oldest first: messages, one-line calls, outputs cut to their
+        head and tail with the archive number. Beyond writer_input_chars the oldest fifth and the newest steps
+        stay and the middle is left out, said so in its place."""
+        s, lines = self.spec, []
+        for x in steps:
+            text = (x.get("text") or "").strip()
+            if x["seg"] == "msg" and text:
+                lines.append(f"{x.get('role') or 'message'}: {truncate(text, 3000)}")
+            elif x["seg"] == "call":
+                lines.append(f"[{x.get('name') or 'call'}] {truncate(text, 400)}")
+            elif x["seg"] == "out" and text:
+                cut = text if len(text) <= 1500 else text[:1000] + f"\n... [{len(text) - 1500} chars cut] ...\n" + text[-500:]
+                lines.append(f"output #{x.get('id')}: {cut}")
+        if sum(len(l) for l in lines) <= s.writer_input_chars:
+            return lines
+        head, used = [], 0
+        for l in lines:
+            if used + len(l) > s.writer_input_chars // 5:
+                break
+            head.append(l)
+            used += len(l)
+        tail = []
+        for l in reversed(lines[len(head):]):
+            if used + len(l) > s.writer_input_chars:
+                break
+            tail.append(l)
+            used += len(l)
+        left_out = len(lines) - len(head) - len(tail)
+        return head + [f"[... {left_out} steps left out ...]"] + tail[::-1]
 
     # ------------------------------------------------------------------ recall
     def call_tool(self, name, args):
@@ -1071,6 +1168,14 @@ class InfiniteContextV5(CliffCompaction):
             return json.dumps(call(name, args, settings.store_dir()), ensure_ascii=False), False
         except (OSError, ValueError, KeyError, TypeError) as error:
             return json.dumps(dict(error=str(error)), ensure_ascii=False), True
+
+
+def _state_of(text):
+    """What an earlier summary carries into the next state: its written state, else its mechanical lines (cut)."""
+    body = text[len(SUMMARY_HEADER):].strip() if text.startswith(SUMMARY_HEADER) else text.strip()
+    if body.startswith("[state]\n"):
+        return body[len("[state]\n"):].split("\n\n---\n\n", 1)[0].strip()
+    return truncate(body, 8000)
 
 
 _LINE_MIN = 24

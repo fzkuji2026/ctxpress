@@ -1,5 +1,5 @@
 """infinite-context cost mode in the host: the deadline summary, requirements residency, the hold, recall reads."""
-import collections, copy
+import collections, copy, json
 from ctxpress.live.rewrite import Rewriter
 from ctxpress.methods import InfiniteContext
 from ctxpress.methods.infinite_v5 import Usage, _spec_paths
@@ -25,7 +25,7 @@ def test_at_hard_host_leaves_it_to_codex():
 
 def test_cost_defaults_bound_specs_and_keep_user_messages():
     s = InfiniteContext(version=5, t=1000, choose="cost").spec
-    assert s.protect_user and s.spec_keep_frac == 0.2 and s.guard_active == 15 and s.cmd_max_chars == 300
+    assert s.protect_user and s.spec_keep_frac == 0.1 and s.guard_active == 15 and s.cmd_max_chars == 300
     assert s.at_hard == "summary" and s.summary_min_frac == 0.15
 
 
@@ -93,3 +93,60 @@ def test_cache_keeps_the_first_request_as_a_point_after_many_requests():
     for n in range(1, 100):
         c.record(head + [("i", k) for k in range(1, n + 1)], [1000] * (n + 1))
     assert c.point(head + [("i", 1), ("s", 0)], [1000, 1000, 50]) == 2000   # a summary right after the first request
+
+
+class Recorder:
+    """A summary service whose only use here is recording the writer's usage rows."""
+    def __init__(self):
+        self.rows = []
+
+    def record(self, row):
+        self.rows.append(row)
+
+    def summarize(self, rendered, purpose=None, budget=None):
+        raise AssertionError("the host's summary service must not write when DeepSeek is the writer")
+
+
+def deepseek_run(monkeypatch, answer):
+    import ctxpress.live.deepseek as deepseek
+    bodies = []
+
+    def fake(system, user, *, record, model):
+        assert model == "deepseek-flash" and callable(record) and "JSON" in system
+        bodies.append(json.loads(user))
+        return answer(len(bodies))
+    monkeypatch.setattr(deepseek, "summarize", fake)
+    rw = Rewriter(lambda: InfiniteContext(version=5, t=500, choose="cost"), summarizer=Recorder())
+    for inp in requests():
+        rw.rewrite_body(dict(model='gpt-5', instructions='sys', input=copy.deepcopy(inp), tools=[], stream=True), 's')
+    return next(iter(rw.sessions.values())).ctx, bodies
+
+
+def test_deepseek_writes_the_state_and_carries_it_forward(monkeypatch):
+    ctx, bodies = deepseek_run(monkeypatch, lambda n: json.dumps(dict(state=f"STATE {n}: parser test still failing")))
+    assert len(bodies) >= 2 and ctx.M["v5_writer_deepseek-flash"] == len(bodies)
+    assert bodies[0]["previous_state"] == "" and "STATE 1" in bodies[1]["previous_state"]
+    assert any("cat f" in line for line in bodies[0]["steps"])
+    summaries = [x for x in ctx.ctx if x["seg"] == "summary"]
+    assert len(summaries) == 1 and f"[state]\nSTATE {len(bodies)}" in summaries[0]["text"]
+
+
+def test_a_failed_deepseek_call_falls_back_to_the_mechanical_summary(monkeypatch):
+    ctx, bodies = deepseek_run(monkeypatch, lambda n: "not json")
+    assert bodies and ctx.M["v5_writer_fallback"] >= 1 and ctx.M["v5_choose_deadline"] >= 1
+    assert all("[state]" not in (x.get("text") or "") for x in ctx.ctx if x["seg"] == "summary")
+
+
+def test_writer_input_keeps_the_start_and_the_newest_steps():
+    m = InfiniteContext(version=5, t=500, choose="cost", writer_input_chars=10000)
+    steps = [dict(seg="out", id=i, text=f"out {i} " + "x" * 3000) for i in range(20)]
+    lines = m._writer_input(None, steps)
+    assert sum(len(l) for l in lines) <= 10100 and "steps left out" in "".join(lines)
+    assert lines[0].startswith("output #0:") and lines[-1].startswith("output #19:") and "chars cut" in lines[-1]
+
+
+def test_the_launcher_opens_deepseeks_route_for_the_cost_method():
+    from ctxpress.benchmarks.milestone.runner import deepseek_writer
+    assert deepseek_writer(dict(**{"class": "infinite-context"}, args=dict(version=5, t=102400, choose="cost")))
+    assert not deepseek_writer(dict(**{"class": "infinite-context"}, args=dict(version=5, t=102400)))
+    assert not deepseek_writer(dict(**{"class": "infinite-context"}, args=dict(version=5, choose="cost", writer_model="")))

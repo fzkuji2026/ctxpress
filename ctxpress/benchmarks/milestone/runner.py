@@ -28,6 +28,15 @@ def check_auth_fresh(path,now=None):
                          'Agent container, which cannot reach the token endpoint. Refresh the host login first.')
 
 
+def deepseek_writer(method):
+    """infinite-context whose summaries DeepSeek writes (writer_model, set by its defaults): needs DeepSeek's route."""
+    from ctxpress.methods import build
+    try:
+        return getattr(build(method),'writer_model','')=='deepseek-flash'
+    except (KeyError,TypeError,ValueError):
+        return False
+
+
 @contextlib.contextmanager
 def activated_policy(author,binding):
     keys=set(author.RUNTIME_POLICY_ENV_KEYS)|{'SWE_MILESTONE_UNPROTECTED'}
@@ -119,8 +128,9 @@ def run(request, source):
         registry=milestone_resources.Registry(settings['project'],settings['label'],folder,images.get('services'))
         method = settings['method']
         aux = (method.get('class') == 'infinite-context' and
-               method.get('args', {}).get('agent_model') == 'deepseek-flash' and
-               method.get('args', {}).get('agent_mode') in ('shadow', 'control'))
+               ((method.get('args', {}).get('agent_model') == 'deepseek-flash' and
+                 method.get('args', {}).get('agent_mode') in ('shadow', 'control')) or
+                deepseek_writer(method)))
         channel_options = {'auxiliary_deepseek': True} if aux else {}
         if method.get('class') == 'SWEPruner':
             channel_options['pruner_endpoint'] = method.get('args', {}).get('url')
