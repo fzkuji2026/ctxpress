@@ -1,5 +1,5 @@
 """infinite-context cost mode in the host: the deadline summary, requirements residency, the hold, recall reads."""
-import collections, copy, json
+import collections, copy, dataclasses, json
 from ctxpress.live.rewrite import Rewriter
 from ctxpress.methods import InfiniteContext
 from ctxpress.methods.infinite_v5 import Usage, _spec_paths
@@ -25,7 +25,8 @@ def test_at_hard_host_leaves_it_to_codex():
 
 def test_cost_defaults_bound_specs_and_keep_user_messages():
     s = InfiniteContext(version=5, t=1000, choose="cost").spec
-    assert s.protect_user and s.spec_keep_frac == 0.1 and s.guard_active == 15 and s.cmd_max_chars == 300
+    assert s.protect_user and s.spec_keep_frac == 0.15 and s.guard_active == 15 and s.cmd_max_chars == 300
+    assert s.release_at_topic and s.commit_topic
     assert s.at_hard == "summary" and s.summary_min_frac == 0.15
 
 
@@ -173,3 +174,60 @@ def test_the_launcher_opens_deepseeks_route_for_the_cost_method():
     assert deepseek_writer(dict(**{"class": "infinite-context"}, args=dict(version=5, t=102400, choose="cost")))
     assert not deepseek_writer(dict(**{"class": "infinite-context"}, args=dict(version=5, t=102400)))
     assert not deepseek_writer(dict(**{"class": "infinite-context"}, args=dict(version=5, choose="cost", writer_model="")))
+
+
+def boundary_model():
+    m = InfiniteContext(version=5, t=100000, choose="cost")
+    m._use.model = 1                              # every output below has been seen
+    return m
+
+
+def add_at(m, x, req):
+    m._use.req = req
+    m._use.add(x)
+    m._use.model += 1
+
+
+def test_a_topic_change_releases_holds_of_the_old_topic_unless_used_again():
+    m = boundary_model()
+    old, again, new = (dict(id=i, seg="out", text=c * 4000, call_text="cat %s.py" % c) for i, c in ((1, "a"), (2, "b"), (3, "c")))
+    add_at(m, old, 10)
+    add_at(m, again, 10)
+    m._use.req = 14
+    m._topic_use = 12                             # the topic changed at request 14 (lead of two)
+    m._use.used[2] = 14                           # the new topic used it again
+    add_at(m, new, 14)
+    m._use.req = 15
+    held = m._holding(FakeSim([old, again, new]))
+    assert 1 not in held and {2, 3} <= held
+    m.spec = dataclasses.replace(m.spec, release_at_topic=False)
+    assert 1 in m._holding(FakeSim([old, again, new]))
+
+
+def call(m, sim, i, cmd):
+    m.on_ingest(sim, dict(id=i, seg="call", call_id="c%d" % i, text=cmd))
+
+
+def test_a_commit_releases_the_documents_it_names_and_keeps_those_read_ahead():
+    m, sim = boundary_model(), FakeSim([])
+    call(m, sim, 1, "cat srs/M01_SRS.md srs/M02_SRS.md")
+    call(m, sim, 3, "sed -n 1,200p /e2e_workspace/srs/M03_SRS.md")
+    both = dict(id=2, seg="out", kind="spec", call_id="c1", text="r" * 4000)
+    ahead = dict(id=4, seg="out", kind="spec", call_id="c3", text="s" * 4000)
+    sim.ctx = [both, ahead]
+    call(m, sim, 5, "git add src && git commit -m 'Implement M01' && git tag agent-impl-M01 && cat TASK_QUEUE.md")
+    assert m._resident(sim) == {2, 4}             # M02 in the same read is still open
+    call(m, sim, 6, "git commit -am 'Implement M02' && git tag agent-impl-M02")
+    assert m._resident(sim) == {4}
+    call(m, sim, 7, "git tag -l && git log --oneline")
+    assert m._done == {"Implement", "M01", "M02", "agent-impl-M01", "agent-impl-M02"}
+
+
+def test_a_commit_not_a_first_read_of_a_document_is_the_topic_change():
+    m, sim = InfiniteContext(version=5, t=100000, choose="cost"), FakeSim([])
+    m._new_spec, m._use.req = True, 20
+    m._observe(sim)
+    assert not m._topic_pending and m._topic_use == -1
+    call(m, sim, 1, "git commit -m 'Implement M01' && git tag agent-impl-M01")
+    m._observe(sim)
+    assert m._topic_pending and m._topic_use == 17 and sim.M["v5_topic_commit"] == 1

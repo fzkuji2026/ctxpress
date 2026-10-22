@@ -63,13 +63,15 @@ STATE_GUIDANCE = ("Write the working state a coding agent needs to continue afte
 STATE_SYSTEM = ("You keep the working state of a coding agent whose older steps are being removed from its context. "
                 "The input is JSON: previous_state (the state written at the last removal, may be empty) and steps "
                 "(the removed steps, oldest first; long tool outputs are cut, their full text stays archived under "
-                "#ID). Write the updated state the agent needs to continue: the task and the user's requirements "
-                "(from requirement documents and user messages), constraints, decisions and why, files changed, what "
-                "was verified (tests run and their results), failures and their causes, unresolved issues, and the "
-                "next steps. Keep exact identifiers, paths, commands, error messages, and the #ID of outputs worth "
-                "reading again. Carry forward what still holds from previous_state; drop what is finished and no "
-                "longer matters. Do not invent progress. Plain text with short labelled sections, at most CHARS "
-                "characters. Return a JSON object {\"state\": \"<the state>\"}.")
+                "#ID). Write the updated state the agent needs to continue, in these sections: TASK (the overall "
+                "task and how work arrives, e.g. a task queue file); DONE (one line per finished task or milestone: "
+                "its id, what was implemented, the main files, the tests that passed); CURRENT (the task or milestone "
+                "in progress: its id, the requirements still open with exact names, decisions made and why, files "
+                "changed, what was verified and how, logs and scripts under /tmp, processes still running); PROBLEMS (failures and their causes, unresolved issues); NEXT "
+                "(the next steps). Keep exact identifiers, paths, commands, error messages, and the #ID of outputs "
+                "worth reading again. Carry forward what still holds from previous_state, shortening DONE lines of "
+                "older work; do not invent progress. Plain text, at most CHARS characters. Return a JSON object "
+                "{\"state\": \"<the state>\"}.")
 RECALL_NOTE = ("Removed or shortened tool outputs are archived. Their references look like [archived #ID] or "
                "'stored at #ID'; read one with infinite_context_read (id=ID) or find text with "
                "infinite_context_search.")
@@ -137,6 +139,11 @@ class Spec(Knobs):
                                           # again, same command run again) are never held and go at the next batch
     spec_keep_frac: float = 0.0           # resident requirements: the newest spec outputs (SRS, design docs), together
                                           # at most this share of t, stay verbatim through every operator (0 = off)
+    release_at_topic: bool = False        # cost: at a commit or a new user message, outputs last used before it are no
+                                          # longer held (what is used again is held again), and requirements
+                                          # documents a commit or tag names are no longer resident
+    commit_topic: bool = False            # cost: a commit or tag is a topic change (it records finished work) and a
+                                          # first read of a requirements document is not (agents read them ahead)
     choose: str = "fixed"                 # fixed: the operators the switches list; cost: at every request each
                                           # available operator is a candidate and the cost model picks one (§9.7)
     writers: tuple = ("mechanical",)      # cost: summary writers that are candidates (mechanical, hybrid)
@@ -337,10 +344,18 @@ class InfiniteContextV5(CliffCompaction):
             # at F without a topic change. The task state is written by DeepSeek (deepseek-flash, $0.3 / $1.2 per
             # million = 0.15 / 0.6 of an uncached input token), about the size of Codex's compaction item (3.2-4.2k
             # output tokens), ahead of the mechanical lines and their archive numbers.
+            # From 5 recorded Vanilla SWE-Milestone sessions (73 milestones): the commit and tag of a milestone are
+            # its only exact boundary (73/73); 43/73 requirements documents were read before the previous milestone
+            # was tagged (up to 8 open at once), so a first read is no boundary and open documents stay resident;
+            # a tagged milestone's document was read again once in 73. At the tag 66% of the milestone's outputs
+            # (39% of chars) are never referenced later, and later references re-read the file first 72% of the
+            # time, so the guard releases them (uses within 2 requests before the tag still hold). Specs get 15%:
+            # sklearn documents reach 8.9k and Codex's compaction drops them, after which they were re-read within
+            # 1-4 requests in 24/24 cases.
             switches = {"guard": True, "protect_spec": True, "recall": True, "supersede": True,
-                        "protect_user": True, "guard_active": 15, "guard_keep_frac": 0.1, "spec_keep_frac": 0.1,
+                        "protect_user": True, "guard_active": 15, "guard_keep_frac": 0.1, "spec_keep_frac": 0.15,
                         "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0,
-                        "candidates": ("summary",), "boundary_late": 1.0,
+                        "candidates": ("summary",), "boundary_late": 1.0, "release_at_topic": True, "commit_topic": True,
                         "writers": ("hybrid",), "writer_model": "deepseek-flash", "writer_tokens": 3000,
                         "writer_input_price": 0.15, "writer_output_price": 0.6, **switches}
         for name in ("writers", "cache_rho", "candidates"):
@@ -412,6 +427,10 @@ class InfiniteContextV5(CliffCompaction):
         self._spec_paths = set()          # requirements documents read so far
         self._new_spec = False            # a requirements document never read before was read (topic)
         self._writer_fails = 0            # consecutive failed writer calls: after 2 the cost model plans mechanical
+        self._topic_use = -1              # cost: Usage request count from which use counts after the last release
+        self._spec_of = {}                # call id -> requirements documents it reads (task queues left out)
+        self._commit = False              # a commit or tag was called since the last request
+        self._done = set()                # names commits and tags recorded: tag names, words of commit messages
 
     # ------------------------------------------------------------------ runtime signals
     def _phase(self):
@@ -443,9 +462,16 @@ class InfiniteContextV5(CliffCompaction):
             specs = _spec_paths(item.get("text"))
             if specs:
                 self._spec_calls.add(item.get("call_id"))
+                docs = {p for p in specs if not _QUEUE_PATH.search(p)}
+                if docs:
+                    self._spec_of[item.get("call_id")] = docs
                 if specs - self._spec_paths and self._spec_paths:
                     self._new_spec = True
                 self._spec_paths |= specs
+            names = _committed(item.get("text"))
+            if names is not None:
+                self._commit = True
+                self._done |= names
             res = {p for p in res if not _SPEC_PATH.search(p)}   # polled queue / SRS reads are not the work
             if res:
                 self._paths = (self._paths + [res])[-16:]
@@ -538,17 +564,20 @@ class InfiniteContextV5(CliffCompaction):
         return True
 
     def _topic_changed(self, sim):
+        """Why the topic changed since the last request: "user", "commit", "spec", "shift", or "" (no change)."""
         new_user, self._new_user = self._new_user, False
+        committed, self._commit = self._commit and self.spec.commit_topic, False
         old, recent = self._paths[:-6], self._paths[-6:]
         a = set().union(*old) if old else set()
         b = set().union(*recent) if recent else set()
         cooled = self._calls - self._topic_at >= self.spec.topic_gap
         shifted = self.spec.topic_shift and cooled and len(a) >= 3 and len(b) >= 3 and not (a & b)
-        new_spec, self._new_spec = self._new_spec, False
-        if new_user or shifted or new_spec:
+        new_spec, self._new_spec = self._new_spec and not self.spec.commit_topic, False
+        why = "user" if new_user else "commit" if committed else "spec" if new_spec else "shift" if shifted else ""
+        if why:
             self._paths = self._paths[-6:]        # the new topic starts here
             self._topic_at = self._calls
-        return new_user or shifted or new_spec
+        return why
 
     def _audit(self, sim, items):
         """R1/R2 counters: changes to outputs the model had not seen, or was still using (0 with the guard, except
@@ -572,7 +601,7 @@ class InfiniteContextV5(CliffCompaction):
                     or (not (s.supersede and self._use.superseded(x)) and self._worth(sim, x, size_now))]
         else:
             held = [x for x in live if not (s.supersede and self._use.superseded(x))
-                    and (not self._use.seen(x) or self._use.active(x, s.guard_active))]
+                    and (not self._use.seen(x) or (self._use.active(x, s.guard_active) and not self._released(x)))]
         keep, used, budget = set(), 0, s.guard_keep_frac * self.t
         calls = {x.get("call_id"): x["id"] for x in sim.ctx if x["seg"] == "call" and x.get("call_id")}
         for x in sorted(held, key=lambda x: -self._use.last(x)):
@@ -592,10 +621,11 @@ class InfiniteContextV5(CliffCompaction):
         if not s.spec_keep_frac:
             return frozenset()
         specs = [x for x in sim.ctx if x["seg"] == "out" and x.get("kind") == "spec"
-                 and x.get("form", "full") == "full" and not (s.supersede and self._use.superseded(x))]
+                 and x.get("form", "full") == "full" and not (s.supersede and self._use.superseded(x))
+                 and not self._finished(x)]
         keep, used, budget = set(), 0, s.spec_keep_frac * self.t
         calls = {x.get("call_id"): x["id"] for x in sim.ctx if x["seg"] == "call" and x.get("call_id")}
-        for x in reversed(specs):
+        for x in sorted(reversed(specs), key=lambda x: -self._use.last(x)):   # in use first, then newest
             size = sim.seg_size(x)
             if used + size > budget:
                 continue                          # an older, smaller document may still fit
@@ -665,6 +695,8 @@ class InfiniteContextV5(CliffCompaction):
         if self._reuse is not None:
             self._reuse.request(r, self._phase())
             self._keep = self._protected(sim)
+        if s.choose == "cost":
+            self._observe(sim)
         if s.guard:
             if self._since is not None:
                 self._since += 1
@@ -916,18 +948,38 @@ class InfiniteContextV5(CliffCompaction):
                 plans.append(dict(action="summary", writer="hybrid", gain=gain))
         return plans
 
+    def _observe(self, sim):
+        """Before the hold: a host compaction starts a new cycle (the user messages it re-sent are not a new
+        topic); a commit or a new user message marks where use counts again (release_at_topic)."""
+        rebases = sim.M.get("history_rebases", 0)
+        size = sim.request_chars() // 4
+        host = rebases != self._rebases or (self._sizes and size < 0.6 * self._sizes[-1])
+        if host:
+            self._rebases = rebases
+            self._cycle, self._topic_pending, self._topic_req, self._new_user = len(self._sizes), False, None, False
+        why = self._topic_changed(sim)
+        if why:
+            self._topic_pending, self._topic_req = True, len(self._sizes)
+            sim.M["v5_topic_" + why] += 1
+        if why in ("user", "commit"):
+            # this request's outputs (counted one request back: they arrived before the count advanced) and the two
+            # requests before it, e.g. the test run that cleared the commit, still count as used after it
+            self._topic_use = self._use.req - 3
+
+    def _released(self, x):
+        """Last used before the last commit or new user message (release_at_topic)."""
+        return self.spec.release_at_topic and self._use.last(x) < self._topic_use
+
+    def _finished(self, x):
+        """A requirements document read whose documents a commit or tag named (release_at_topic)."""
+        docs = self._spec_of.get(x.get("call_id"))
+        return bool(self.spec.release_at_topic and docs) and all(_named(_doc_id(p), self._done) for p in docs)
+
     def _choose(self, sim, r):
         s = self.spec
         knobs = s if not s.adaptive else dataclasses.replace(s, keep_recent=self._keep_recent())
         cache = self._cache_for(sim)
-        rebases = sim.M.get("history_rebases", 0)
         size = sim.request_chars() // 4
-        host = rebases != self._rebases or (self._sizes and size < 0.6 * self._sizes[-1])
-        if host:                                  # the host compacted (Codex native): a new cycle; the user
-            self._rebases = rebases               # messages it re-sent are not a new topic
-            self._cycle, self._topic_pending, self._topic_req, self._new_user = len(self._sizes), False, None, False
-        if self._topic_changed(sim):
-            self._topic_pending, self._topic_req = True, len(self._sizes)
         self._summarized = False
         try:
             now = self._keys(sim, sim.sent())
@@ -1346,6 +1398,35 @@ class Usage:
 
 
 _SPEC_PATH = re.compile(r"(^|/)srs/|SRS\.md$|(^|/)TASK_QUEUE\.md$|(^|/)requirements?\.md$", re.I)
+_QUEUE_PATH = re.compile(r"(^|/)TASK_QUEUE\.md$", re.I)
+_GIT_TAG = re.compile(r"\bgit\s+tag\s+((?:-\S+\s+)*)['\"]?([A-Za-z0-9_][^\s'\"&;|)]*)")
+_GIT_COMMIT = re.compile(r"\bgit\s+commit\b")
+_COMMIT_MSG = re.compile(r"\bgit\s+commit\b[^&;|\n]*?\s-[a-z]*m\s*(['\"])(.+?)\1")
+_TAG_FLAGS = {"-a", "-s", "-f", "--annotate", "--sign", "--force"}
+
+
+def _committed(text):
+    """Names a call's commits and tags record (tag names, words of commit messages), or None: no commit or tag
+    (listing or deleting tags is none)."""
+    from ctxpress.core import trace
+    s = trace.unescape(text or "")
+    names = {m.group(2) for m in _GIT_TAG.finditer(s) if set(m.group(1).split()) <= _TAG_FLAGS}
+    names |= {w.strip(".,:;!()") for m in _COMMIT_MSG.finditer(s) for w in m.group(2).split()}
+    return names if names or _GIT_COMMIT.search(s) else None
+
+
+def _doc_id(path):
+    """What names a requirements document: srs/M12.2_SRS.md -> M12.2, srs/M3/SRS.md -> M3, docs/req.md -> req."""
+    parts = path.rstrip("/").split("/")
+    name = parts[-1]
+    if re.fullmatch(r"(SRS|requirements?)\.md", name, re.I) and len(parts) > 1:
+        return parts[-2]
+    return re.sub(r"[_-]?(SRS)?\.md$", "", name, flags=re.I)
+
+
+def _named(doc, names):
+    """A commit or tag names the document: a name equal to it or ending in -, _ or / and it."""
+    return len(doc) >= 2 and any(n == doc or n.endswith(("-" + doc, "_" + doc, "/" + doc)) for n in names)
 
 
 def _spec_paths(text):
