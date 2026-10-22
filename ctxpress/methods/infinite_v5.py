@@ -435,7 +435,10 @@ class InfiniteContextV5(CliffCompaction):
         self._queue_calls = set()         # call ids that read a task queue
         self._spec_skip = frozenset()     # cost: spec outputs neither resident nor held (finished, older queues)
         self._commit = False              # a commit or tag was called since the last request
-        self._done = set()                # names commits and tags recorded: tag names, words of commit messages
+        self._done = {}                   # name commits and tags recorded (tag names, words of commit messages) ->
+                                          # number of commit calls when it was last recorded
+        self._commits = 0                 # commit or tag calls so far
+        self._read_at = {}                # call id of a requirements read -> commit calls before it
 
     # ------------------------------------------------------------------ runtime signals
     def _phase(self):
@@ -470,6 +473,7 @@ class InfiniteContextV5(CliffCompaction):
                 docs = {p for p in specs if not _QUEUE_PATH.search(p)}
                 if docs:
                     self._spec_of[item.get("call_id")] = docs
+                    self._read_at[item.get("call_id")] = self._commits
                 if docs != specs:
                     self._queue_calls.add(item.get("call_id"))
                 if specs - self._spec_paths and self._spec_paths:
@@ -478,7 +482,8 @@ class InfiniteContextV5(CliffCompaction):
             names = _committed(item.get("text"))
             if names is not None:
                 self._commit = True
-                self._done |= names
+                self._commits += 1
+                self._done.update(dict.fromkeys(names, self._commits))
             res = {p for p in res if not _SPEC_PATH.search(p)}   # polled queue / SRS reads are not the work
             if res:
                 self._paths = (self._paths + [res])[-16:]
@@ -989,7 +994,10 @@ class InfiniteContextV5(CliffCompaction):
     def _finished(self, x):
         """A requirements document read whose documents a commit or tag named (release_at_topic)."""
         docs = self._spec_of.get(x.get("call_id"))
-        return bool(self.spec.release_at_topic and docs) and all(_named(_doc_id(p), self._done) for p in docs)
+        if not (self.spec.release_at_topic and docs):
+            return False
+        after = {n for n, k in self._done.items() if k > self._read_at.get(x.get("call_id"), 0)}   # a later commit
+        return all(_named(_doc_id(p), after) for p in docs)       # a read after its commit (rework) stays open
 
     def _choose(self, sim, r):
         s = self.spec

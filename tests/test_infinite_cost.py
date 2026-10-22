@@ -220,7 +220,10 @@ def test_a_commit_releases_the_documents_it_names_and_keeps_those_read_ahead():
     call(m, sim, 6, "git commit -am 'Implement M02' && git tag agent-impl-M02")
     assert m._resident(sim) == {4}
     call(m, sim, 7, "git tag -l && git log --oneline")
-    assert m._done == {"Implement", "M01", "M02", "agent-impl-M01", "agent-impl-M02"}
+    assert set(m._done) == {"Implement", "M01", "M02", "agent-impl-M01", "agent-impl-M02"}
+    call(m, sim, 9, "cat /e2e_workspace/srs/M01_SRS.md")       # rework after the commit: open again
+    sim.ctx.append(dict(id=10, seg="out", kind="spec", call_id="c9", text="r" * 400))
+    assert 10 in m._resident(sim) and 2 not in m._resident(sim)
 
 
 def test_a_commit_not_a_first_read_of_a_document_is_the_topic_change():
@@ -285,7 +288,9 @@ def test_the_deepseek_route_needs_a_key_on_the_host(monkeypatch, tmp_path):
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     assert not deepseek.key_available() and "DEEPSEEK_API_KEY" not in worker_env("auth")
     (tmp_path / ".config/ctxpress").mkdir(parents=True)
-    (tmp_path / ".config/ctxpress/deepseek-api-key").write_text("k")
+    (tmp_path / ".config/ctxpress/deepseek-api-key").write_text("\n")
+    assert not deepseek.key_available()                         # an empty key file is no key
+    (tmp_path / ".config/ctxpress/deepseek-api-key").write_text("key")
     assert deepseek.key_available()
     monkeypatch.setenv("DEEPSEEK_API_KEY", "k")
     assert worker_env("auth")["DEEPSEEK_API_KEY"] == "k" and worker_env("auth")["CTXPRESS_CODEX_AUTH_FILE"] == "auth"

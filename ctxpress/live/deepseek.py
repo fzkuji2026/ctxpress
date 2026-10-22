@@ -72,7 +72,8 @@ def _relay(system, user, record, path):
 
 def key_available():
     """A DeepSeek key is on this host (DEEPSEEK_API_KEY or ~/.config/ctxpress/deepseek-api-key); never reads it."""
-    return bool(os.environ.get('DEEPSEEK_API_KEY', '').strip()) or (Path.home()/'.config/ctxpress/deepseek-api-key').is_file()
+    path = Path.home()/'.config/ctxpress/deepseek-api-key'
+    return bool(os.environ.get('DEEPSEEK_API_KEY', '').strip()) or (path.is_file() and path.stat().st_size > 1)
 
 
 def summarize(system, user, *, record, model=MODEL, _direct=False):
