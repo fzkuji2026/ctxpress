@@ -70,8 +70,12 @@ STATE_SYSTEM = ("You keep the working state of a coding agent whose older steps 
                 "changed, what was verified and how, logs and scripts under /tmp, processes still running); PROBLEMS (failures and their causes, unresolved issues); NEXT "
                 "(the next steps). Keep exact identifiers, paths, commands, error messages, and the #ID of outputs "
                 "worth reading again. Carry forward what still holds from previous_state, shortening DONE lines of "
-                "older work; do not invent progress. Plain text, at most CHARS characters. Return a JSON object "
-                "{\"state\": \"<the state>\"}.")
+                "older work; do not invent progress. Plain text, at most CHARS characters. Also list in keep the #ID "
+                "of the few outputs among the steps that cannot be recovered from the environment and are still "
+                "needed verbatim: results of test or build runs whose failures are not fixed yet, error logs, output "
+                "of commands that cannot simply be run again. Never list file contents, requirement documents, "
+                "listings, searches or diffs: they can be read again from disk. Outputs marked stale were superseded. "
+                "Return a JSON object {\"state\": \"<the state>\", \"keep\": [<#ID numbers>]}.")
 STEPS_MARK = "\n\n[earlier steps]\n"     # between a written state and the mechanical lines after it
 WRITER_RETRY = 20                         # requests before a writer that failed twice in a row is tried again
 RECALL_NOTE = ("Removed or shortened tool outputs are archived. Their references look like [archived #ID] or "
@@ -154,6 +158,13 @@ class Spec(Knobs):
     writer_input_price: float = 1.0       # cost: the writer's price per input token, in uncached-input units
     writer_output_price: float = 8.0      # cost: the writer's price per output token, in uncached-input units
     writer_input_chars: int = 160_000     # hybrid with writer_model: most characters of history the writer reads
+    writer_keep_frac: float = 0.0         # hybrid with writer_model: outputs the writer judges not recoverable from
+                                          # the environment and still needed (unfixed test failures, error logs)
+                                          # stay verbatim, together at most this share of t; file contents, docs,
+                                          # listings and diffs can be read again and go (0 = off)
+    stale_after_edit: bool = False        # an edit of a file supersedes the earlier reads of it (they are out of
+                                          # date; the file on disk is current)
+    same_output: bool = False             # an output identical to an earlier one supersedes it (repeated polls)
     state_recovery_factor: float = 0.5    # cost, hybrid: share of recoveries still needed with a written task state
                                           # (assumed; to be set by trials)
     cache_rho: tuple = RHO                # cost: provider cache retention after an edit (core/cache_model.py)
@@ -187,8 +198,9 @@ class Spec(Knobs):
         if not (0 <= self.state_recovery_factor <= 1) or len(self.cache_rho) < 1:
             raise ValueError("state_recovery_factor in [0, 1]; cache_rho nonempty")
         if (self.writer_model not in ("", "deepseek-flash") or self.writer_input_price < 0
-                or self.writer_output_price < 0 or self.writer_input_chars < 1000):
-            raise ValueError("writer_model is '' or deepseek-flash; writer prices >= 0; writer_input_chars >= 1000")
+                or self.writer_output_price < 0 or self.writer_input_chars < 1000 or not 0 <= self.writer_keep_frac <= 1):
+            raise ValueError("writer_model is '' or deepseek-flash; writer prices >= 0; writer_input_chars >= 1000; "
+                             "writer_keep_frac in [0, 1]")
         if self.keep_recent < 0 or self.output_keep_chars < 0 or self.writer_tokens < 1 or self.horizon < 1:
             raise ValueError("counts and sizes must be non-negative")
         if not (0 < self.entry_frac and 0 <= self.segment_min_frac and 0 <= self.topic_min_frac
@@ -359,7 +371,8 @@ class InfiniteContextV5(CliffCompaction):
                         "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0,
                         "candidates": ("summary",), "boundary_late": 1.0, "release_at_topic": True, "commit_topic": True,
                         "writers": ("hybrid",), "writer_model": "deepseek-flash", "writer_tokens": 3000,
-                        "writer_input_price": 0.15, "writer_output_price": 0.6, **switches}
+                        "writer_input_price": 0.15, "writer_output_price": 0.6, "writer_keep_frac": 0.05,
+                        "stale_after_edit": True, "same_output": True, **switches}
         for name in ("writers", "cache_rho", "candidates"):
             if isinstance(switches.get(name), list):
                 switches[name] = tuple(switches[name])
@@ -434,6 +447,7 @@ class InfiniteContextV5(CliffCompaction):
         self._spec_of = {}                # call id -> requirements documents it reads (task queues left out)
         self._queue_calls = set()         # call ids that read a task queue
         self._spec_skip = frozenset()     # cost: spec outputs neither resident nor held (finished, older queues)
+        self._texts = {}                  # same_output: text hash -> latest output id with that text
         self._commit = False              # a commit or tag was called since the last request
         self._done = {}                   # name commits and tags recorded (tag names, words of commit messages) ->
                                           # number of commit calls when it was last recorded
@@ -489,6 +503,9 @@ class InfiniteContextV5(CliffCompaction):
                 self._paths = (self._paths + [res])[-16:]
             if item.get("kind") == "edit":       # reading an edited file again is normal, not a loss
                 self._removed = {c: p for c, p in self._removed.items() if not (p & res)}
+                if s.stale_after_edit:
+                    for p in res:
+                        self._use.newer |= {i for i in self._use.paths.get(p, ()) if i not in self._use.broad}
             elif s.adaptive and _command(item.get("text")) in self._removed:
                 self._sticky |= self._removed.pop(_command(item.get("text")))
                 self._harm = min(s.harm_max, self._harm + 1)
@@ -499,6 +516,11 @@ class InfiniteContextV5(CliffCompaction):
             return
         if item.get("call_id") in self._spec_calls:    # an SRS read in a mixed command is still the SRS
             item["kind"] = "spec"
+        if s.same_output and len(item.get("text") or "") >= 200:
+            key = hash(item["text"])
+            if key in self._texts:
+                self._use.newer.add(self._texts[key])
+            self._texts[key] = item["id"]
         if s.choose == "cost":
             self._entry_cost(sim, item)
             return
@@ -1181,7 +1203,7 @@ class InfiniteContextV5(CliffCompaction):
         # are replaced too (their state is carried forward by the writer), as the mechanical chain replaces them.
         if self.spec.writer_model:
             members = [x for x in res["summary"]["members"] if x in sim.ctx]
-        written = self._write_state(sim, members)
+        written, keep = self._write_state(sim, members)
         if written is None:
             self._writer_fails += 1
             sim.M["v5_writer_failed"] += 1
@@ -1190,6 +1212,10 @@ class InfiniteContextV5(CliffCompaction):
                 sim.M["v5_writer_paused"] += 1
             return False
         self._writer_fails = 0
+        kept = self._writer_kept(sim, members, keep)
+        if kept:                                  # not recoverable from the environment: stays verbatim
+            members = [x for x in members if x["id"] not in kept]
+            sim.M["v5_writer_kept"] += len(kept)
         mech = res["summary"]["text"][len(SUMMARY_HEADER):].strip()
         text = SUMMARY_HEADER + "\n\n[state]\n" + written + (STEPS_MARK + mech if mech else "")
         billed = not self.spec.writer_model       # a writer model's call is billed on its own route
@@ -1207,13 +1233,37 @@ class InfiniteContextV5(CliffCompaction):
             return False
         return hasattr(sim, "model_text") if self.spec.writer_model else hasattr(sim, "_summary_text")
 
+    def _writer_kept(self, sim, members, keep):
+        """Ids of the outputs (with their calls) the writer asked to keep, newest first within writer_keep_frac."""
+        s = self.spec
+        if not (s.writer_keep_frac and keep):
+            return set()
+        wanted = set()
+        for k in keep:
+            try:
+                wanted.add(int(k))
+            except (TypeError, ValueError):
+                continue
+        outs = [x for x in members if x["seg"] == "out" and x.get("id") in wanted]
+        calls = {x.get("call_id"): x["id"] for x in members if x["seg"] == "call" and x.get("call_id")}
+        kept, used = set(), 0
+        for x in reversed(outs):
+            size = sim.seg_size(x)
+            if used + size > s.writer_keep_frac * self.t:
+                continue
+            used += size
+            kept.add(x["id"])
+            if x.get("call_id") in calls:
+                kept.add(calls[x["call_id"]])
+        return kept
+
     def _write_state(self, sim, members):
-        """The task state of a hybrid summary, or None when the writer fails: the host's summary service, or
-        `writer_model` given the earlier state and the removed steps (_writer_input)."""
+        """(task state, #IDs to keep) of a hybrid summary; state None when the writer fails: the host's summary
+        service, or `writer_model` given the earlier state and the removed steps (_writer_input)."""
         s = self.spec
         if not s.writer_model:
-            return sim._summary_text(members, "segment", s.writer_tokens, STATE_GUIDANCE) \
-                if hasattr(sim, "_summary_text") else None
+            return (sim._summary_text(members, "segment", s.writer_tokens, STATE_GUIDANCE)
+                    if hasattr(sim, "_summary_text") else None), []
         earlier = [x for x in members if x.get("cliff") or is_summary(x)]
         steps = [x for x in members if not (x.get("cliff") or is_summary(x))]
         previous = "\n\n".join(p for p in (_state_of(x.get("text") or "") for x in earlier) if p)
@@ -1223,11 +1273,14 @@ class InfiniteContextV5(CliffCompaction):
         try:
             reply = json.loads(answer, strict=False)   # DeepSeek's JSON mode leaves raw line breaks in strings
         except (TypeError, ValueError):
-            return None
-        state = _flat(reply.get("state", reply)) if isinstance(reply, dict) else ""
+            return None, []
+        if not isinstance(reply, dict):
+            return None, []
+        keep = reply.pop("keep", None) if "state" in reply else None
+        state = _flat(reply.get("state", reply))
         if not state.strip():
-            return None
-        return truncate(state.strip(), s.writer_tokens * 6)
+            return None, []
+        return truncate(state.strip(), s.writer_tokens * 6), keep if isinstance(keep, list) else []
 
     def _writer_input(self, sim, steps):
         """The removed steps as the writer reads them, oldest first: messages, one-line calls, outputs cut to their
@@ -1241,8 +1294,10 @@ class InfiniteContextV5(CliffCompaction):
             elif x["seg"] == "call":
                 lines.append(f"[{x.get('name') or 'call'}] {truncate(text, 400)}")
             elif x["seg"] == "out" and text:
-                cut = text if len(text) <= 1500 else text[:1000] + f"\n... [{len(text) - 1500} chars cut] ...\n" + text[-500:]
-                lines.append(f"output #{x.get('id')}: {cut}")
+                cut = text if len(text) <= 1500 else (text[:1000] + f"\n... [{len(text) - 1500} chars cut] ...\n"
+                                                      + _failures(text[1000:-500]) + text[-500:])
+                stale = " (stale: superseded by a later read or edit)" if self._use.superseded(x) else ""
+                lines.append(f"output #{x.get('id')}{stale}: {cut}")
         if sum(len(l) for l in lines) <= s.writer_input_chars:
             return lines
         head, used = [], 0
@@ -1268,6 +1323,17 @@ class InfiniteContextV5(CliffCompaction):
             return json.dumps(call(name, args, settings.store_dir()), ensure_ascii=False), False
         except (OSError, ValueError, KeyError, TypeError) as error:
             return json.dumps(dict(error=str(error)), ensure_ascii=False), True
+
+
+_FAILURE = re.compile(r"FAIL|Error|error[:\[]|Traceback|panic|assert|Exception|^E\s", re.M)
+
+
+def _failures(text, limit=600):
+    """Failure lines from the cut middle of an output (a test log's reason often sits there)."""
+    found = [l.strip() for l in text.splitlines() if _FAILURE.search(l)]
+    if not found:
+        return ""
+    return "[failure lines from the cut part]\n" + truncate("\n".join(found), limit) + "\n"
 
 
 def _flat(v):

@@ -307,3 +307,34 @@ def test_fixed_mode_holds_specs_as_before():
     m._use.used[1] = 21
     m._use.model, m._use.req = 5, 22
     assert m._holding(FakeSim([a, b])) >= {1, 2}
+
+
+def test_the_writer_keeps_outputs_it_judges_not_recoverable(monkeypatch):
+    keep = {}
+
+    def answer(n):
+        return json.dumps(dict(state=f"STATE {n}", keep=keep.setdefault("ids", [])))
+    ctx, bodies = deepseek_run(monkeypatch, lambda n: answer(n))
+    assert ctx.M["v5_writer_kept"] == 0
+    first = next(int(l.split("#")[1].split(":")[0].split(" ")[0]) for l in bodies[0]["steps"] if l.startswith("output #"))
+    keep["ids"] = [first, "junk"]
+    ctx, bodies = deepseek_run(monkeypatch, lambda n: answer(n))
+    assert ctx.M["v5_writer_kept"] >= 1 and any(x.get("id") == first and x["seg"] == "out" for x in ctx.ctx)
+
+
+def test_an_edit_supersedes_earlier_reads_and_identical_outputs_supersede():
+    m, sim = boundary_model(), FakeSim([])
+    read = dict(id=1, seg="out", text="def f(): pass\n" * 30, res=["src/a.py"])
+    m._use.add(read)
+    m.on_ingest(sim, dict(id=2, seg="call", call_id="c2", kind="edit", res=["src/a.py"], text="apply_patch a.py"))
+    assert m._use.superseded(read)
+    m.on_ingest(sim, dict(id=3, seg="out", call_id="c3", text="# Task Queue\n" + "- M01: See SRS\n" * 20))
+    m.on_ingest(sim, dict(id=4, seg="out", call_id="c4", text="# Task Queue\n" + "- M01: See SRS\n" * 20))
+    assert m._use.superseded(dict(id=3)) and not m._use.superseded(dict(id=4))
+
+
+def test_failure_lines_in_the_middle_of_a_long_log_reach_the_writer():
+    m = InfiniteContext(version=5, t=500, choose="cost")
+    log = "x\n" * 800 + "FAILED tests/test_parser.py::test_empty - IndexError\n" + "y\n" * 800
+    line = m._writer_input(None, [dict(seg="out", id=7, text=log)])[0]
+    assert "FAILED tests/test_parser.py::test_empty" in line
