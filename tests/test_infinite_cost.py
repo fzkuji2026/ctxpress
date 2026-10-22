@@ -116,9 +116,12 @@ def deepseek_run(monkeypatch, answer):
         bodies.append(json.loads(user))
         return answer(len(bodies))
     monkeypatch.setattr(deepseek, "summarize", fake)
-    rw = Rewriter(lambda: InfiniteContext(version=5, t=500, choose="cost"), summarizer=Recorder())
+    factory = lambda: InfiniteContext(version=5, t=500, choose="cost")
+    rw = Rewriter(factory)                      # as live/proxy.py: no service at construction, one per request
+    service = factory().requires_summary         # ... and only for a method that asks for it
     for inp in requests():
-        rw.rewrite_body(dict(model='gpt-5', instructions='sys', input=copy.deepcopy(inp), tools=[], stream=True), 's')
+        rw.rewrite_body(dict(model='gpt-5', instructions='sys', input=copy.deepcopy(inp), tools=[], stream=True), 's',
+                        summarizer=Recorder() if service else None)
     return next(iter(rw.sessions.values())).ctx, bodies
 
 
@@ -133,8 +136,28 @@ def test_deepseek_writes_the_state_and_carries_it_forward(monkeypatch):
 
 def test_a_failed_deepseek_call_falls_back_to_the_mechanical_summary(monkeypatch):
     ctx, bodies = deepseek_run(monkeypatch, lambda n: "not json")
-    assert bodies and ctx.M["v5_writer_fallback"] >= 1 and ctx.M["v5_choose_deadline"] >= 1
+    assert len(bodies) == 2 and ctx.M["v5_writer_fallback"] == 2 and ctx.M["v5_choose_deadline"] >= 3
     assert all("[state]" not in (x.get("text") or "") for x in ctx.ctx if x["seg"] == "summary")
+
+
+def test_a_fallback_keeps_the_state_written_so_far(monkeypatch):
+    ctx, bodies = deepseek_run(monkeypatch, lambda n: json.dumps(dict(state="STATE ONE")) if n == 1 else "not json")
+    assert ctx.M["v5_writer_deepseek-flash"] == 1 and ctx.M["v5_writer_fallback"] >= 1
+    summaries = [x for x in ctx.ctx if x["seg"] == "summary"]
+    assert len(summaries) == 1 and summaries[0]["text"].count("STATE ONE") == 1
+
+
+def test_the_proxy_attaches_a_summary_service_for_the_deepseek_writer():
+    from ctxpress.methods import build
+    entry = {"class": "infinite-context", "args": dict(version=5, t=102400, tool_dialect="full", choose="cost",
+             context_profile=dict(version=1, max_context_tokens=128000, compression_trigger_tokens=102400))}
+    assert build(entry).requires_summary and build(entry).writer_model == "deepseek-flash"
+    assert not build({"class": "infinite-context", "args": dict(version=5, t=102400)}).requires_summary
+
+
+def test_without_a_summary_service_summaries_are_planned_and_written_mechanically():
+    M = counters(lambda: InfiniteContext(version=5, t=500, choose="cost"))
+    assert M["v5_choose_deadline"] > 0 and M["v5_writer_failed"] == 0 and M["v5_writer_fallback"] == 0
 
 
 def test_writer_input_keeps_the_start_and_the_newest_steps():

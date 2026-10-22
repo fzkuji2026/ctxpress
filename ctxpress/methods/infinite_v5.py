@@ -368,6 +368,9 @@ class InfiniteContextV5(CliffCompaction):
         self.memory = "id" if stores else None
         writes = spec.writer == "hybrid" or (spec.choose == "cost" and "hybrid" in spec.writers)
         self.writer_model = spec.writer_model if writes else ""   # launchers open DeepSeek's route for it
+        # the proxy gives a request a summary service only if the method asks for one; a writer model's calls are
+        # recorded through it (LiveContext._prompt_text)
+        self.requires_summary = writes or spec.writer == "llm"
         self.agent_tools = _tools() if archived else ()
         self.instructions = RECALL_NOTE if archived else ""
         by = lambda *whens: "；".join(o.describe(t) for o in ops if o.when in whens) or "无"
@@ -408,6 +411,7 @@ class InfiniteContextV5(CliffCompaction):
         self._spec_calls = set()          # call ids that read a requirements document
         self._spec_paths = set()          # requirements documents read so far
         self._new_spec = False            # a requirements document never read before was read (topic)
+        self._writer_fails = 0            # consecutive failed writer calls: after 2 the cost model plans mechanical
 
     # ------------------------------------------------------------------ runtime signals
     def _phase(self):
@@ -561,7 +565,7 @@ class InfiniteContextV5(CliffCompaction):
         guard_keep_frac of t, with their calls."""
         s = self.spec
         live = [x for x in sim.ctx if x["seg"] == "out" and x.get("form", "full") in ("full", "truncated", "structured")
-                and not x.get("has_media")]
+                and not x.get("has_media") and not (s.spec_keep_frac and x.get("kind") == "spec")]
         if s.hold == "value":
             size_now = sim.request_chars() // 4
             held = [x for x in live if not self._use.seen(x) or self._use.active(x, s.hold_floor)
@@ -975,7 +979,17 @@ class InfiniteContextV5(CliffCompaction):
                 if self._model_compaction(sim, "hybrid"):
                     return "hybrid"
                 sim.M["v5_writer_fallback"] += 1
-            return "mechanical" if self._chain(sim, knobs, force=True) else None
+            state = "\n\n".join(p for p in (_state_of(x.get("text") or "", written_only=True)
+                                             for x in sim.ctx if x["seg"] == "summary") if p)
+            if not self._chain(sim, knobs, force=True):
+                return None
+            if state:                             # the state written so far survives a mechanical summary
+                new = next(x for x in reversed(sim.ctx) if x["seg"] == "summary")
+                body = (new.get("text") or "")[len(SUMMARY_HEADER):].strip()
+                new["text"] = SUMMARY_HEADER + "\n\n[state]\n" + state + ("\n\n---\n\n" + body if body else "")
+                new["chars"] = sim.message_chars(new["text"])
+                new["size"] = sim.tokens(new["text"])
+            return "mechanical"
         finally:
             self.knobs = self.spec
 
@@ -1093,8 +1107,10 @@ class InfiniteContextV5(CliffCompaction):
             members = [x for x in res["summary"]["members"] if x in sim.ctx]
         written = self._write_state(sim, members)
         if written is None:
+            self._writer_fails += 1
             sim.M["v5_writer_failed"] += 1
             return False
+        self._writer_fails = 0
         mech = res["summary"]["text"][len(SUMMARY_HEADER):].strip()
         text = SUMMARY_HEADER + "\n\n[state]\n" + written + ("\n\n---\n\n" + mech if mech else "")
         billed = not self.spec.writer_model       # a writer model's call is billed on its own route
@@ -1106,6 +1122,10 @@ class InfiniteContextV5(CliffCompaction):
         return new is not None
 
     def _can_write(self, sim):
+        """A writer can answer: a summary service is attached (the proxy attaches one per request when the method
+        asks, requires_summary) and the last two writer calls did not both fail."""
+        if getattr(sim, "summarizer", None) is None or self._writer_fails >= 2:
+            return False
         return hasattr(sim, "model_text") if self.spec.writer_model else hasattr(sim, "_summary_text")
 
     def _write_state(self, sim, members):
@@ -1170,12 +1190,13 @@ class InfiniteContextV5(CliffCompaction):
             return json.dumps(dict(error=str(error)), ensure_ascii=False), True
 
 
-def _state_of(text):
-    """What an earlier summary carries into the next state: its written state, else its mechanical lines (cut)."""
+def _state_of(text, written_only=False):
+    """What an earlier summary carries into the next state: its written state, else (unless written_only) the
+    newest 8000 characters of its mechanical lines."""
     body = text[len(SUMMARY_HEADER):].strip() if text.startswith(SUMMARY_HEADER) else text.strip()
     if body.startswith("[state]\n"):
         return body[len("[state]\n"):].split("\n\n---\n\n", 1)[0].strip()
-    return truncate(body, 8000)
+    return "" if written_only else body[-8000:]
 
 
 _LINE_MIN = 24
