@@ -104,6 +104,9 @@ class Spec(Knobs):
     previous: str = "drop"
     decider: str = "always"
     hard_t: int = 0                       # cost decider: above this always compact (0 = never forced)
+    measure: str = "chars"                # what t and hard_t count: chars = chars/4 of the request; tokens = the
+                                          # provider's input tokens, from the previous request's (input tokens /
+                                          # its chars/4) applied to what it already had, new items at chars/4
     horizon: int = 100                    # cost decider: expected remaining requests
     cached_price: float = 0.1             # cost unit: one uncached input token
     output_price: float = 8.0
@@ -204,6 +207,8 @@ class Spec(Knobs):
                 or self.writer_output_price < 0 or self.writer_input_chars < 1000 or not 0 <= self.writer_keep_frac <= 1):
             raise ValueError("writer_model is '' or deepseek-flash; writer prices >= 0; writer_input_chars >= 1000; "
                              "writer_keep_frac in [0, 1]")
+        if self.measure not in ("chars", "tokens"):
+            raise ValueError("measure must be chars or tokens")
         if self.keep_recent < 0 or self.output_keep_chars < 0 or self.writer_tokens < 1 or self.horizon < 1:
             raise ValueError("counts and sizes must be non-negative")
         if not (0 < self.entry_frac and 0 <= self.segment_min_frac and 0 <= self.topic_min_frac
@@ -368,8 +373,11 @@ class InfiniteContextV5(CliffCompaction):
             # (39% of chars) are never referenced later, and later references re-read the file first 72% of the
             # time, so the guard releases them (uses within 2 requests before the tag still hold). Specs get 15%:
             # sklearn documents reach 8.9k and Codex's compaction drops them, after which they were re-read within
-            # 1-4 requests in 24/24 cases.
-            switches = {"guard": True, "protect_spec": True, "recall": True, "supersede": True,
+            # 1-4 requests in 24/24 cases. t counts provider tokens: by chars/4 encrypted reasoning (28% of it
+            # before a summary) counts ~3.9x what it bills, so all 42 summaries of the 10-22 run came at chars/4 t
+            # with 67-76k provider tokens, every 19-24 requests where the rent gives 29-34; Codex itself compacts
+            # near 115k provider tokens, above t = 102400 tokens.
+            switches = {"measure": "tokens", "guard": True, "protect_spec": True, "recall": True, "supersede": True,
                         "protect_user": True, "guard_active": 15, "guard_keep_frac": 0.1, "spec_keep_frac": 0.15,
                         "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0,
                         "candidates": ("summary",), "boundary_late": 1.0, "release_at_topic": True, "commit_topic": True,
@@ -434,6 +442,7 @@ class InfiniteContextV5(CliffCompaction):
         self._since = None                # requests since the last compaction
         self._cache = None                # cost: the provider cache of this session (requests sent so far)
         self._sizes = []                  # cost: request sizes sent, for growth per request
+        self._billed = None               # measure tokens: (chars/4 of the last request answered, its input tokens)
         self._topic_pending = False       # cost: a topic change since the last summary
         self._cycle = 0                   # cost: index in _sizes of the first request after the last summary
         self._wait_from = None            # cost: request at which a placeholder batch started waiting
@@ -854,7 +863,26 @@ class InfiniteContextV5(CliffCompaction):
         return self._cache
 
     def _hard(self):
-        return self.spec.hard_t or self.t
+        """The hard limit in the chars/4 units sizes are kept in (measure tokens: at the last request's ratio)."""
+        limit = self.spec.hard_t or self.t
+        if self.spec.measure == "tokens" and self._billed:
+            return limit * self._billed[0] / self._billed[1]
+        return limit
+
+    def _tokens(self, size):
+        """Provider input tokens of a request of `size` chars/4: the previous request's ratio for what it already
+        had, chars/4 for anything added since (new outputs are text, where chars/4 is close or high)."""
+        if self.spec.measure != "tokens" or not self._billed:
+            return size
+        before, used = self._billed
+        return min(size, before) * used / before + max(0, size - before)
+
+    def observe_response(self, sim, info):
+        """The provider's input tokens of a request (rewrite.observe_response; only full Responses prompts)."""
+        used, rendered = (info.get("usage") or {}).get("input_tokens"), info.get("rendered_prompt_tokens")
+        if type(used) is int and used > 0 and type(rendered) in (int, float) and rendered > 0:
+            self._billed = (float(rendered), float(used))
+            sim.M["v5_billed_samples"] += 1
 
     def _stay(self, size_now):
         """Requests a saving lasts: until the context would reach the hard limit anyway (then everything old goes),
@@ -1035,9 +1063,10 @@ class InfiniteContextV5(CliffCompaction):
             p = self._plan_placeholder(sim, now) if "placeholder" in s.candidates else None
             if p is not None:
                 plans.append(p)
-            forced = size > self._hard()
+            limit = self.spec.hard_t or self.t
+            forced = self._tokens(size) > limit
             if not forced and ("summary" in s.candidates and (self._topic_pending or s.summary_at != "topic")
-                          and size > s.topic_min_frac * self.t):
+                          and self._tokens(size) > s.topic_min_frac * limit):
                 plans += self._plan_summaries(sim, now, knobs)
             sim.M["v5_choices"] += 1
             if forced:

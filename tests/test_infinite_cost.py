@@ -30,6 +30,26 @@ def test_cost_defaults_bound_specs_and_keep_user_messages():
     assert s.at_hard == "summary" and s.summary_min_frac == 0.15
 
 
+
+def test_cost_mode_counts_provider_tokens_from_the_last_request():
+    m = InfiniteContext(version=5, t=1000, choose="cost")
+    assert m.spec.measure == "tokens" and m._tokens(1500) == 1500 and m._hard() == 1000   # nothing observed yet
+    sim = type("S", (), {"M": collections.Counter()})()
+    m.observe_response(sim, dict(usage=dict(input_tokens=700), rendered_prompt_tokens=1000))
+    assert m._tokens(1000) == 700 and m._tokens(1200) == 900 and m._tokens(500) == 350
+    assert abs(m._hard() - 1000 / 0.7) < 1e-6 and sim.M["v5_billed_samples"] == 1
+    m.observe_response(sim, dict(usage=None, rendered_prompt_tokens=1000))       # no usage: kept as it was
+    assert m._tokens(1000) == 700
+    assert InfiniteContext(version=5, t=1000, choose="cost", measure="chars")._tokens(1000) == 1000
+
+
+def test_the_proxy_hands_the_provider_usage_to_the_method():
+    rw = Rewriter(lambda: InfiniteContext(version=5, t=1000, choose="cost"))
+    rw.rewrite_body(dict(model='gpt-5', instructions='sys', input=copy.deepcopy(requests()[0]), tools=[], stream=True), 's')
+    assert rw.observe_response(dict(status=200, session='s', request_model='gpt-5', request=1, history_epoch=0,
+                                    rendered_prompt_tokens=1000, usage=dict(input_tokens=700)))
+    assert next(iter(rw.sessions.values())).ctx.method._billed == (1000.0, 700.0)
+
 def test_a_requirements_read_inside_a_mixed_command_is_a_spec_read():
     assert _spec_paths('sed -n 1,200p srs/M002/SRS.md && sed -n 1,80p src/main.rs') == {'srs/M002/SRS.md'}
     assert _spec_paths('cat TASK_QUEUE.md') == {'TASK_QUEUE.md'}
