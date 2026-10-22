@@ -131,6 +131,10 @@ def run(request, source):
                ((method.get('args', {}).get('agent_model') == 'deepseek-flash' and
                  method.get('args', {}).get('agent_mode') in ('shadow', 'control')) or
                 deepseek_writer(method)))
+        if aux:
+            from ctxpress.live import deepseek
+            if not deepseek.key_available():   # otherwise every DeepSeek call fails inside the run, unseen
+                raise ValueError('DeepSeek route needs DEEPSEEK_API_KEY or ~/.config/ctxpress/deepseek-api-key')
         channel_options = {'auxiliary_deepseek': True} if aux else {}
         if method.get('class') == 'SWEPruner':
             channel_options['pruner_endpoint'] = method.get('args', {}).get('url')

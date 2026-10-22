@@ -231,3 +231,74 @@ def test_a_commit_not_a_first_read_of_a_document_is_the_topic_change():
     call(m, sim, 1, "git commit -m 'Implement M01' && git tag agent-impl-M01")
     m._observe(sim)
     assert m._topic_pending and m._topic_use == 17 and sim.M["v5_topic_commit"] == 1
+
+
+def test_deepseek_json_with_raw_line_breaks_or_sections_is_a_state(monkeypatch):
+    ctx, bodies = deepseek_run(monkeypatch, lambda n: '{"state": "TASK: fix the parser\nDONE:\n- M01"}')
+    assert ctx.M["v5_writer_deepseek-flash"] == len(bodies) >= 1 and ctx.M["v5_writer_failed"] == 0
+    assert any("TASK: fix the parser\nDONE:\n- M01" in (x.get("text") or "") for x in ctx.ctx if x["seg"] == "summary")
+    ctx, bodies = deepseek_run(monkeypatch, lambda n: json.dumps(dict(state=dict(TASK="queue", DONE=["M01 parser"]))))
+    text = next(x["text"] for x in ctx.ctx if x["seg"] == "summary")
+    assert ctx.M["v5_writer_failed"] == 0 and "TASK:\nqueue" in text and "DONE:\n- M01 parser" in text
+
+
+def test_a_markdown_rule_in_the_state_is_carried_forward_whole():
+    from ctxpress.methods.cliff import SUMMARY_HEADER
+    from ctxpress.methods.infinite_v5 import STEPS_MARK, _state_of
+    text = SUMMARY_HEADER + "\n\n[state]\nTASK: a\n\n---\n\nDONE: b" + STEPS_MARK + "- [exec] pytest"
+    assert _state_of(text) == "TASK: a\n\n---\n\nDONE: b"
+
+
+def test_a_writer_that_failed_twice_is_tried_again_later():
+    from ctxpress.methods.infinite_v5 import WRITER_RETRY
+    m, sim = InfiniteContext(version=5, t=100000, choose="cost"), FakeSim([])
+    sim.summarizer, sim.model_text = object(), None
+    m._writer_fails, m._use.req, m._writer_retry = 2, 10, 10 + WRITER_RETRY
+    assert not m._can_write(sim)
+    m._use.req = 10 + WRITER_RETRY
+    assert m._can_write(sim)
+
+
+def test_only_the_newest_task_queue_listing_stays_resident():
+    m, sim = boundary_model(), FakeSim([])
+    call(m, sim, 1, "cat /e2e_workspace/TASK_QUEUE.md")
+    call(m, sim, 3, "cat /e2e_workspace/srs/M02_SRS.md")
+    call(m, sim, 5, "git add -A && git commit -m 'Implement M01' && git tag agent-impl-M01 && cat /e2e_workspace/TASK_QUEUE.md")
+    sim.ctx = [dict(id=i, seg="out", kind="spec", call_id="c%d" % (i - 1), text="q" * 400) for i in (2, 4, 6)]
+    assert m._resident(sim) == {4, 6} and m._spec_skip == {2}
+
+
+def test_git_commit_and_tag_forms():
+    from ctxpress.methods.infinite_v5 import _committed
+    assert _committed("git status --short\ngit tag\ngit log --oneline -3") is None
+    assert _committed("git tag 2>/dev/null | tail") is None and _committed("git tag --list 'agent-*'") is None
+    assert _committed("git -C /repo commit -m 'Implement M01' && git -C /repo tag agent-impl-M01") == \
+        {"Implement", "M01", "agent-impl-M01"}
+    assert _committed("git tag agent-impl-M02>/tmp/tag.log") == {"agent-impl-M02"}
+
+
+def test_the_deepseek_route_needs_a_key_on_the_host(monkeypatch, tmp_path):
+    import pathlib
+    from ctxpress.live import deepseek
+    from ctxpress.benchmarks.milestone.driver import worker_env
+    monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    assert not deepseek.key_available() and "DEEPSEEK_API_KEY" not in worker_env("auth")
+    (tmp_path / ".config/ctxpress").mkdir(parents=True)
+    (tmp_path / ".config/ctxpress/deepseek-api-key").write_text("k")
+    assert deepseek.key_available()
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "k")
+    assert worker_env("auth")["DEEPSEEK_API_KEY"] == "k" and worker_env("auth")["CTXPRESS_CODEX_AUTH_FILE"] == "auth"
+
+
+def test_fixed_mode_holds_specs_as_before():
+    m = InfiniteContext(version=5, t=100000, tool_dialect="wire", entry=True, segment=True, topic=True, guard=True,
+                        hold="value", supersede=True, spec_keep_frac=0.1)
+    a = dict(id=1, seg="out", kind="spec", text="a" * 24000, call_text="cat srs/A_SRS.md")
+    b = dict(id=2, seg="out", kind="spec", text="b" * 24000, call_text="cat srs/B_SRS.md")
+    m._use.req = 20
+    m._use.add(b)
+    m._use.add(a)
+    m._use.used[1] = 21
+    m._use.model, m._use.req = 5, 22
+    assert m._holding(FakeSim([a, b])) >= {1, 2}

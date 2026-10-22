@@ -72,6 +72,8 @@ STATE_SYSTEM = ("You keep the working state of a coding agent whose older steps 
                 "worth reading again. Carry forward what still holds from previous_state, shortening DONE lines of "
                 "older work; do not invent progress. Plain text, at most CHARS characters. Return a JSON object "
                 "{\"state\": \"<the state>\"}.")
+STEPS_MARK = "\n\n[earlier steps]\n"     # between a written state and the mechanical lines after it
+WRITER_RETRY = 20                         # requests before a writer that failed twice in a row is tried again
 RECALL_NOTE = ("Removed or shortened tool outputs are archived. Their references look like [archived #ID] or "
                "'stored at #ID'; read one with infinite_context_read (id=ID) or find text with "
                "infinite_context_search.")
@@ -427,8 +429,11 @@ class InfiniteContextV5(CliffCompaction):
         self._spec_paths = set()          # requirements documents read so far
         self._new_spec = False            # a requirements document never read before was read (topic)
         self._writer_fails = 0            # consecutive failed writer calls: after 2 the cost model plans mechanical
+        self._writer_retry = 0            # ... until this Usage request count (WRITER_RETRY later), then tries again
         self._topic_use = -1              # cost: Usage request count from which use counts after the last release
         self._spec_of = {}                # call id -> requirements documents it reads (task queues left out)
+        self._queue_calls = set()         # call ids that read a task queue
+        self._spec_skip = frozenset()     # cost: spec outputs neither resident nor held (finished, older queues)
         self._commit = False              # a commit or tag was called since the last request
         self._done = set()                # names commits and tags recorded: tag names, words of commit messages
 
@@ -465,6 +470,8 @@ class InfiniteContextV5(CliffCompaction):
                 docs = {p for p in specs if not _QUEUE_PATH.search(p)}
                 if docs:
                     self._spec_of[item.get("call_id")] = docs
+                if docs != specs:
+                    self._queue_calls.add(item.get("call_id"))
                 if specs - self._spec_paths and self._spec_paths:
                     self._new_spec = True
                 self._spec_paths |= specs
@@ -593,8 +600,10 @@ class InfiniteContextV5(CliffCompaction):
         """R2: outputs not yet seen or reused within guard_active requests, most recently used first, within
         guard_keep_frac of t, with their calls."""
         s = self.spec
+        resident = self._resident(sim)
+        apart = resident | self._spec_skip if s.choose == "cost" else frozenset()   # specs have their own budget
         live = [x for x in sim.ctx if x["seg"] == "out" and x.get("form", "full") in ("full", "truncated", "structured")
-                and not x.get("has_media") and not (s.spec_keep_frac and x.get("kind") == "spec")]
+                and not x.get("has_media") and x["id"] not in apart]
         if s.hold == "value":
             size_now = sim.request_chars() // 4
             held = [x for x in live if not self._use.seen(x) or self._use.active(x, s.hold_floor)
@@ -613,7 +622,7 @@ class InfiniteContextV5(CliffCompaction):
             if x.get("call_id") in calls:
                 keep.add(calls[x["call_id"]])
         sim.M["v5_guard_held"] = len(keep)
-        return frozenset(keep | self._resident(sim))
+        return frozenset(keep | resident)
 
     def _resident(self, sim):
         """The newest spec outputs within spec_keep_frac of t, with their calls (framework page: 常驻)."""
@@ -621,11 +630,17 @@ class InfiniteContextV5(CliffCompaction):
         if not s.spec_keep_frac:
             return frozenset()
         specs = [x for x in sim.ctx if x["seg"] == "out" and x.get("kind") == "spec"
-                 and x.get("form", "full") == "full" and not (s.supersede and self._use.superseded(x))
-                 and not self._finished(x)]
+                 and x.get("form", "full") == "full" and not (s.supersede and self._use.superseded(x))]
+        skip = {x["id"] for x in specs if self._finished(x)}
+        if s.release_at_topic:                    # task queue listings (commit chains print one too): the newest
+            queues = [x for x in specs if x.get("call_id") in self._queue_calls and not self._spec_of.get(x.get("call_id"))]
+            skip |= {x["id"] for x in queues[:-1]}
+        self._spec_skip = frozenset(skip)
+        specs = [x for x in specs if x["id"] not in skip]
         keep, used, budget = set(), 0, s.spec_keep_frac * self.t
         calls = {x.get("call_id"): x["id"] for x in sim.ctx if x["seg"] == "call" and x.get("call_id")}
-        for x in sorted(reversed(specs), key=lambda x: -self._use.last(x)):   # in use first, then newest
+        order = sorted(reversed(specs), key=lambda x: -self._use.last(x)) if s.choose == "cost" else reversed(specs)
+        for x in order:                           # cost: in use first, then newest; otherwise newest first
             size = sim.seg_size(x)
             if used + size > budget:
                 continue                          # an older, smaller document may still fit
@@ -957,6 +972,7 @@ class InfiniteContextV5(CliffCompaction):
         if host:
             self._rebases = rebases
             self._cycle, self._topic_pending, self._topic_req, self._new_user = len(self._sizes), False, None, False
+            self._commit = False
         why = self._topic_changed(sim)
         if why:
             self._topic_pending, self._topic_req = True, len(self._sizes)
@@ -1038,7 +1054,7 @@ class InfiniteContextV5(CliffCompaction):
             if state:                             # the state written so far survives a mechanical summary
                 new = next(x for x in reversed(sim.ctx) if x["seg"] == "summary")
                 body = (new.get("text") or "")[len(SUMMARY_HEADER):].strip()
-                new["text"] = SUMMARY_HEADER + "\n\n[state]\n" + state + ("\n\n---\n\n" + body if body else "")
+                new["text"] = SUMMARY_HEADER + "\n\n[state]\n" + state + (STEPS_MARK + body if body else "")
                 new["chars"] = sim.message_chars(new["text"])
                 new["size"] = sim.tokens(new["text"])
             return "mechanical"
@@ -1161,10 +1177,13 @@ class InfiniteContextV5(CliffCompaction):
         if written is None:
             self._writer_fails += 1
             sim.M["v5_writer_failed"] += 1
+            if self._writer_fails >= 2:
+                self._writer_retry = self._use.req + WRITER_RETRY
+                sim.M["v5_writer_paused"] += 1
             return False
         self._writer_fails = 0
         mech = res["summary"]["text"][len(SUMMARY_HEADER):].strip()
-        text = SUMMARY_HEADER + "\n\n[state]\n" + written + ("\n\n---\n\n" + mech if mech else "")
+        text = SUMMARY_HEADER + "\n\n[state]\n" + written + (STEPS_MARK + mech if mech else "")
         billed = not self.spec.writer_model       # a writer model's call is billed on its own route
         new = sim.summarize_segment(members, text=text, billed=billed, model_written=not billed, cliff=True)
         if new is not None:
@@ -1175,8 +1194,8 @@ class InfiniteContextV5(CliffCompaction):
 
     def _can_write(self, sim):
         """A writer can answer: a summary service is attached (the proxy attaches one per request when the method
-        asks, requires_summary) and the last two writer calls did not both fail."""
-        if getattr(sim, "summarizer", None) is None or self._writer_fails >= 2:
+        asks, requires_summary), and the last two writer calls did not both fail within WRITER_RETRY requests."""
+        if getattr(sim, "summarizer", None) is None or (self._writer_fails >= 2 and self._use.req < self._writer_retry):
             return False
         return hasattr(sim, "model_text") if self.spec.writer_model else hasattr(sim, "_summary_text")
 
@@ -1194,10 +1213,11 @@ class InfiniteContextV5(CliffCompaction):
         answer = sim.model_text(STATE_SYSTEM.replace("CHARS", str(s.writer_tokens * 4)), body,
                                 purpose="infinite_context_compression", model=s.writer_model)
         try:
-            state = json.loads(answer)["state"]
-        except (TypeError, ValueError, KeyError):
+            reply = json.loads(answer, strict=False)   # DeepSeek's JSON mode leaves raw line breaks in strings
+        except (TypeError, ValueError):
             return None
-        if not isinstance(state, str) or not state.strip():
+        state = _flat(reply.get("state", reply)) if isinstance(reply, dict) else ""
+        if not state.strip():
             return None
         return truncate(state.strip(), s.writer_tokens * 6)
 
@@ -1242,12 +1262,23 @@ class InfiniteContextV5(CliffCompaction):
             return json.dumps(dict(error=str(error)), ensure_ascii=False), True
 
 
+def _flat(v):
+    """A writer's JSON state as text: strings as they are, sections as 'NAME:' blocks, lists as lines."""
+    if isinstance(v, str):
+        return v
+    if isinstance(v, dict):
+        return "\n\n".join(f"{k}:\n{_flat(x)}".rstrip() for k, x in v.items())
+    if isinstance(v, list):
+        return "\n".join("- " + _flat(x) for x in v)
+    return "" if v is None else str(v)
+
+
 def _state_of(text, written_only=False):
     """What an earlier summary carries into the next state: its written state, else (unless written_only) the
     newest 8000 characters of its mechanical lines."""
     body = text[len(SUMMARY_HEADER):].strip() if text.startswith(SUMMARY_HEADER) else text.strip()
     if body.startswith("[state]\n"):
-        return body[len("[state]\n"):].split("\n\n---\n\n", 1)[0].strip()
+        return body[len("[state]\n"):].split(STEPS_MARK, 1)[0].strip()
     return "" if written_only else body[-8000:]
 
 
@@ -1399,9 +1430,10 @@ class Usage:
 
 _SPEC_PATH = re.compile(r"(^|/)srs/|SRS\.md$|(^|/)TASK_QUEUE\.md$|(^|/)requirements?\.md$", re.I)
 _QUEUE_PATH = re.compile(r"(^|/)TASK_QUEUE\.md$", re.I)
-_GIT_TAG = re.compile(r"\bgit\s+tag\s+((?:-\S+\s+)*)['\"]?([A-Za-z0-9_][^\s'\"&;|)]*)")
-_GIT_COMMIT = re.compile(r"\bgit\s+commit\b")
-_COMMIT_MSG = re.compile(r"\bgit\s+commit\b[^&;|\n]*?\s-[a-z]*m\s*(['\"])(.+?)\1")
+_GIT = r"\bgit(?:[ \t]+-[cC][ \t]+\S+)*[ \t]+"   # git, its -C <dir> / -c <key=value> options
+_GIT_TAG = re.compile(_GIT + r"tag[ \t]+((?:-\S+[ \t]+)*)['\"]?([A-Za-z0-9_][^\s'\"&;|)<>]*)")
+_GIT_COMMIT = re.compile(_GIT + r"commit\b")
+_COMMIT_MSG = re.compile(_GIT + r"commit\b[^&;|\n]*?\s-[a-z]*m\s*(['\"])(.+?)\1")
 _TAG_FLAGS = {"-a", "-s", "-f", "--annotate", "--sign", "--force"}
 
 
@@ -1410,7 +1442,8 @@ def _committed(text):
     (listing or deleting tags is none)."""
     from ctxpress.core import trace
     s = trace.unescape(text or "")
-    names = {m.group(2) for m in _GIT_TAG.finditer(s) if set(m.group(1).split()) <= _TAG_FLAGS}
+    names = {m.group(2) for m in _GIT_TAG.finditer(s)    # a bare number is a redirect: `git tag 2>/dev/null` lists
+             if set(m.group(1).split()) <= _TAG_FLAGS and not m.group(2).isdigit()}
     names |= {w.strip(".,:;!()") for m in _COMMIT_MSG.finditer(s) for w in m.group(2).split()}
     return names if names or _GIT_COMMIT.search(s) else None
 

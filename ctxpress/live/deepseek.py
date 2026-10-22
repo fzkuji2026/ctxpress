@@ -53,7 +53,8 @@ def _relay(system, user, record, path):
             self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             self.sock.settimeout(self.timeout)
             self.sock.connect(str(path))
-    connection = UnixConnection('localhost', timeout=65)
+    # longer than the host's wait for DeepSeek (120 s per read), so a slow answer and its usage still arrive
+    connection = UnixConnection('localhost', timeout=300)
     try:
         connection.request('POST', '/infinite-context/deepseek',
                            body=json.dumps(dict(system=system, user=user)).encode(),
@@ -67,6 +68,11 @@ def _relay(system, user, record, path):
         return data['answer']
     finally:
         connection.close()
+
+
+def key_available():
+    """A DeepSeek key is on this host (DEEPSEEK_API_KEY or ~/.config/ctxpress/deepseek-api-key); never reads it."""
+    return bool(os.environ.get('DEEPSEEK_API_KEY', '').strip()) or (Path.home()/'.config/ctxpress/deepseek-api-key').is_file()
 
 
 def summarize(system, user, *, record, model=MODEL, _direct=False):
@@ -94,7 +100,7 @@ def summarize(system, user, *, record, model=MODEL, _direct=False):
                    messages=[dict(role='system', content=system), dict(role='user', content=user)])
     info = dict(type='summary', purpose='infinite_context_compression', model=model,
                 provider='deepseek', dialect='chat', thinking='disabled', t=time.time())
-    connection = http.client.HTTPSConnection('api.deepseek.com', timeout=60)
+    connection = http.client.HTTPSConnection('api.deepseek.com', timeout=120)
     try:
         connection.request('POST', '/chat/completions', body=json.dumps(payload).encode(),
                            headers={'Authorization': 'Bearer '+key, 'Content-Type': 'application/json'})
