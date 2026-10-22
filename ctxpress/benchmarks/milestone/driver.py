@@ -155,14 +155,21 @@ def _wait_execution(process, folder):
                     return process.returncode or 1
 
 
+def worker_env(auth):
+    """The execution worker's environment: an allowlist. DEEPSEEK_API_KEY passes for the host-side DeepSeek relay
+    (the container reaches it only through the channel, never the key)."""
+    env={key:os.environ[key] for key in ('PATH','DOCKER_HOST','DOCKER_CONTEXT','DOCKER_CONFIG',
+        'XDG_RUNTIME_DIR','SYSTEMROOT','WINDIR','TEMP','TMP','HOME','DEEPSEEK_API_KEY') if key in os.environ}
+    env['CTXPRESS_CODEX_AUTH_FILE']=auth
+    return env
+
+
 def execute(adapter,task,entry,config,job,*,paths,folder,label):
     folder=Path(folder).resolve();folder.mkdir(parents=True,exist_ok=True)
     payload,runtime,auth=prepare_execution(task,entry,config,job,folder,label)
     path=folder/'milestone-execute-request.json';artifact_io.atomic_json(path,payload)
     command=[runtime['python'],'-I','-S','-B',str(WORKER),str(path)]
-    child_env={key:os.environ[key] for key in ('PATH','DOCKER_HOST','DOCKER_CONTEXT','DOCKER_CONFIG',
-        'XDG_RUNTIME_DIR','SYSTEMROOT','WINDIR','TEMP','TMP','HOME') if key in os.environ}
-    child_env['CTXPRESS_CODEX_AUTH_FILE']=auth
+    child_env=worker_env(auth)
     started=time.monotonic()
     with (folder/'milestone-execute.log').open('wb') as output:
         # Import/contract checks must precede Docker and credentials. This mode

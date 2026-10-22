@@ -63,13 +63,17 @@ STATE_GUIDANCE = ("Write the working state a coding agent needs to continue afte
 STATE_SYSTEM = ("You keep the working state of a coding agent whose older steps are being removed from its context. "
                 "The input is JSON: previous_state (the state written at the last removal, may be empty) and steps "
                 "(the removed steps, oldest first; long tool outputs are cut, their full text stays archived under "
-                "#ID). Write the updated state the agent needs to continue: the task and the user's requirements "
-                "(from requirement documents and user messages), constraints, decisions and why, files changed, what "
-                "was verified (tests run and their results), failures and their causes, unresolved issues, and the "
-                "next steps. Keep exact identifiers, paths, commands, error messages, and the #ID of outputs worth "
-                "reading again. Carry forward what still holds from previous_state; drop what is finished and no "
-                "longer matters. Do not invent progress. Plain text with short labelled sections, at most CHARS "
-                "characters. Return a JSON object {\"state\": \"<the state>\"}.")
+                "#ID). Write the updated state the agent needs to continue, in these sections: TASK (the overall "
+                "task and how work arrives, e.g. a task queue file); DONE (one line per finished task or milestone: "
+                "its id, what was implemented, the main files, the tests that passed); CURRENT (the task or milestone "
+                "in progress: its id, the requirements still open with exact names, decisions made and why, files "
+                "changed, what was verified and how, logs and scripts under /tmp, processes still running); PROBLEMS (failures and their causes, unresolved issues); NEXT "
+                "(the next steps). Keep exact identifiers, paths, commands, error messages, and the #ID of outputs "
+                "worth reading again. Carry forward what still holds from previous_state, shortening DONE lines of "
+                "older work; do not invent progress. Plain text, at most CHARS characters. Return a JSON object "
+                "{\"state\": \"<the state>\"}.")
+STEPS_MARK = "\n\n[earlier steps]\n"     # between a written state and the mechanical lines after it
+WRITER_RETRY = 20                         # requests before a writer that failed twice in a row is tried again
 RECALL_NOTE = ("Removed or shortened tool outputs are archived. Their references look like [archived #ID] or "
                "'stored at #ID'; read one with infinite_context_read (id=ID) or find text with "
                "infinite_context_search.")
@@ -137,6 +141,11 @@ class Spec(Knobs):
                                           # again, same command run again) are never held and go at the next batch
     spec_keep_frac: float = 0.0           # resident requirements: the newest spec outputs (SRS, design docs), together
                                           # at most this share of t, stay verbatim through every operator (0 = off)
+    release_at_topic: bool = False        # cost: at a commit or a new user message, outputs last used before it are no
+                                          # longer held (what is used again is held again), and requirements
+                                          # documents a commit or tag names are no longer resident
+    commit_topic: bool = False            # cost: a commit or tag is a topic change (it records finished work) and a
+                                          # first read of a requirements document is not (agents read them ahead)
     choose: str = "fixed"                 # fixed: the operators the switches list; cost: at every request each
                                           # available operator is a candidate and the cost model picks one (§9.7)
     writers: tuple = ("mechanical",)      # cost: summary writers that are candidates (mechanical, hybrid)
@@ -337,10 +346,18 @@ class InfiniteContextV5(CliffCompaction):
             # at F without a topic change. The task state is written by DeepSeek (deepseek-flash, $0.3 / $1.2 per
             # million = 0.15 / 0.6 of an uncached input token), about the size of Codex's compaction item (3.2-4.2k
             # output tokens), ahead of the mechanical lines and their archive numbers.
+            # From 5 recorded Vanilla SWE-Milestone sessions (73 milestones): the commit and tag of a milestone are
+            # its only exact boundary (73/73); 43/73 requirements documents were read before the previous milestone
+            # was tagged (up to 8 open at once), so a first read is no boundary and open documents stay resident;
+            # a tagged milestone's document was read again once in 73. At the tag 66% of the milestone's outputs
+            # (39% of chars) are never referenced later, and later references re-read the file first 72% of the
+            # time, so the guard releases them (uses within 2 requests before the tag still hold). Specs get 15%:
+            # sklearn documents reach 8.9k and Codex's compaction drops them, after which they were re-read within
+            # 1-4 requests in 24/24 cases.
             switches = {"guard": True, "protect_spec": True, "recall": True, "supersede": True,
-                        "protect_user": True, "guard_active": 15, "guard_keep_frac": 0.1, "spec_keep_frac": 0.1,
+                        "protect_user": True, "guard_active": 15, "guard_keep_frac": 0.1, "spec_keep_frac": 0.15,
                         "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0,
-                        "candidates": ("summary",), "boundary_late": 1.0,
+                        "candidates": ("summary",), "boundary_late": 1.0, "release_at_topic": True, "commit_topic": True,
                         "writers": ("hybrid",), "writer_model": "deepseek-flash", "writer_tokens": 3000,
                         "writer_input_price": 0.15, "writer_output_price": 0.6, **switches}
         for name in ("writers", "cache_rho", "candidates"):
@@ -368,6 +385,9 @@ class InfiniteContextV5(CliffCompaction):
         self.memory = "id" if stores else None
         writes = spec.writer == "hybrid" or (spec.choose == "cost" and "hybrid" in spec.writers)
         self.writer_model = spec.writer_model if writes else ""   # launchers open DeepSeek's route for it
+        # the proxy gives a request a summary service only if the method asks for one; a writer model's calls are
+        # recorded through it (LiveContext._prompt_text)
+        self.requires_summary = writes or spec.writer == "llm"
         self.agent_tools = _tools() if archived else ()
         self.instructions = RECALL_NOTE if archived else ""
         by = lambda *whens: "；".join(o.describe(t) for o in ops if o.when in whens) or "无"
@@ -408,6 +428,17 @@ class InfiniteContextV5(CliffCompaction):
         self._spec_calls = set()          # call ids that read a requirements document
         self._spec_paths = set()          # requirements documents read so far
         self._new_spec = False            # a requirements document never read before was read (topic)
+        self._writer_fails = 0            # consecutive failed writer calls: after 2 the cost model plans mechanical
+        self._writer_retry = 0            # ... until this Usage request count (WRITER_RETRY later), then tries again
+        self._topic_use = -1              # cost: Usage request count from which use counts after the last release
+        self._spec_of = {}                # call id -> requirements documents it reads (task queues left out)
+        self._queue_calls = set()         # call ids that read a task queue
+        self._spec_skip = frozenset()     # cost: spec outputs neither resident nor held (finished, older queues)
+        self._commit = False              # a commit or tag was called since the last request
+        self._done = {}                   # name commits and tags recorded (tag names, words of commit messages) ->
+                                          # number of commit calls when it was last recorded
+        self._commits = 0                 # commit or tag calls so far
+        self._read_at = {}                # call id of a requirements read -> commit calls before it
 
     # ------------------------------------------------------------------ runtime signals
     def _phase(self):
@@ -439,9 +470,20 @@ class InfiniteContextV5(CliffCompaction):
             specs = _spec_paths(item.get("text"))
             if specs:
                 self._spec_calls.add(item.get("call_id"))
+                docs = {p for p in specs if not _QUEUE_PATH.search(p)}
+                if docs:
+                    self._spec_of[item.get("call_id")] = docs
+                    self._read_at[item.get("call_id")] = self._commits
+                if docs != specs:
+                    self._queue_calls.add(item.get("call_id"))
                 if specs - self._spec_paths and self._spec_paths:
                     self._new_spec = True
                 self._spec_paths |= specs
+            names = _committed(item.get("text"))
+            if names is not None:
+                self._commit = True
+                self._commits += 1
+                self._done.update(dict.fromkeys(names, self._commits))
             res = {p for p in res if not _SPEC_PATH.search(p)}   # polled queue / SRS reads are not the work
             if res:
                 self._paths = (self._paths + [res])[-16:]
@@ -534,17 +576,20 @@ class InfiniteContextV5(CliffCompaction):
         return True
 
     def _topic_changed(self, sim):
+        """Why the topic changed since the last request: "user", "commit", "spec", "shift", or "" (no change)."""
         new_user, self._new_user = self._new_user, False
+        committed, self._commit = self._commit and self.spec.commit_topic, False
         old, recent = self._paths[:-6], self._paths[-6:]
         a = set().union(*old) if old else set()
         b = set().union(*recent) if recent else set()
         cooled = self._calls - self._topic_at >= self.spec.topic_gap
         shifted = self.spec.topic_shift and cooled and len(a) >= 3 and len(b) >= 3 and not (a & b)
-        new_spec, self._new_spec = self._new_spec, False
-        if new_user or shifted or new_spec:
+        new_spec, self._new_spec = self._new_spec and not self.spec.commit_topic, False
+        why = "user" if new_user else "commit" if committed else "spec" if new_spec else "shift" if shifted else ""
+        if why:
             self._paths = self._paths[-6:]        # the new topic starts here
             self._topic_at = self._calls
-        return new_user or shifted or new_spec
+        return why
 
     def _audit(self, sim, items):
         """R1/R2 counters: changes to outputs the model had not seen, or was still using (0 with the guard, except
@@ -560,15 +605,17 @@ class InfiniteContextV5(CliffCompaction):
         """R2: outputs not yet seen or reused within guard_active requests, most recently used first, within
         guard_keep_frac of t, with their calls."""
         s = self.spec
+        resident = self._resident(sim)
+        apart = resident | self._spec_skip if s.choose == "cost" else frozenset()   # specs have their own budget
         live = [x for x in sim.ctx if x["seg"] == "out" and x.get("form", "full") in ("full", "truncated", "structured")
-                and not x.get("has_media")]
+                and not x.get("has_media") and x["id"] not in apart]
         if s.hold == "value":
             size_now = sim.request_chars() // 4
             held = [x for x in live if not self._use.seen(x) or self._use.active(x, s.hold_floor)
                     or (not (s.supersede and self._use.superseded(x)) and self._worth(sim, x, size_now))]
         else:
             held = [x for x in live if not (s.supersede and self._use.superseded(x))
-                    and (not self._use.seen(x) or self._use.active(x, s.guard_active))]
+                    and (not self._use.seen(x) or (self._use.active(x, s.guard_active) and not self._released(x)))]
         keep, used, budget = set(), 0, s.guard_keep_frac * self.t
         calls = {x.get("call_id"): x["id"] for x in sim.ctx if x["seg"] == "call" and x.get("call_id")}
         for x in sorted(held, key=lambda x: -self._use.last(x)):
@@ -580,7 +627,7 @@ class InfiniteContextV5(CliffCompaction):
             if x.get("call_id") in calls:
                 keep.add(calls[x["call_id"]])
         sim.M["v5_guard_held"] = len(keep)
-        return frozenset(keep | self._resident(sim))
+        return frozenset(keep | resident)
 
     def _resident(self, sim):
         """The newest spec outputs within spec_keep_frac of t, with their calls (framework page: 常驻)."""
@@ -589,9 +636,16 @@ class InfiniteContextV5(CliffCompaction):
             return frozenset()
         specs = [x for x in sim.ctx if x["seg"] == "out" and x.get("kind") == "spec"
                  and x.get("form", "full") == "full" and not (s.supersede and self._use.superseded(x))]
+        skip = {x["id"] for x in specs if self._finished(x)}
+        if s.release_at_topic:                    # task queue listings (commit chains print one too): the newest
+            queues = [x for x in specs if x.get("call_id") in self._queue_calls and not self._spec_of.get(x.get("call_id"))]
+            skip |= {x["id"] for x in queues[:-1]}
+        self._spec_skip = frozenset(skip)
+        specs = [x for x in specs if x["id"] not in skip]
         keep, used, budget = set(), 0, s.spec_keep_frac * self.t
         calls = {x.get("call_id"): x["id"] for x in sim.ctx if x["seg"] == "call" and x.get("call_id")}
-        for x in reversed(specs):
+        order = sorted(reversed(specs), key=lambda x: -self._use.last(x)) if s.choose == "cost" else reversed(specs)
+        for x in order:                           # cost: in use first, then newest; otherwise newest first
             size = sim.seg_size(x)
             if used + size > budget:
                 continue                          # an older, smaller document may still fit
@@ -661,6 +715,8 @@ class InfiniteContextV5(CliffCompaction):
         if self._reuse is not None:
             self._reuse.request(r, self._phase())
             self._keep = self._protected(sim)
+        if s.choose == "cost":
+            self._observe(sim)
         if s.guard:
             if self._since is not None:
                 self._since += 1
@@ -912,18 +968,42 @@ class InfiniteContextV5(CliffCompaction):
                 plans.append(dict(action="summary", writer="hybrid", gain=gain))
         return plans
 
+    def _observe(self, sim):
+        """Before the hold: a host compaction starts a new cycle (the user messages it re-sent are not a new
+        topic); a commit or a new user message marks where use counts again (release_at_topic)."""
+        rebases = sim.M.get("history_rebases", 0)
+        size = sim.request_chars() // 4
+        host = rebases != self._rebases or (self._sizes and size < 0.6 * self._sizes[-1])
+        if host:
+            self._rebases = rebases
+            self._cycle, self._topic_pending, self._topic_req, self._new_user = len(self._sizes), False, None, False
+            self._commit = False
+        why = self._topic_changed(sim)
+        if why:
+            self._topic_pending, self._topic_req = True, len(self._sizes)
+            sim.M["v5_topic_" + why] += 1
+        if why in ("user", "commit"):
+            # this request's outputs (counted one request back: they arrived before the count advanced) and the two
+            # requests before it, e.g. the test run that cleared the commit, still count as used after it
+            self._topic_use = self._use.req - 3
+
+    def _released(self, x):
+        """Last used before the last commit or new user message (release_at_topic)."""
+        return self.spec.release_at_topic and self._use.last(x) < self._topic_use
+
+    def _finished(self, x):
+        """A requirements document read whose documents a commit or tag named (release_at_topic)."""
+        docs = self._spec_of.get(x.get("call_id"))
+        if not (self.spec.release_at_topic and docs):
+            return False
+        after = {n for n, k in self._done.items() if k > self._read_at.get(x.get("call_id"), 0)}   # a later commit
+        return all(_named(_doc_id(p), after) for p in docs)       # a read after its commit (rework) stays open
+
     def _choose(self, sim, r):
         s = self.spec
         knobs = s if not s.adaptive else dataclasses.replace(s, keep_recent=self._keep_recent())
         cache = self._cache_for(sim)
-        rebases = sim.M.get("history_rebases", 0)
         size = sim.request_chars() // 4
-        host = rebases != self._rebases or (self._sizes and size < 0.6 * self._sizes[-1])
-        if host:                                  # the host compacted (Codex native): a new cycle; the user
-            self._rebases = rebases               # messages it re-sent are not a new topic
-            self._cycle, self._topic_pending, self._topic_req, self._new_user = len(self._sizes), False, None, False
-        if self._topic_changed(sim):
-            self._topic_pending, self._topic_req = True, len(self._sizes)
         self._summarized = False
         try:
             now = self._keys(sim, sim.sent())
@@ -975,7 +1055,17 @@ class InfiniteContextV5(CliffCompaction):
                 if self._model_compaction(sim, "hybrid"):
                     return "hybrid"
                 sim.M["v5_writer_fallback"] += 1
-            return "mechanical" if self._chain(sim, knobs, force=True) else None
+            state = "\n\n".join(p for p in (_state_of(x.get("text") or "", written_only=True)
+                                             for x in sim.ctx if x["seg"] == "summary") if p)
+            if not self._chain(sim, knobs, force=True):
+                return None
+            if state:                             # the state written so far survives a mechanical summary
+                new = next(x for x in reversed(sim.ctx) if x["seg"] == "summary")
+                body = (new.get("text") or "")[len(SUMMARY_HEADER):].strip()
+                new["text"] = SUMMARY_HEADER + "\n\n[state]\n" + state + (STEPS_MARK + body if body else "")
+                new["chars"] = sim.message_chars(new["text"])
+                new["size"] = sim.tokens(new["text"])
+            return "mechanical"
         finally:
             self.knobs = self.spec
 
@@ -1093,10 +1183,15 @@ class InfiniteContextV5(CliffCompaction):
             members = [x for x in res["summary"]["members"] if x in sim.ctx]
         written = self._write_state(sim, members)
         if written is None:
+            self._writer_fails += 1
             sim.M["v5_writer_failed"] += 1
+            if self._writer_fails >= 2:
+                self._writer_retry = self._use.req + WRITER_RETRY
+                sim.M["v5_writer_paused"] += 1
             return False
+        self._writer_fails = 0
         mech = res["summary"]["text"][len(SUMMARY_HEADER):].strip()
-        text = SUMMARY_HEADER + "\n\n[state]\n" + written + ("\n\n---\n\n" + mech if mech else "")
+        text = SUMMARY_HEADER + "\n\n[state]\n" + written + (STEPS_MARK + mech if mech else "")
         billed = not self.spec.writer_model       # a writer model's call is billed on its own route
         new = sim.summarize_segment(members, text=text, billed=billed, model_written=not billed, cliff=True)
         if new is not None:
@@ -1106,6 +1201,10 @@ class InfiniteContextV5(CliffCompaction):
         return new is not None
 
     def _can_write(self, sim):
+        """A writer can answer: a summary service is attached (the proxy attaches one per request when the method
+        asks, requires_summary), and the last two writer calls did not both fail within WRITER_RETRY requests."""
+        if getattr(sim, "summarizer", None) is None or (self._writer_fails >= 2 and self._use.req < self._writer_retry):
+            return False
         return hasattr(sim, "model_text") if self.spec.writer_model else hasattr(sim, "_summary_text")
 
     def _write_state(self, sim, members):
@@ -1122,10 +1221,11 @@ class InfiniteContextV5(CliffCompaction):
         answer = sim.model_text(STATE_SYSTEM.replace("CHARS", str(s.writer_tokens * 4)), body,
                                 purpose="infinite_context_compression", model=s.writer_model)
         try:
-            state = json.loads(answer)["state"]
-        except (TypeError, ValueError, KeyError):
+            reply = json.loads(answer, strict=False)   # DeepSeek's JSON mode leaves raw line breaks in strings
+        except (TypeError, ValueError):
             return None
-        if not isinstance(state, str) or not state.strip():
+        state = _flat(reply.get("state", reply)) if isinstance(reply, dict) else ""
+        if not state.strip():
             return None
         return truncate(state.strip(), s.writer_tokens * 6)
 
@@ -1170,12 +1270,24 @@ class InfiniteContextV5(CliffCompaction):
             return json.dumps(dict(error=str(error)), ensure_ascii=False), True
 
 
-def _state_of(text):
-    """What an earlier summary carries into the next state: its written state, else its mechanical lines (cut)."""
+def _flat(v):
+    """A writer's JSON state as text: strings as they are, sections as 'NAME:' blocks, lists as lines."""
+    if isinstance(v, str):
+        return v
+    if isinstance(v, dict):
+        return "\n\n".join(f"{k}:\n{_flat(x)}".rstrip() for k, x in v.items())
+    if isinstance(v, list):
+        return "\n".join("- " + _flat(x) for x in v)
+    return "" if v is None else str(v)
+
+
+def _state_of(text, written_only=False):
+    """What an earlier summary carries into the next state: its written state, else (unless written_only) the
+    newest 8000 characters of its mechanical lines."""
     body = text[len(SUMMARY_HEADER):].strip() if text.startswith(SUMMARY_HEADER) else text.strip()
     if body.startswith("[state]\n"):
-        return body[len("[state]\n"):].split("\n\n---\n\n", 1)[0].strip()
-    return truncate(body, 8000)
+        return body[len("[state]\n"):].split(STEPS_MARK, 1)[0].strip()
+    return "" if written_only else body[-8000:]
 
 
 _LINE_MIN = 24
@@ -1325,6 +1437,37 @@ class Usage:
 
 
 _SPEC_PATH = re.compile(r"(^|/)srs/|SRS\.md$|(^|/)TASK_QUEUE\.md$|(^|/)requirements?\.md$", re.I)
+_QUEUE_PATH = re.compile(r"(^|/)TASK_QUEUE\.md$", re.I)
+_GIT = r"\bgit(?:[ \t]+-[cC][ \t]+\S+)*[ \t]+"   # git, its -C <dir> / -c <key=value> options
+_GIT_TAG = re.compile(_GIT + r"tag[ \t]+((?:-\S+[ \t]+)*)['\"]?([A-Za-z0-9_][^\s'\"&;|)<>]*)")
+_GIT_COMMIT = re.compile(_GIT + r"commit\b")
+_COMMIT_MSG = re.compile(_GIT + r"commit\b[^&;|\n]*?\s-[a-z]*m\s*(['\"])(.+?)\1")
+_TAG_FLAGS = {"-a", "-s", "-f", "--annotate", "--sign", "--force"}
+
+
+def _committed(text):
+    """Names a call's commits and tags record (tag names, words of commit messages), or None: no commit or tag
+    (listing or deleting tags is none)."""
+    from ctxpress.core import trace
+    s = trace.unescape(text or "")
+    names = {m.group(2) for m in _GIT_TAG.finditer(s)    # a bare number is a redirect: `git tag 2>/dev/null` lists
+             if set(m.group(1).split()) <= _TAG_FLAGS and not m.group(2).isdigit()}
+    names |= {w.strip(".,:;!()") for m in _COMMIT_MSG.finditer(s) for w in m.group(2).split()}
+    return names if names or _GIT_COMMIT.search(s) else None
+
+
+def _doc_id(path):
+    """What names a requirements document: srs/M12.2_SRS.md -> M12.2, srs/M3/SRS.md -> M3, docs/req.md -> req."""
+    parts = path.rstrip("/").split("/")
+    name = parts[-1]
+    if re.fullmatch(r"(SRS|requirements?)\.md", name, re.I) and len(parts) > 1:
+        return parts[-2]
+    return re.sub(r"[_-]?(SRS)?\.md$", "", name, flags=re.I)
+
+
+def _named(doc, names):
+    """A commit or tag names the document: a name equal to it or ending in -, _ or / and it."""
+    return len(doc) >= 2 and any(n == doc or n.endswith(("-" + doc, "_" + doc, "/" + doc)) for n in names)
 
 
 def _spec_paths(text):
