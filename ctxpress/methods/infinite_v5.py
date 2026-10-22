@@ -104,6 +104,10 @@ class Spec(Knobs):
     previous: str = "drop"
     decider: str = "always"
     hard_t: int = 0                       # cost decider: above this always compact (0 = never forced)
+    reasoning_header: bool = False        # proxy: tell Codex the reported input tokens include reasoning
+                                          # (x-reasoning-included); without it Codex adds an estimate of all older
+                                          # encrypted reasoning in its local history after a new user message and
+                                          # compacts early (10-22: 70.7k provider tokens; Vanilla 91-109k, 3 of 17)
     measure: str = "chars"                # what t and hard_t count: chars = chars/4 of the request; tokens = the
                                           # provider's input tokens: what the previous request had at its reported
                                           # input tokens, the model's new items at its reported output tokens, new
@@ -378,7 +382,7 @@ class InfiniteContextV5(CliffCompaction):
             # before a summary) counts ~3.9x what it bills, so all 42 summaries of the 10-22 run came at chars/4 t
             # with 67-76k provider tokens, every 19-24 requests where the rent gives 29-34; Codex itself compacts
             # near 115k provider tokens, above t = 102400 tokens.
-            switches = {"measure": "tokens", "guard": True, "protect_spec": True, "recall": True, "supersede": True,
+            switches = {"measure": "tokens", "reasoning_header": True, "guard": True, "protect_spec": True, "recall": True, "supersede": True,
                         "protect_user": True, "guard_active": 15, "guard_keep_frac": 0.1, "spec_keep_frac": 0.15,
                         "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0,
                         "candidates": ("summary",), "boundary_late": 1.0, "release_at_topic": True, "commit_topic": True,
@@ -412,6 +416,7 @@ class InfiniteContextV5(CliffCompaction):
         # the proxy gives a request a summary service only if the method asks for one; a writer model's calls are
         # recorded through it (LiveContext._prompt_text)
         self.requires_summary = writes or spec.writer == "llm"
+        self.reasoning_included_header = spec.reasoning_header
         self.agent_tools = _tools() if archived else ()
         self.instructions = RECALL_NOTE if archived else ""
         by = lambda *whens: "；".join(o.describe(t) for o in ops if o.when in whens) or "无"

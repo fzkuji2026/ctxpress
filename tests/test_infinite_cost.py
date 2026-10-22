@@ -48,6 +48,11 @@ def test_cost_mode_counts_provider_tokens_from_the_last_request():
     assert InfiniteContext(version=5, t=1000, choose="cost", measure="chars")._tokens(sim, 1000) == 1000
 
 
+
+def test_cost_mode_asks_the_proxy_to_report_reasoning_as_included():
+    assert InfiniteContext(version=5, t=1000, choose="cost").reasoning_included_header
+    assert not InfiniteContext(version=5, t=1000).reasoning_included_header
+
 def test_the_proxy_hands_the_provider_usage_to_the_method():
     rw = Rewriter(lambda: InfiniteContext(version=5, t=1000, choose="cost"))
     rw.rewrite_body(dict(model='gpt-5', instructions='sys', input=copy.deepcopy(requests()[0]), tools=[], stream=True), 's')
@@ -364,3 +369,40 @@ def test_failure_lines_in_the_middle_of_a_long_log_reach_the_writer():
     log = "x\n" * 800 + "FAILED tests/test_parser.py::test_empty - IndexError\n" + "y\n" * 800
     line = m._writer_input(None, [dict(seg="out", id=7, text=log)])[0]
     assert "FAILED tests/test_parser.py::test_empty" in line
+
+
+def test_the_proxy_adds_the_reasoning_header_only_when_asked(tmp_path):
+    import http.client, threading
+    from http.server import BaseHTTPRequestHandler
+    from ctxpress.live.proxy import ThreadingHTTPServer, make_handler
+
+    class Upstream(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            done = dict(type="response.completed", response=dict(id="r", model="gpt-5", output=[],
+                        usage=dict(input_tokens=50, output_tokens=5, input_tokens_details=dict(cached_tokens=0))))
+            raw = f"event: response.completed\ndata: {json.dumps(done)}\n\n".encode()
+            self.send_response(200); self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(raw))); self.end_headers(); self.wfile.write(raw)
+
+    def header(flag):
+        up = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+        rw = Rewriter(lambda: InfiniteContext(version=5, t=1000, choose="cost"))
+        px = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(rw, f"http://127.0.0.1:{up.server_port}", None,
+                                                                 str(tmp_path / f"{flag}.jsonl"), reasoning_included=flag))
+        threads = [threading.Thread(target=s.serve_forever, daemon=True) for s in (up, px)]
+        [t.start() for t in threads]
+        try:
+            c = http.client.HTTPConnection("127.0.0.1", px.server_port, timeout=10)
+            body = dict(model="gpt-5", instructions="sys", input=copy.deepcopy(requests()[0]), tools=[], stream=True)
+            c.request("POST", "/v1/responses", body=json.dumps(body), headers={"Content-Type": "application/json"})
+            r = c.getresponse(); r.read(); c.close()
+            return r.getheader("x-reasoning-included")
+        finally:
+            for s in (px, up):
+                s.shutdown(); s.server_close()
+
+    assert header(True) == "true" and header(False) is None

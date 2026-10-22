@@ -83,7 +83,7 @@ def is_native_compaction(body, turn_metadata=None, compact_prompt=None):
 
 def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_retries=0,
                  allow_native_compaction=True, compact_prompt=None, method_tools=None, upstream_key=None,
-                 chat_session=None, chat_volatile=None, context_profile=None, control=None):
+                 chat_session=None, chat_volatile=None, context_profile=None, control=None, reasoning_included=False):
     up = urllib.parse.urlsplit(upstream)
     vp = urllib.parse.urlsplit(via) if via else None
     lock = threading.Lock()
@@ -381,6 +381,12 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
             for k, v in r.getheaders():
                 if k.lower() not in HOP:
                     self.send_header(k, v)
+            if (reasoning_included and r.status == 200 and not compact and dialect not in ('anthropic', 'chat')
+                    and r.getheader('x-reasoning-included') is None):
+                # The reported input tokens are what was sent, reasoning included. Without this header Codex adds
+                # its own estimate of every older encrypted reasoning item in its local history (which the method
+                # has long removed from the wire) and compacts early (context_manager/history.rs).
+                self.send_header('x-reasoning-included', 'true')
             self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
             usage, tail = None, b""
@@ -591,6 +597,7 @@ def serve(method_factory, port, upstream, via=None, log=None, params=DEFAULT, ho
                                   chat_session=chat_session, chat_volatile=chat_volatile,
                                   allow_native_compaction=sample.allow_native_compaction,
                                   context_profile=getattr(sample, 'context_profile', None),
+                                  reasoning_included=bool(getattr(sample, 'reasoning_included_header', False)),
                                   compact_prompt=sample.codex_config.get('compact_prompt') if not sample.allow_native_compaction else None))
     original_close = srv.server_close
     def close_with_memory():
