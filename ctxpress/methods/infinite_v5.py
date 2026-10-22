@@ -105,8 +105,9 @@ class Spec(Knobs):
     decider: str = "always"
     hard_t: int = 0                       # cost decider: above this always compact (0 = never forced)
     measure: str = "chars"                # what t and hard_t count: chars = chars/4 of the request; tokens = the
-                                          # provider's input tokens, from the previous request's (input tokens /
-                                          # its chars/4) applied to what it already had, new items at chars/4
+                                          # provider's input tokens: what the previous request had at its reported
+                                          # input tokens, the model's new items at its reported output tokens, new
+                                          # tool outputs and messages by the o200k_base tokenizer (_count)
     horizon: int = 100                    # cost decider: expected remaining requests
     cached_price: float = 0.1             # cost unit: one uncached input token
     output_price: float = 8.0
@@ -442,7 +443,8 @@ class InfiniteContextV5(CliffCompaction):
         self._since = None                # requests since the last compaction
         self._cache = None                # cost: the provider cache of this session (requests sent so far)
         self._sizes = []                  # cost: request sizes sent, for growth per request
-        self._billed = None               # measure tokens: (chars/4 of the last request answered, its input tokens)
+        self._billed = None               # measure tokens: (chars/4, input tokens, output tokens, item ids) of the
+                                          # last request answered
         self._topic_pending = False       # cost: a topic change since the last summary
         self._cycle = 0                   # cost: index in _sizes of the first request after the last summary
         self._wait_from = None            # cost: request at which a placeholder batch started waiting
@@ -869,19 +871,33 @@ class InfiniteContextV5(CliffCompaction):
             return limit * self._billed[0] / self._billed[1]
         return limit
 
-    def _tokens(self, size):
-        """Provider input tokens of a request of `size` chars/4: the previous request's ratio for what it already
-        had, chars/4 for anything added since (new outputs are text, where chars/4 is close or high)."""
+    def _tokens(self, sim, size):
+        """Provider input tokens of the request about to be sent (`size` its chars/4): the items the previous
+        request had at its input tokens / chars/4, the model's items since at its output tokens, other new items
+        (tool outputs, messages) counted by the tokenizer."""
         if self.spec.measure != "tokens" or not self._billed:
             return size
-        before, used = self._billed
-        return min(size, before) * used / before + max(0, size - before)
+        before, used, out, ids = self._billed
+        ratio, old, new, model = used / before, 0.0, 0, False
+        for x in sim.sent():
+            if x.get("id") in ids:
+                old += sim.host_chars(x) / 4
+            elif is_model(x):
+                model = True
+            else:
+                text = x.get("text")
+                new += _count(text) + 4 if isinstance(text, str) else sim.host_chars(x) // 4
+        fixed = (sim.fixed_chars if sim.fixed_chars is not None else sim.prefix * 4) / 4
+        return (fixed + old) * ratio + new + (out if model else 0)
 
     def observe_response(self, sim, info):
-        """The provider's input tokens of a request (rewrite.observe_response; only full Responses prompts)."""
-        used, rendered = (info.get("usage") or {}).get("input_tokens"), info.get("rendered_prompt_tokens")
+        """The provider's usage of a request (rewrite.observe_response; only full Responses prompts). The context
+        still holds what that request sent: the response's items arrive with the next request."""
+        usage = info.get("usage") or {}
+        used, rendered, out = usage.get("input_tokens"), info.get("rendered_prompt_tokens"), usage.get("output_tokens")
         if type(used) is int and used > 0 and type(rendered) in (int, float) and rendered > 0:
-            self._billed = (float(rendered), float(used))
+            self._billed = (float(rendered), float(used), out if type(out) is int and out >= 0 else 0,
+                            frozenset(x.get("id") for x in sim.ctx))
             sim.M["v5_billed_samples"] += 1
 
     def _stay(self, size_now):
@@ -1064,9 +1080,10 @@ class InfiniteContextV5(CliffCompaction):
             if p is not None:
                 plans.append(p)
             limit = self.spec.hard_t or self.t
-            forced = self._tokens(size) > limit
+            tokens = self._tokens(sim, size)
+            forced = tokens > limit
             if not forced and ("summary" in s.candidates and (self._topic_pending or s.summary_at != "topic")
-                          and self._tokens(size) > s.topic_min_frac * limit):
+                          and tokens > s.topic_min_frac * limit):
                 plans += self._plan_summaries(sim, now, knobs)
             sim.M["v5_choices"] += 1
             if forced:
@@ -1365,6 +1382,24 @@ def _failures(text, limit=600):
     if not found:
         return ""
     return "[failure lines from the cut part]\n" + truncate("\n".join(found), limit) + "\n"
+
+
+_ENCODING = []
+
+
+def _count(text):
+    """Tokens of a text by o200k_base (tiktoken; the provider's own tokenizer is not published), chars/4 when
+    tiktoken or its vocabulary is not installed."""
+    if not _ENCODING:
+        try:
+            import os
+            os.environ.setdefault("TIKTOKEN_CACHE_DIR", os.path.expanduser("~/.cache/tiktoken"))
+            import tiktoken
+            _ENCODING.append(tiktoken.get_encoding("o200k_base"))
+        except Exception:
+            _ENCODING.append(None)
+    enc = _ENCODING[0]
+    return len(enc.encode(text, disallowed_special=())) if enc else len(text) // 4
 
 
 def _flat(v):

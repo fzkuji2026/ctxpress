@@ -32,15 +32,20 @@ def test_cost_defaults_bound_specs_and_keep_user_messages():
 
 
 def test_cost_mode_counts_provider_tokens_from_the_last_request():
+    from ctxpress.methods import infinite_v5
     m = InfiniteContext(version=5, t=1000, choose="cost")
-    assert m.spec.measure == "tokens" and m._tokens(1500) == 1500 and m._hard() == 1000   # nothing observed yet
-    sim = type("S", (), {"M": collections.Counter()})()
-    m.observe_response(sim, dict(usage=dict(input_tokens=700), rendered_prompt_tokens=1000))
-    assert m._tokens(1000) == 700 and m._tokens(1200) == 900 and m._tokens(500) == 350
-    assert abs(m._hard() - 1000 / 0.7) < 1e-6 and sim.M["v5_billed_samples"] == 1
+    sim = type("S", (), {"M": collections.Counter(), "fixed_chars": 400, "prefix": 0,
+                         "host_chars": staticmethod(lambda x: len(x["text"]))})()
+    sim.ctx = [dict(id=1, seg="out", text="a" * 3600)]
+    sim.sent = lambda: list(sim.ctx)
+    assert m.spec.measure == "tokens" and m._tokens(sim, 1000) == 1000 and m._hard() == 1000   # nothing observed
+    m.observe_response(sim, dict(usage=dict(input_tokens=700, output_tokens=50), rendered_prompt_tokens=1000))
+    assert m._tokens(sim, 1000) == 700 and abs(m._hard() - 1000 / 0.7) < 1e-6 and sim.M["v5_billed_samples"] == 1
+    sim.ctx += [dict(id=2, seg="reason", text="x" * 4000), dict(id=3, seg="out", text="hello world")]
+    assert m._tokens(sim, 2000) == 700 + 50 + infinite_v5._count("hello world") + 4      # model items: output tokens
     m.observe_response(sim, dict(usage=None, rendered_prompt_tokens=1000))       # no usage: kept as it was
-    assert m._tokens(1000) == 700
-    assert InfiniteContext(version=5, t=1000, choose="cost", measure="chars")._tokens(1000) == 1000
+    assert m._billed[1] == 700.0
+    assert InfiniteContext(version=5, t=1000, choose="cost", measure="chars")._tokens(sim, 1000) == 1000
 
 
 def test_the_proxy_hands_the_provider_usage_to_the_method():
@@ -48,7 +53,7 @@ def test_the_proxy_hands_the_provider_usage_to_the_method():
     rw.rewrite_body(dict(model='gpt-5', instructions='sys', input=copy.deepcopy(requests()[0]), tools=[], stream=True), 's')
     assert rw.observe_response(dict(status=200, session='s', request_model='gpt-5', request=1, history_epoch=0,
                                     rendered_prompt_tokens=1000, usage=dict(input_tokens=700)))
-    assert next(iter(rw.sessions.values())).ctx.method._billed == (1000.0, 700.0)
+    assert next(iter(rw.sessions.values())).ctx.method._billed[:2] == (1000.0, 700.0)
 
 def test_a_requirements_read_inside_a_mixed_command_is_a_spec_read():
     assert _spec_paths('sed -n 1,200p srs/M002/SRS.md && sed -n 1,80p src/main.rs') == {'srs/M002/SRS.md'}
