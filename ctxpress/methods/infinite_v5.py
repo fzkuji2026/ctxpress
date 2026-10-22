@@ -162,9 +162,12 @@ class Spec(Knobs):
                                           # the environment and still needed (unfixed test failures, error logs)
                                           # stay verbatim, together at most this share of t; file contents, docs,
                                           # listings and diffs can be read again and go (0 = off)
-    stale_after_edit: bool = False        # an edit of a file supersedes the earlier reads of it (they are out of
-                                          # date; the file on disk is current)
-    same_output: bool = False             # an output identical to an earlier one supersedes it (repeated polls)
+    stale_after_edit: bool = False        # an edit of a file supersedes the earlier reads of it. Off: in recorded
+                                          # SWE-Milestone sessions agents edit a file a median 2-3 calls after reading
+                                          # it (scripts and sed -i, almost never apply_patch) and keep working from the
+                                          # read, so this would release what is in use
+    same_output: bool = False             # an output identical to an earlier one supersedes it. Off: no two outputs
+                                          # were identical in recorded sessions (timing and session fields differ)
     state_recovery_factor: float = 0.5    # cost, hybrid: share of recoveries still needed with a written task state
                                           # (assumed; to be set by trials)
     cache_rho: tuple = RHO                # cost: provider cache retention after an edit (core/cache_model.py)
@@ -371,8 +374,7 @@ class InfiniteContextV5(CliffCompaction):
                         "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0,
                         "candidates": ("summary",), "boundary_late": 1.0, "release_at_topic": True, "commit_topic": True,
                         "writers": ("hybrid",), "writer_model": "deepseek-flash", "writer_tokens": 3000,
-                        "writer_input_price": 0.15, "writer_output_price": 0.6, "writer_keep_frac": 0.05,
-                        "stale_after_edit": True, "same_output": True, **switches}
+                        "writer_input_price": 0.15, "writer_output_price": 0.6, "writer_keep_frac": 0.05, **switches}
         for name in ("writers", "cache_rho", "candidates"):
             if isinstance(switches.get(name), list):
                 switches[name] = tuple(switches[name])

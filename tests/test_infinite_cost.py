@@ -323,7 +323,8 @@ def test_the_writer_keeps_outputs_it_judges_not_recoverable(monkeypatch):
 
 
 def test_an_edit_supersedes_earlier_reads_and_identical_outputs_supersede():
-    m, sim = boundary_model(), FakeSim([])
+    m, sim = InfiniteContext(version=5, t=100000, choose="cost", stale_after_edit=True, same_output=True), FakeSim([])
+    m._use.model = 1
     read = dict(id=1, seg="out", text="def f(): pass\n" * 30, res=["src/a.py"])
     m._use.add(read)
     m.on_ingest(sim, dict(id=2, seg="call", call_id="c2", kind="edit", res=["src/a.py"], text="apply_patch a.py"))
