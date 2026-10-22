@@ -77,6 +77,10 @@ STATE_SYSTEM = ("You keep the working state of a coding agent whose older steps 
                 "of commands that cannot simply be run again. Never list file contents, requirement documents, "
                 "listings, searches or diffs: they can be read again from disk. Outputs marked stale were superseded. "
                 "Return a JSON object {\"state\": \"<the state>\", \"keep\": [<#ID numbers>]}.")
+STATE_NEED = ("Also list in need the #ID of the outputs among the steps that the CURRENT task or the NEXT steps will "
+              "read again: contents of files being changed or about to be changed, outputs the next step works from. "
+              "Leave out outputs of finished work and outputs marked stale. Return a JSON object "
+              "{\"state\": \"<the state>\", \"keep\": [<#ID numbers>], \"need\": [<#ID numbers>]}.")
 STEPS_MARK = "\n\n[earlier steps]\n"     # between a written state and the mechanical lines after it
 WRITER_RETRY = 20                         # requests before a writer that failed twice in a row is tried again
 RECALL_NOTE = ("Removed or shortened tool outputs are archived. Their references look like [archived #ID] or "
@@ -178,6 +182,10 @@ class Spec(Knobs):
     same_output: bool = False             # an output identical to an earlier one supersedes it. Off: no two outputs
                                           # were identical in recorded sessions (timing and session fields differ)
     state_recovery_factor: float = 0.5    # cost, hybrid: share of recoveries still needed with a written task state
+    writer_need: bool = False             # cost, hybrid with writer_model: the writer names the removed outputs the
+                                          # current work reads again; each stays when carrying it costs less than
+                                          # reading it back, and the hybrid summary carries no statistical recovery
+                                          # risk (the writer's judgment replaces the reuse table)
                                           # (assumed; to be set by trials)
     cache_rho: tuple = RHO                # cost: provider cache retention after an edit (core/cache_model.py)
     summary_at: str = "boundary"          # cost: when the rent account may summarize (above topic_min_frac of t):
@@ -386,7 +394,7 @@ class InfiniteContextV5(CliffCompaction):
             # at 115.2k, above t = 102400.
             switches = {"reasoning_header": True, "guard": True, "protect_spec": True, "recall": True, "supersede": True,
                         "protect_user": True, "guard_active": 15, "guard_keep_frac": 0.1, "spec_keep_frac": 0.15,
-                        "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0, "reread_use": True,
+                        "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0, "reread_use": True, "writer_need": True,
                         "candidates": ("summary",), "boundary_late": 1.0, "release_at_topic": True, "commit_topic": True,
                         "writers": ("hybrid",), "writer_model": "deepseek-flash", "writer_tokens": 3000,
                         "writer_input_price": 0.15, "writer_output_price": 0.6, "writer_keep_frac": 0.05, **switches}
@@ -436,6 +444,7 @@ class InfiniteContextV5(CliffCompaction):
         self._sticky = set()              # paths re-read after a removal: L2 leaves them alone
         self._gone = set()                # reread_use: ids of outputs a summary or placeholder removed
         self._r, self.last_decision = 0, None   # the request being decided; what the last summary expected
+        self._need = dict(named=[], kept=[])   # writer_need: what the writer judged at the summary being written
         self._harm = 0
         self._harm_seg = None             # segid of the last harm, for decay
         self._seg_done = 0                # L2 has processed every segment below this segid
@@ -764,9 +773,7 @@ class InfiniteContextV5(CliffCompaction):
         self._session = getattr(sim, "store_namespace", None)
         s = self.spec
         alive = {x["id"] for x in sim.ctx if x["seg"] == "out" and x.get("form", "full") in ("full", "truncated", "structured")}
-        if s.reread_use:                      # removed, but still content the agent may need (until superseded)
-            self._gone -= self._use.newer
-            alive |= self._gone
+        self._gone -= self._use.newer         # superseded: a later read is new content, not a re-read
         self._use.request(sorted(alive))
         if self._reuse is not None:
             self._reuse.request(r, self._phase())
@@ -1028,7 +1035,8 @@ class InfiniteContextV5(CliffCompaction):
                 members = min(members, s.writer_input_tokens)
             gain = self._summary_net(sim, now, (nkeys, hsizes), lost,
                                      writer_cost=members * s.writer_input_price + s.writer_tokens * s.writer_output_price,
-                                     recovery_scale=s.state_recovery_factor)
+                                     recovery_scale=0.0 if s.writer_need and s.writer_model
+                                     else s.state_recovery_factor)
             if gain is not None:
                 plans.append(dict(action="summary", writer="hybrid", gain=gain))
         return plans
@@ -1154,16 +1162,13 @@ class InfiniteContextV5(CliffCompaction):
         return lost, self._stay(size), size
 
     def _log_summary(self, sim, writer, lost):
-        """What the cost model expected of this summary, for comparison with the re-reads that follow
-        (records: method_decision; op_reread_removed counts the re-reads of removed outputs)."""
+        """What this summary removed and what the writer judged still needed, for comparison with the re-reads
+        that follow (records: method_decision; op_reread_removed counts the re-reads of removed outputs)."""
         items, stay, size = lost
-        n = max(1, int(stay))
+        need, self._need = self._need, dict(named=[], kept=[])
         self.last_decision = dict(
             request=self._r, action="summary", writer=writer, tokens_before=round(size),
-            lost_outputs=len(items), stay=round(stay, 1),
-            expected_rereads=round(sum(self._use.p_reuse(x, n) for x in items), 3),
-            expected_reread_tokens=round(sum(self._use.p_reuse(x, n) * sim.seg_size(x) for x in items)),
-            reuse_observations=sum(self._use.n), reuse_hits=sum(self._use.k))
+            lost_outputs=len(items), stay=round(stay, 1), need_named=need["named"], need_kept=need["kept"])
 
     def _deadline(self, sim, knobs):
         """Above t our own summary runs (the deadline every method's trigger has), written as the spec says; the
@@ -1276,7 +1281,7 @@ class InfiniteContextV5(CliffCompaction):
         # are replaced too (their state is carried forward by the writer), as the mechanical chain replaces them.
         if self.spec.writer_model:
             members = [x for x in res["summary"]["members"] if x in sim.ctx]
-        written, keep = self._write_state(sim, members)
+        written, keep, need = self._write_state(sim, members)
         if written is None:
             self._writer_fails += 1
             sim.M["v5_writer_failed"] += 1
@@ -1289,6 +1294,12 @@ class InfiniteContextV5(CliffCompaction):
         if kept:                                  # not recoverable from the environment: stays verbatim
             members = [x for x in members if x["id"] not in kept]
             sim.M["v5_writer_kept"] += len(kept)
+        if self.spec.writer_need:                 # read again by the current work and cheaper to carry than re-read
+            named, needed = self._writer_needed(sim, members, need)
+            members = [x for x in members if x["id"] not in needed]
+            outs = sorted(x["id"] for x in sim.ctx if x["id"] in needed and x["seg"] == "out")
+            sim.M["v5_writer_needed"] += len(outs)
+            self._need = dict(named=named, kept=outs)
         mech = res["summary"]["text"][len(SUMMARY_HEADER):].strip()
         text = SUMMARY_HEADER + "\n\n[state]\n" + written + (STEPS_MARK + mech if mech else "")
         billed = not self.spec.writer_model       # a writer model's call is billed on its own route
@@ -1329,32 +1340,63 @@ class InfiniteContextV5(CliffCompaction):
                 kept.add(calls[x["call_id"]])
         return kept
 
+    def _writer_needed(self, sim, members, need):
+        """(#IDs the writer named, ids kept with their calls): a named output stays when carrying it for the
+        requests the summary lasts costs less than reading it back (the terms of _recovery: the output again, one
+        more request on the context left, the model's extra work)."""
+        s, named = self.spec, set()
+        for k in need:
+            try:
+                named.add(int(str(k).strip().lstrip("#")))
+            except (TypeError, ValueError):
+                continue
+        outs = [x for x in members if x["seg"] == "out" and x.get("id") in named]
+        if not outs:
+            return sorted(named), set()
+        size_now = self._size(sim)
+        stay = self._stay(size_now)
+        after = size_now - sum(sim.seg_size(x) for x in members) + s.writer_tokens
+        calls = {x.get("call_id"): x["id"] for x in members if x["seg"] == "call" and x.get("call_id")}
+        kept = set()
+        for x in reversed(outs):
+            size = sim.seg_size(x)
+            if size * stay * (s.cached_price + s.length_penalty) < size + s.refetch_work + after * s.cached_price:
+                after += size
+                kept.add(x["id"])
+                if x.get("call_id") in calls:
+                    kept.add(calls[x["call_id"]])
+        return sorted(named), kept
+
     def _write_state(self, sim, members):
-        """(task state, #IDs to keep) of a hybrid summary; state None when the writer fails: the host's summary
+        """(task state, #IDs to keep, #IDs still needed) of a hybrid summary; state None when the writer fails: the host's summary
         service, or `writer_model` given the earlier state and the removed steps (_writer_input)."""
         s = self.spec
         if not s.writer_model:
             return (sim._summary_text(members, "segment", s.writer_tokens, STATE_GUIDANCE)
-                    if hasattr(sim, "_summary_text") else None), []
+                    if hasattr(sim, "_summary_text") else None), [], []
         earlier = [x for x in members if x.get("cliff") or is_summary(x)]
         steps = [x for x in members if not (x.get("cliff") or is_summary(x))]
         previous = "\n\n".join(p for p in (_state_of(x.get("text") or "") for x in earlier) if p)
         body = json.dumps(dict(previous_state=previous, steps=self._writer_input(sim, steps)), ensure_ascii=False)
         limit = f"{s.writer_tokens} tokens"
-        answer = sim.model_text(STATE_SYSTEM.replace("LIMIT", limit), body,
+        system = STATE_SYSTEM.replace("LIMIT", limit)
+        if s.writer_need:
+            system = system[:system.rindex("Return a JSON object")] + STATE_NEED
+        answer = sim.model_text(system, body,
                                 purpose="infinite_context_compression", model=s.writer_model)
         try:
             reply = json.loads(answer, strict=False)   # DeepSeek's JSON mode leaves raw line breaks in strings
         except (TypeError, ValueError):
-            return None, []
+            return None, [], []
         if not isinstance(reply, dict):
-            return None, []
+            return None, [], []
         keep = reply.pop("keep", None) if "state" in reply else None
+        need = reply.pop("need", None) if "state" in reply else None
         state = _flat(reply.get("state", reply))
         if not state.strip():
-            return None, []
+            return None, [], []
         state = _head(state.strip(), s.writer_tokens * 3 // 2)   # the writer may overrun its target by half
-        return state, keep if isinstance(keep, list) else []
+        return state, keep if isinstance(keep, list) else [], need if isinstance(need, list) else []
 
     def _writer_input(self, sim, steps):
         """The removed steps as the writer reads them, oldest first: messages, one-line calls, outputs cut to their

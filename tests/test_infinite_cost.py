@@ -385,6 +385,40 @@ def test_the_writer_keeps_outputs_it_judges_not_recoverable(monkeypatch):
     assert ctx.M["v5_writer_kept"] >= 1 and any(x.get("id") == first and x["seg"] == "out" for x in ctx.ctx)
 
 
+def test_outputs_the_writer_says_the_current_work_needs_stay_and_the_hybrid_has_no_table_risk(monkeypatch):
+    need = {}
+
+    def answer(n):
+        return json.dumps(dict(state=f"STATE {n}", keep=[], need=need.setdefault("ids", [])))
+    ctx, bodies = deepseek_run(monkeypatch, answer)
+    assert ctx.M["v5_writer_needed"] == 0
+    first = next(int(l.split("#")[1].split(":")[0].split(" ")[0]) for l in bodies[0]["steps"] if l.startswith("output #"))
+    need["ids"] = ["#%d" % first, "junk"]
+    ctx, bodies = deepseek_run(monkeypatch, answer)
+    assert ctx.M["v5_writer_needed"] >= 1 and any(x.get("id") == first and x["seg"] == "out" for x in ctx.ctx)
+    m = ctx.method
+    assert m.spec.writer_need and m.last_decision["need_named"] == [first] and first in m.last_decision["need_kept"]
+    # without the switch the writer is not asked and nothing it names stays
+    ctx, _ = deepseek_run(monkeypatch, answer, writer_need=False)
+    assert ctx.M["v5_writer_needed"] == 0
+
+
+def test_the_writer_is_asked_for_needed_outputs_only_with_writer_need(monkeypatch):
+    import ctxpress.live.deepseek as deepseek
+    systems = []
+    real = InfiniteContext
+    for switch in (True, False):
+        def fake(system, user, *, record, model):
+            systems.append((switch, system))
+            return json.dumps(dict(state="S"))
+        monkeypatch.setattr(deepseek, "summarize", fake)
+        rw = Rewriter(lambda: real(version=5, t=200, choose="cost", writer_need=switch))
+        for inp in requests():
+            send(rw, inp, summarizer=Recorder())
+    assert any(w for w, _ in systems) and any(not w for w, _ in systems)
+    assert all(('"need"' in sy) == w and sy.count("Return a JSON object") == 1 for w, sy in systems)
+
+
 def test_an_edit_supersedes_earlier_reads_and_identical_outputs_supersede():
     m, sim = InfiniteContext(version=5, t=100000, choose="cost", stale_after_edit=True, same_output=True), FakeSim([])
     m._use.model = 1
@@ -454,7 +488,7 @@ def test_a_read_of_the_same_source_counts_as_using_the_output_again_unless_edite
     assert u.read_again("cat src/a.py", ["src/a.py"]) == set()                     # edited since: new content
 
 
-def test_rereads_after_a_summary_are_counted_and_the_summary_logs_what_it_expected():
+def test_rereads_after_a_summary_are_counted_and_the_summary_logs_what_it_removed():
     from test_infinite_v5 import session
     items = session()
     for i in range(6):                            # the agent reads the long outputs it lost again
@@ -471,7 +505,6 @@ def test_rereads_after_a_summary_are_counted_and_the_summary_logs_what_it_expect
             decisions.append(info["method_decision"])
     ctx = next(iter(rw.sessions.values())).ctx
     assert ops["reread"] >= 1 and ops["reread_removed"] >= 1
-    assert decisions and all(d["action"] == "summary" and d["expected_rereads"] >= 0 and "lost_outputs" in d
+    assert decisions and all(d["action"] == "summary" and "lost_outputs" in d and d["need_named"] == []
                              for d in decisions)
-    m = ctx.method                                # removed outputs stay in the reuse statistics (resolved after 20)
-    assert m._gone and any(i in m._gone for _, i, _ in m._use.pending)
+    assert ctx.method._gone                       # removed outputs, for counting re-reads of them
