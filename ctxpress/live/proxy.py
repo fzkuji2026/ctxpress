@@ -176,8 +176,12 @@ def make_handler(rewriter, upstream, via, log, summaries=False, max_overflow_ret
                     body = json.dumps(projected, ensure_ascii=False).encode('utf-8')
             if compact and body and context_profile and isinstance(parsed, dict):
                 # The host's compaction request is measured against the same window, never cut.
-                from ctxpress.methods.experiment_context import check_body
-                info['experiment_context'] = check_body(parsed, context_profile)
+                from ctxpress.methods.experiment_context import check_body, payload_tokens
+                key = (parsed.get("prompt_cache_key") or self.headers.get("session_id")
+                       or self.headers.get("conversation_id") or "default")
+                session = rewriter.sessions.get(key) if rewriter is not None else None
+                info['experiment_context'] = check_body(
+                    payload_tokens(parsed, session.ctx.sizes if session else None), context_profile)
             original, j, summarizer, dialect, key = None, None, None, "responses", None
             if method == "POST" and incoming.path.rstrip("/").endswith("/chat/completions") and body:
                 # Chat Completions (vLLM / LiteLLM agents): same method on flattened messages (ctxpress.live.chat)

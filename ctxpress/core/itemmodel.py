@@ -16,10 +16,10 @@ def features(itype, a, size, reads, patches, in_search):
             math.log1p(patches), 1.0 if in_search else 0.0]
 
 
-def rows(traces, alpha_default=1.17, max_rows_per_item=60):
+def rows(traces, max_rows_per_item=60):
     X, y = [], []
     for tr in traces:
-        reqs = tr["reqs"]; alpha = tr.get("alpha", alpha_default)
+        reqs = tr["reqs"]; over, per_enc = tr.get("overhead") or {}, tr.get("per_enc") or {}
         items, latest, hits, patches_of = [], {}, {}, collections.defaultdict(list)
         reads_cnt, patch_cnt, searched = collections.Counter(), collections.Counter(), set()
         for r, q in enumerate(reqs):
@@ -27,7 +27,7 @@ def rows(traces, alpha_default=1.17, max_rows_per_item=60):
                 if x["seg"] not in ("out", "call"):
                     continue
                 res = x.get("res", [])
-                it = dict(x, born=r, needs=[], dead=len(reqs), type=item_type(x), size_t=x["size"] * alpha,
+                it = dict(x, born=r, needs=[], dead=len(reqs), type=item_type(x), size_t=x["size"] + over.get(x["seg"], 0) + per_enc.get(x["seg"], 0) * x.get("enc", 0),
                           reads=sum(reads_cnt[p] for p in res), patches=sum(patch_cnt[p] for p in res),
                           in_search=any(p in searched for p in res))
                 if x["seg"] == "call" and x.get("kind") == "edit":

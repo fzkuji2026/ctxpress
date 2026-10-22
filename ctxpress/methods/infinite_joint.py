@@ -3,8 +3,8 @@ import math
 import time
 import hashlib
 from ctxpress.methods import infinite_memory as memory
-from ctxpress.core.context_budget import ModelCapacity, TokenCalibration, Action, Budget, choose_combinations
-from ctxpress.core import infinite_policy as policy
+from ctxpress.core.context_budget import ModelCapacity, Action, Budget, choose_combinations
+from ctxpress.core import infinite_policy as policy, tokens
 from ctxpress.methods.infinite_v3 import InfiniteContextV3, SYSTEM
 from ctxpress.core.context_forecast import ActionForecast
 
@@ -61,16 +61,16 @@ class InfiniteContextJoint(InfiniteContextV3):
             if frame['admitted']:
                 with self.cache_lock:
                     self._forecasts().observe(body['operation'],
-                        input_chars=len(memory.canonical(body.get('records',[]))),
-                        output_chars=len(memory.canonical(row)) if row else 0,
+                        input_tokens=tokens.count(memory.canonical(body.get('records',[]))),
+                        output_tokens=tokens.count(memory.canonical(row)) if row else 0,
                         seconds=time.monotonic()-start,cost_estimate=frame['cost'],
                         usable=row is not None and row['retention']!='persistent')
 
     def _observe_proposal_estimate(self,prompt,answer):
         frames=getattr(self.local,'forecast_frames',[])
         if not frames or not isinstance(answer,str):return
-        estimated=(len(SYSTEM)+len(prompt))/4*self.policy['agent']['input']
-        estimated+=len(answer)/4*self.policy['agent']['output']
+        estimated=tokens.count(SYSTEM+prompt)*self.policy['agent']['input']
+        estimated+=tokens.count(answer)*self.policy['agent']['output']
         reserved=frames[-1].get('own_reservation',0.)
         # Update inclusive parent/repair forecasts; keep the spending reservation
         # untouched. Missing responses retain the conservative reservation.
@@ -122,7 +122,7 @@ class InfiniteContextJoint(InfiniteContextV3):
         latency=prediction['seconds']
         expected=prediction['mean_observed_cost_estimate']
         if expected is None:
-            expected=(len(SYSTEM)+len(prompt))/4*rate['input']+body['max_chars']/4*rate['output']
+            expected=tokens.count(SYSTEM+prompt)*rate['input']+body['max_tokens']*rate['output']
         expected=min(estimate,expected)
         if latency>max(0.,budget['deadline']-time.monotonic()):
             self.rejections['predicted_time_budget']+=1
@@ -136,7 +136,7 @@ class InfiniteContextJoint(InfiniteContextV3):
         # Predict this operation's reduction from past same-operation outcomes,
         # capped by eligible history. It is an estimate, not proof of savings.
         eligible=max(0.,before-snapshot['protected_tokens'])
-        predicted_saved=len(memory.canonical(body.get('records',[])))/4*snapshot['ratio']*(1-prediction['retained_ratio'])
+        predicted_saved=tokens.count(memory.canonical(body.get('records',[])))*snapshot['ratio']*(1-prediction['retained_ratio'])
         gross=min(eligible,predicted_saved)*sim.CACHED*self._horizon(sim.r)
         budget.setdefault('forecast_decisions',[]).append(dict(operation=body['operation'],
             prediction=prediction,estimated_gross_saving=gross,reserved_call_cost=estimate,
@@ -156,19 +156,19 @@ class InfiniteContextJoint(InfiniteContextV3):
         model = getattr(sim, 'request_model', None)
         if model not in self.joint['models']:
             raise ValueError('request model lacks an explicit physical context configuration')
-        observed=getattr(sim,'observed_model_aliases',{}).get(model,{})
-        served=observed.get('model',model)
-        calibration = getattr(sim, 'token_calibrations', {}).get(served)
-        if calibration is None:
-            calibration = TokenCalibration(self.joint['token_ratio_prior'])
-        else:
-            # Preserve the declared cold-start upper envelope after feedback.
-            calibration.prior_ratio=max(calibration.prior_ratio,self.joint['token_ratio_prior'])
-        return model, calibration
+        return model, getattr(sim, 'sizes', None)
 
     def _working_limits(self, sim, floor):
-        model, calibration = self._calibration(sim)
-        estimate = calibration.estimate(self._size(sim))
+        model, fit = self._calibration(sim)
+        # Sizes are estimated input tokens (ctxpress.core.sizes). The uncertainty reserve is the largest recent
+        # shortfall of the estimate against the bill; before any answered request, the declared cold-start share
+        # (token_ratio_prior - 1) of the estimate.
+        tokens = self._size(sim)
+        shortfall, samples = fit.envelope() if fit is not None else (0.0, 0)
+        uncertainty = shortfall if samples else max(0., self.joint['token_ratio_prior']-1)*tokens
+        estimate = dict(tokens=tokens, ratio=1.0, upper_ratio=1.0+(uncertainty/tokens if tokens else 0.),
+                        uncertainty=uncertainty, samples=samples,
+                        scope='largest recent shortfall of the size estimate; no guaranteed provider-token bound')
         samples = sorted(self.growth[-128:])
         observed = samples[max(0, math.ceil(self.joint['growth_quantile']*len(samples))-1)] if samples else 0.
         growth = max(self.joint['growth_prior'], observed) * estimate['upper_ratio']
@@ -196,8 +196,6 @@ class InfiniteContextJoint(InfiniteContextV3):
         self.budget['joint_snapshot']=dict(before=estimate['tokens'],
             working_limit=budget.working_limit,protected_tokens=budget.protected_tokens,
             overflow=bool(getattr(self,'force_pressure',False)),ratio=estimate['ratio'])
-        # Parent renders and validates in chars/4 units. Convert only at this
-        # boundary; fees and physical capacity use calibrated provider tokens.
         ratio = estimate['ratio']
         return effective_input/ratio, budget.working_limit/ratio, budget.working_limit/ratio, growth/ratio
 
@@ -229,7 +227,7 @@ class InfiniteContextJoint(InfiniteContextV3):
         for group in groups:
             if len(group)<2 or time.monotonic()>=self.deadline:continue
             row=self._ask3(sim,dict(operation='pressure_compact' if pressure else 'compact',task=task,
-                records=[row for _,row in group],max_chars=self.v3['group_tokens']*4))
+                records=[row for _,row in group],max_tokens=self.v3['group_tokens']))
             if row is not None and row['retention']!='persistent' and (pressure or row['completed']):
                 add([s for unit,_ in group for s in unit],row,'stage')
         def evaluate(indices):
@@ -243,13 +241,13 @@ class InfiniteContextJoint(InfiniteContextV3):
                 if first not in inserted:
                     text=candidate['text'];inserted.add(first)
                     rendered.append(dict(id=-900000000-len(rendered),seg='summary',form='full',
-                        text=text,size=sim.tokens(text),role='user',born=sim.r,last=sim.r))
+                        text=text,size=sim.message_tokens(text),role='user',born=sim.r,last=sim.r))
             after=sim.measure_history(rendered)
             # The rewritten suffix is charged once for the whole combination.
             cache_tokens=0.
             if chosen:
                 first=min(positions[c['items'][0]['id']] for c in chosen)
-                suffix=sum(sim.host_chars(s)/4 for s in sim.ctx[first:])
+                suffix=sum(sim.seg_size(s) for s in sim.ctx[first:])
                 cache_tokens=min(after,max(0.,suffix-(self._size(sim)-after)))
             return Action('keep' if not indices else ','.join(map(str,indices)),after*self.joint_ratio,
                 recovery_cost=sum(c['recovery'] for c in chosen),

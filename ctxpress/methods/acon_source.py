@@ -81,7 +81,7 @@ class ACONSource(Method):
         if item["seg"] != "out" or item.get("protected") or item.get("has_media"):
             return
         text = sim.current_text(item) or ""
-        count = getattr(sim, "tokens", lambda text: max(1, len(text) // 4) if text else 0)
+        count = sim.tokens
         if not needs_summary(text, self.t_obs, count):
             return
         history = self._history(sim, [s for s in sim.ctx if s is not item])
@@ -108,7 +108,7 @@ class ACONSource(Method):
         if not selected:
             return
         history = self._history(sim, selected)
-        count = getattr(sim, "tokens", lambda text: max(1, len(text) // 4) if text else 0)
+        count = sim.tokens
         if self.trigger_tokens is not None:
             from ctxpress.methods.experiment_context import context_tokens
             if context_tokens(sim) < self.trigger_tokens:

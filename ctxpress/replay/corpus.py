@@ -5,8 +5,8 @@ sessions:
   - name: navidrome-a
     harness: codex            # codex | claude-code
     pattern: <glob>
-    alpha: fit                # fit the token scale on this session, or a number (1.17 when the session's
-                              # real input is not the full context, e.g. it ran another method)
+    fit: true                 # fit each item kind's overhead on this session's recorded input tokens; false when
+                              # the session's real input is not its full context (it ran another method)
 Loaded traces are cached in memory per (manifest, keep_text)."""
 from __future__ import annotations
 import glob, os
@@ -34,11 +34,9 @@ def load_manifest(path=None, names=None, keep_text=True):
         files = sorted(glob.glob(os.path.join(root, s["pattern"])))
         if not files:
             raise FileNotFoundError(f"{s['name']}: no file matches {s['pattern']}")
-        fit = s.get("alpha", "fit") == "fit"
+        fit = bool(s.get("fit", True))
         tr = LOADERS[s.get("harness", "codex")](files[0], stop_at_compaction=s.get("stop_at_compaction", True),
-                                                 keep_text=keep_text, name=s["name"], fit_alpha=fit)
-        if not fit:
-            tr["alpha"] = float(s["alpha"])
+                                                 keep_text=keep_text, name=s["name"], fit=fit)
         tr["group"] = s.get("group", s["name"])
         out.append(tr)
     _cache[key] = out

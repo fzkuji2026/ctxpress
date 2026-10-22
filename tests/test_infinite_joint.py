@@ -115,7 +115,8 @@ def test_returned_model_alias_feedback_is_used_by_next_capacity_decision(tmp_pat
         info.update(status=200,response_model='test-actual',usage={'input_tokens':100})
         assert w.observe_response(info)
         _,second=w.rewrite_body(body,'session')
-        assert second['method_decision']['joint_context']['calibration']['samples']==1
+        # the bill of the requested model sizes its next request: unchanged, it is what was billed
+        assert second['method_decision']['joint_context']['calibration']['tokens']==100
     finally:w.close()
 
 
@@ -150,7 +151,7 @@ def test_explicit_overflow_tightens_estimate_retries_and_preserves_output_cap(tm
         assert updated['host_contract']['valid']
         assert method.growth==growth
         assert method.budget is budget
-        assert not hasattr(w.sessions['session'].ctx,'token_calibrations')
+        assert all(m.last is None for m in w.sessions['session'].ctx.size_models.values())
     finally:w.close()
 
 
@@ -239,7 +240,7 @@ def test_forecast_counts_failed_admitted_calls_but_not_cached_rejections(tmp_pat
         calls=len(agent.calls)
         # Repeat the identical failed proposal, not a new request which can
         # make additional formerly recent units eligible.
-        body={k:agent.calls[0][k] for k in ('operation','task','records','max_chars')}
+        body={k:agent.calls[0][k] for k in ('operation','task','records','max_tokens')}
         assert method._ask3(w.sessions['session'].ctx,body) is None
         assert method._forecasts().predict('annotation')['samples']==first['samples']
         assert len(agent.calls)==calls
@@ -256,7 +257,7 @@ def test_late_worker_cannot_pollute_replaced_history_forecast(tmp_path):
         old=w.sessions['session'].ctx.method
         def delayed():
             started.set();assert release.wait(5)
-            old._forecasts().observe('annotation',input_chars=1000,output_chars=100,
+            old._forecasts().observe('annotation',input_tokens=1000,output_tokens=100,
                 seconds=1,cost_estimate=.01,usable=True)
         old.executor=ThreadPoolExecutor(max_workers=1)
         pending=old.executor.submit(delayed)

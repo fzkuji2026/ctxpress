@@ -13,7 +13,7 @@ def summary_host(tokens):
              dict(id='call', seg='call', call_id='read', text='read'),
              dict(id='result', seg='out', call_id='read', text='evidence')]
     written = []
-    host = SimpleNamespace(ctx=items, size=lambda: tokens, sent=lambda: items,
+    host = SimpleNamespace(ctx=items, size=lambda: tokens, sent=lambda: items, request_tokens=lambda items=None: tokens,
                            current_text=lambda s: s['text'],
                            model_text=lambda *a, **kw: '<summary>finding</summary>',
                            summarize_segment=lambda selected, **kw: written.append((selected, kw)))
@@ -79,23 +79,23 @@ def test_resum_explicit_trigger_measures_complete_rendered_input(legacy, rendere
     host, written = summary_host(legacy)
     measured = []
 
-    def measure_history(history):
-        measured.append(history)
+    def request_tokens(items=None):              # the whole next request, as the live context estimates it
+        measured.append(items)
         return rendered
 
-    host.measure_history = measure_history
+    host.request_tokens = request_tokens
     ReSumSource(trigger_tokens=102400, interval=None).step(host, 40)
-    assert measured == [host.ctx]
+    assert measured == [None]
     assert bool(written) is expected
 
 
 def test_resum_legacy_step_ignores_rendered_measurement():
     host, written = summary_host(0)
 
-    def unexpected_measurement(history):
+    def unexpected_measurement(items=None):
         raise AssertionError('Legacy ReSum must use the author estimate')
 
-    host.measure_history = unexpected_measurement
+    host.request_tokens = unexpected_measurement
     ReSumSource(interval=None).step(host, 40)
     assert not written
     ReSumSource().step(host, 40)

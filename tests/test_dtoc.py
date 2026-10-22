@@ -1,5 +1,6 @@
 """DTOC: tool keys, envelopes, manage_context results and timing, host requests, MCP."""
 import json, os, shutil, sys
+from ctxpress.core import tokens
 
 import pytest
 from ctxpress.live import mcp
@@ -41,11 +42,11 @@ def test_keys_envelopes_and_hiding():
     views = run([[("a", "read", "x" * 40)], [("b", "bash", "ok")],
                  [("m", "manage_context", {"enable": [], "disable": ["tk_001", "tk_009"]})],
                  [("m2", "manage_context", {"enable": ["tk_001"], "disable": []})]])
-    assert json.loads(views[0]["a"]) == {"tool_key": "tk_001", "tool": "read", "estimated_tokens": 10, "tool_result": "x" * 40}
-    assert json.loads(views[2]["a"]) == {"tool_key": "tk_001", "tool": "read", "estimated_tokens": 10, "timestamp": 1500,
+    assert json.loads(views[0]["a"]) == {"tool_key": "tk_001", "tool": "read", "estimated_tokens": tokens.count("x" * 40), "tool_result": "x" * 40}
+    assert json.loads(views[2]["a"]) == {"tool_key": "tk_001", "tool": "read", "estimated_tokens": tokens.count("x" * 40), "timestamp": 1500,
                                          "status": "hidden"}
     assert json.loads(views[2]["m"])["tool_result"] == ("Disabled: tk_001\nStatus: 1 visible, 1 hidden tool outputs\n"
-                                                        "Tokens saved (cumulative): 10\nNot found: tk_009")
+                                                        f"Tokens saved (cumulative): {tokens.count('x' * 40)}\nNot found: tk_009")
     assert json.loads(views[2]["m"])["tool_key"] == "tk_003"
     assert json.loads(views[3]["a"])["tool_result"] == "x" * 40
     # m2's own output registers when the next request is assembled

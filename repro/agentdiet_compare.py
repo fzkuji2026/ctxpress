@@ -6,7 +6,8 @@ SYS_PROMPT and INIT_USER_PROMPT) run on agent steps from the Complexity Trap's r
 every step as `Expert.run` does. Ours runs the same steps through LiveContext with AgentDiet. Both sides get the
 same deterministic stand-in for the reflection model, a function of (system prompt, user prompt): two thirds of
 the steps get a short rewrite (accepted), one third a long one (rejected). Per step we compare every message the
-agent model would receive next. Stubs: the model client, tiktoken (both sides count len // 4 + 4) and lz4.
+agent model would receive next. Stubs: the model client and lz4. Both sides count with the real tokenizer: the authors' tiktoken
+encoding_for_model('gpt-4o') is o200k_base, the one ctxpress counts with.
 Our requests cannot prefill the answer, so ours appends an output-format sentence; the stand-in removes it before
 hashing, so equal results still mean the authors' prompt text was reproduced.
 
@@ -36,8 +37,8 @@ def answer(system, user):
 
 
 def load_authors():
-    tok = types.ModuleType("tiktoken")
-    tok.encoding_for_model = lambda name: types.SimpleNamespace(encode=lambda s: [0] * (len(s) // 4 + 4))
+    from ctxpress.core import tokens
+    tokens.encoding()                      # the vocabulary from the local cache, as ctxpress loads it
     lz4 = types.ModuleType("lz4"); lz4.frame = types.ModuleType("lz4.frame"); lz4.frame.compress = lambda b: b
     utils = types.ModuleType("utils"); utils.__path__ = []
     poly = types.ModuleType("utils.llm_polytool")
@@ -46,7 +47,7 @@ def load_authors():
         system = msgs[0]["content"] if isinstance(msgs[0]["content"], str) else msgs[0]["content"][0]["text"]
         return [{"content": answer(system, msgs[1]["content"])}], ["stop"], dict(total_tokens=1, prompt_tokens=1, completion_tokens=1)
     poly.get_llm_response = get_llm_response
-    sys.modules.update({"tiktoken": tok, "lz4": lz4, "lz4.frame": lz4.frame, "utils": utils, "utils.llm_polytool": poly})
+    sys.modules.update({"lz4": lz4, "lz4.frame": lz4.frame, "utils": utils, "utils.llm_polytool": poly})
     os.environ["TRAJ_ANALYSIS"] = json.dumps({"mode": "ours", "model": MODEL})
     spec = importlib.util.spec_from_file_location("traj_analyzer", os.path.join(SRC, "agents", "traj_analyzer.py"))
     ta = importlib.util.module_from_spec(spec); spec.loader.exec_module(ta)

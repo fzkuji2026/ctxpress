@@ -96,7 +96,8 @@ def test_segment_summary_in_place():
 
 
 def test_textops():
-    assert len(textops.head_tail("a\n" * 1000, 100)) < 200
+    from ctxpress.core import tokens
+    assert tokens.count(tokens.head_tail("a\n" * 1000, 100)) <= 100
     s = textops.structured(CODE, "read_code")
     assert "func f10() int {" in s and "return 10" not in s
 

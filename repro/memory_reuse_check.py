@@ -55,7 +55,7 @@ def language(task, bench):
 
 def points(path):
     """Decision points of one session in request order: (r, type, bucket, phase, label, user_turn)."""
-    tr = load(path, stop_at_compaction=False, keep_text=False, fit_alpha=False)
+    tr = load(path, stop_at_compaction=False, keep_text=False, fit=False)
     reqs = tr["reqs"]
     phase, user_at, calls, seen_call = [], [], collections.deque(maxlen=WORK_WINDOW), False
     for q in reqs:                                   # phase and user turns as known at each request

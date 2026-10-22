@@ -15,11 +15,11 @@ class ActionForecast:
         self.prior_weight=prior_weight;self.quantile=quantile;self.history_limit=history_limit
         self.history=defaultdict(lambda:deque(maxlen=history_limit))
 
-    def observe(self, operation, *, input_chars, output_chars, seconds, cost_estimate, usable):
-        for value in (input_chars,output_chars,seconds,cost_estimate):nonnegative(value)
+    def observe(self, operation, *, input_tokens, output_tokens, seconds, cost_estimate, usable):
+        for value in (input_tokens,output_tokens,seconds,cost_estimate):nonnegative(value)
         if not isinstance(operation,str) or not operation or type(usable) is not bool:
             raise ValueError('operation and explicit result required')
-        retained=min(1.,output_chars/max(1.,input_chars)) if usable else 1.
+        retained=min(1.,output_tokens/max(1.,input_tokens)) if usable else 1.
         self.history[operation].append(dict(retained=retained,seconds=seconds,
             cost_estimate=cost_estimate,usable=usable))
 

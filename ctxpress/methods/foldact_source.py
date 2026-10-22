@@ -74,7 +74,7 @@ class FoldActSource(Method):
             return
         # The author clips the concatenated observation prefix, not head/tail.
         # Process each completed host turn once, including resumed histories.
-        count = getattr(sim, 'tokens', lambda text: len(text) // 4)
+        count = sim.tokens
         for group in groups:
             outputs = [s for s in group if s['seg'] == 'out']
             fresh = [s for s in outputs if s['id'] not in self.processed]

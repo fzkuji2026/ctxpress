@@ -2,8 +2,8 @@
 
 C_t = R_t(C_{t-1} + new items). The switches, grouped as in experiment-method.zh.html §8-9:
 
-  trigger      when R_t acts: request size above `t` tokens (chars / 4 of the request as the host sends it), or
-               every request (`always`).
+  trigger      when R_t acts: request size above `t` input tokens (the request as the host sends it, estimated by
+               ctxpress.core.sizes from the provider's bill), or every request (`always`).
   scope        what it may touch: everything before the last `keep_recent` turns; the head (instructions and
                the task, up to the first model output) is never touched; optionally user messages and spec reads
                stay in place (`protect_user`, `protect_spec`).
@@ -48,9 +48,10 @@ checks that on recorded sessions. Every other setting is a departure from Cliff 
 difference in results can be traced to the switches that produced it.
 """
 from __future__ import annotations
-import collections, dataclasses, functools, json, re
+import collections, dataclasses, json, re
 from ctxpress.methods.cliff import (CliffCompaction, Knobs, SUMMARY_HEADER, _TASK_NOTIFICATION_RE, group_turns,
                                     is_summary, truncate)
+from ctxpress.core import tokens
 from ctxpress.core.engine import is_model
 from ctxpress.methods.reuse_memory import ReuseMemory
 from ctxpress.core.cache_model import Cache, RHO
@@ -108,10 +109,6 @@ class Spec(Knobs):
                                           # (x-reasoning-included); without it Codex adds an estimate of all older
                                           # encrypted reasoning in its local history after a new user message and
                                           # compacts early (10-22: 70.7k provider tokens; Vanilla 91-109k, 3 of 17)
-    measure: str = "chars"                # what t and hard_t count: chars = chars/4 of the request; tokens = the
-                                          # provider's input tokens: what the previous request had at its reported
-                                          # input tokens, the model's new items at its reported output tokens, new
-                                          # tool outputs and messages by the o200k_base tokenizer (_count)
     horizon: int = 100                    # cost decider: expected remaining requests
     cached_price: float = 0.1             # cost unit: one uncached input token
     output_price: float = 8.0
@@ -149,6 +146,10 @@ class Spec(Knobs):
     hold_horizon: int = 20                # value: requests ahead the decision looks
     hold_floor: int = 2                   # value: reused within this many requests = in use, always held (R2)
     refetch_work: int = 2000              # value: extra tokens of model work to get a removed output back
+    reread_use: bool = False              # a read of a source an output came from (the same command, or a file it
+                                          # was read from, not edited since) counts as using that output again, and
+                                          # outputs a summary or placeholder removed stay in the reuse statistics:
+                                          # P(reuse) then includes the re-reads that removing content causes
     supersede: bool = False               # outputs replaced by a newer one from the same source (same path read
                                           # again, same command run again) are never held and go at the next batch
     spec_keep_frac: float = 0.0           # resident requirements: the newest spec outputs (SRS, design docs), together
@@ -165,8 +166,7 @@ class Spec(Knobs):
                                           # "deepseek-flash" = DeepSeek on its own route (ctxpress/live/deepseek.py)
     writer_input_price: float = 1.0       # cost: the writer's price per input token, in uncached-input units
     writer_output_price: float = 8.0      # cost: the writer's price per output token, in uncached-input units
-    writer_input_chars: int = 160_000     # hybrid with writer_model: most characters of history the writer reads
-    writer_input_tokens: int = 40_000     # ... the same with measure tokens (o200k_base tokens)
+    writer_input_tokens: int = 40_000     # hybrid with writer_model: most tokens of history the writer reads
     writer_keep_frac: float = 0.0         # hybrid with writer_model: outputs the writer judges not recoverable from
                                           # the environment and still needed (unfixed test failures, error logs)
                                           # stay verbatim, together at most this share of t; file contents, docs,
@@ -187,8 +187,8 @@ class Spec(Knobs):
     boundary_late: float = 2.0            # boundary: rent/F at which it summarizes without one (L = 1.41 L*)
     boundary_window: int = 3              # boundary: requests after a topic change that still count as at it
     at_hard: str = "summary"              # cost, above t: our mechanical summary (the deadline), or leave it to the
-                                          # host ("host"). t is chars/4 of the request, the unit every method's trigger
-                                          # uses; Codex compacts only near 115k provider tokens (136-195k of it)
+                                          # host ("host"). t is the request's input tokens; Codex compacts near
+                                          # 0.9 x its 128k window = 115.2k
     summary_min_frac: float = 0.15        # cost: a summary must remove at least this share of t
     candidates: tuple = ("placeholder", "summary")   # cost: candidate operators (ablation removes one)
 
@@ -210,11 +210,9 @@ class Spec(Knobs):
         if not (0 <= self.state_recovery_factor <= 1) or len(self.cache_rho) < 1:
             raise ValueError("state_recovery_factor in [0, 1]; cache_rho nonempty")
         if (self.writer_model not in ("", "deepseek-flash") or self.writer_input_price < 0
-                or self.writer_output_price < 0 or self.writer_input_chars < 1000 or self.writer_input_tokens < 250 or not 0 <= self.writer_keep_frac <= 1):
-            raise ValueError("writer_model is '' or deepseek-flash; writer prices >= 0; writer_input_chars >= 1000; "
+                or self.writer_output_price < 0 or self.writer_input_tokens < 250 or not 0 <= self.writer_keep_frac <= 1):
+            raise ValueError("writer_model is '' or deepseek-flash; writer prices >= 0; writer_input_tokens >= 250; "
                              "writer_keep_frac in [0, 1]")
-        if self.measure not in ("chars", "tokens"):
-            raise ValueError("measure must be chars or tokens")
         if self.keep_recent < 0 or self.output_keep_chars < 0 or self.writer_tokens < 1 or self.horizon < 1:
             raise ValueError("counts and sizes must be non-negative")
         if not (0 < self.entry_frac and 0 <= self.segment_min_frac and 0 <= self.topic_min_frac
@@ -306,14 +304,12 @@ CLIFF = dict(trigger="size", keep_recent=3, output_keep_chars=500, cmd_max_chars
 
 
 def render_item(x, k, session=None):
-    """Replacement lines for one item leaving the context. With Cliff's settings this is Cliff's summarize_item.
-    With measure tokens every *_chars cap is a cap of value // 4 tokens, lengths counted by the tokenizer."""
+    """Replacement lines for one item leaving the context. With Cliff's settings this is Cliff's summarize_item:
+    its caps are the authors' content rules in characters (an output of at most output_keep_chars characters is
+    kept verbatim); an archived output's reference states its tokens."""
     if x.get("cliff") or x["seg"] == "summary":
         return []
-    if getattr(k, "measure", "chars") == "tokens":
-        cut, size, unit, keep_max = (lambda text, n: _head(text, n // 4)), _count, "tokens", k.output_keep_chars // 4
-    else:
-        cut, size, unit, keep_max = truncate, len, "chars", k.output_keep_chars
+    cut, keep_max = truncate, k.output_keep_chars
     h = x.get("htype")
     if x["seg"] == "msg":
         role, text = x.get("role", ""), (x.get("text") or "").strip()
@@ -333,11 +329,11 @@ def render_item(x, k, session=None):
     full = k.tool_dialect == "full"
     if h == "function_call_output" or (h is None and x["seg"] == "out") or (full and x["seg"] == "out"):
         out = (x.get("text") or "").strip()
-        if out and size(out) <= keep_max:
+        if out and len(out) <= keep_max:
             return [f"result: {out}"]
         if out and k.recall and x.get("id") is not None:
             where = f" session={session}" if session else ""
-            return [f"result: [archived #{x['id']}{where}, {size(out)} {unit}]"]
+            return [f"result: [archived #{x['id']}{where}, {_count(out)} tokens]"]
         return []
     if (h or "").endswith("_call") or (h is None and x["seg"] == "call"):
         args = x.get("wire_arguments", x.get("args", x.get("text", "") if h is None else ""))
@@ -384,13 +380,13 @@ class InfiniteContextV5(CliffCompaction):
             # (39% of chars) are never referenced later, and later references re-read the file first 72% of the
             # time, so the guard releases them (uses within 2 requests before the tag still hold). Specs get 15%:
             # sklearn documents reach 8.9k and Codex's compaction drops them, after which they were re-read within
-            # 1-4 requests in 24/24 cases. t counts provider tokens: chars/4 is 38% above the bill (median), so
-            # all 42 summaries of the 10-22 run came at chars/4 t with 52-83k provider tokens on the request
-            # before (median 72k), every 18-23 requests where the rent gives 28-35; Codex itself compacts near
-            # 115k provider tokens, above t = 102400 tokens.
-            switches = {"measure": "tokens", "reasoning_header": True, "guard": True, "protect_spec": True, "recall": True, "supersede": True,
+            # 1-4 requests in 24/24 cases. t counts input tokens (ctxpress.core.sizes): the 10-22 run counted
+            # chars/4, 38% above the bill (median), so its 42 summaries came with 52-83k billed tokens on the
+            # request before (median 72k), every 18-23 requests where the rent gives 28-35; Codex itself compacts
+            # at 115.2k, above t = 102400.
+            switches = {"reasoning_header": True, "guard": True, "protect_spec": True, "recall": True, "supersede": True,
                         "protect_user": True, "guard_active": 15, "guard_keep_frac": 0.1, "spec_keep_frac": 0.15,
-                        "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0,
+                        "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0, "reread_use": True,
                         "candidates": ("summary",), "boundary_late": 1.0, "release_at_topic": True, "commit_topic": True,
                         "writers": ("hybrid",), "writer_model": "deepseek-flash", "writer_tokens": 3000,
                         "writer_input_price": 0.15, "writer_output_price": 0.6, "writer_keep_frac": 0.05, **switches}
@@ -402,9 +398,6 @@ class InfiniteContextV5(CliffCompaction):
                          cmd_max_chars=spec.cmd_max_chars)
         self.knobs = spec
         self.spec = spec
-        if spec.measure == "tokens":              # every size in tokens: the context counts items by the tokenizer
-            self.count_tokens = _count
-            self._sep = 0
         departures = {k: v for k, v in dataclasses.asdict(spec).items()
                       if k not in ("ops", "reuse_profile") and CLIFF.get(k, getattr(Spec, k, None)) != v}
         if spec.reuse_profile is not None:
@@ -441,6 +434,8 @@ class InfiniteContextV5(CliffCompaction):
         self._recent = []                 # last calls and outputs (phase)
         self._removed = {}                # read command -> its paths, for outputs shortened or removed
         self._sticky = set()              # paths re-read after a removal: L2 leaves them alone
+        self._gone = set()                # reread_use: ids of outputs a summary or placeholder removed
+        self._r, self.last_decision = 0, None   # the request being decided; what the last summary expected
         self._harm = 0
         self._harm_seg = None             # segid of the last harm, for decay
         self._seg_done = 0                # L2 has processed every segment below this segid
@@ -457,9 +452,6 @@ class InfiniteContextV5(CliffCompaction):
         self._since = None                # requests since the last compaction
         self._cache = None                # cost: the provider cache of this session (requests sent so far)
         self._sizes = []                  # cost: request sizes sent, for growth per request
-        self._billed = None               # measure tokens: the fixed part of the request, the last answered
-                                          # request's input tokens less its items by the tokenizer
-        self._reasoning = None            # measure tokens: reasoning tokens of the last response, for its item
         self._topic_pending = False       # cost: a topic change since the last summary
         self._cycle = 0                   # cost: index in _sizes of the first request after the last summary
         self._wait_from = None            # cost: request at which a placeholder batch started waiting
@@ -496,8 +488,6 @@ class InfiniteContextV5(CliffCompaction):
 
     def on_ingest(self, sim, item):
         s = self.spec
-        if s.measure == "tokens" and item.get("htype") == "reasoning" and self._reasoning is not None:
-            item["size"], self._reasoning = self._reasoning, None   # the response's reasoning, as reported
         self._use.add(item)
         if item["seg"] in ("call", "out"):
             self._recent = (self._recent + [item])[-16:]
@@ -531,6 +521,16 @@ class InfiniteContextV5(CliffCompaction):
             res = {p for p in res if not _SPEC_PATH.search(p)}   # polled queue / SRS reads are not the work
             if res:
                 self._paths = (self._paths + [res])[-16:]
+            if s.reread_use:
+                if item.get("kind") == "edit":
+                    self._use.edit(item.get("res") or ())
+                else:
+                    paths = item.get("res") or () if item.get("kind") in ("read", "spec") else ()
+                    again = self._use.read_again(_command(item.get("text")), paths)
+                    if again:
+                        sim.M["op_reread"] += 1
+                        if again & self._gone:
+                            sim.M["op_reread_removed"] += 1
             if item.get("kind") == "edit":       # reading an edited file again is normal, not a loss
                 self._removed = {c: p for c, p in self._removed.items() if not (p & res)}
                 if s.stale_after_edit:
@@ -760,10 +760,14 @@ class InfiniteContextV5(CliffCompaction):
     # ------------------------------------------------------------------ trigger and decider
     def step(self, sim, r):
         self.reset(sim)
+        self._r = r
         self._session = getattr(sim, "store_namespace", None)
         s = self.spec
-        self._use.request(x["id"] for x in sim.ctx if x["seg"] == "out"
-                          and x.get("form", "full") in ("full", "truncated", "structured"))
+        alive = {x["id"] for x in sim.ctx if x["seg"] == "out" and x.get("form", "full") in ("full", "truncated", "structured")}
+        if s.reread_use:                      # removed, but still content the agent may need (until superseded)
+            self._gone -= self._use.newer
+            alive |= self._gone
+        self._use.request(sorted(alive))
         if self._reuse is not None:
             self._reuse.request(r, self._phase())
             self._keep = self._protected(sim)
@@ -845,8 +849,8 @@ class InfiniteContextV5(CliffCompaction):
             return None
         s = self.spec
         before = self._size(sim)
-        fixed = self._fixed_chars(sim) // 4
-        after = fixed + sum(self._chars(sim, x) + self._sep for x in res["new"]) // 4
+        fixed = sim.request_tokens([])
+        after = sim.request_tokens(res["new"])
         removed = before - after
         if removed <= 0:
             return None
@@ -871,11 +875,11 @@ class InfiniteContextV5(CliffCompaction):
         keys, sizes = [], []
         for x in items:
             keys.append(("v", hash(x.get("text"))) if x.get("virtual") else (x["id"], x.get("form", "full"), x.get("kept")))
-            sizes.append((self._chars(sim, x) + self._sep) // 4)
+            sizes.append(self._item_tokens(sim, x))
         return keys, sizes
 
     def _cache_for(self, sim):
-        fixed = self._fixed_chars(sim) // 4
+        fixed = sim.request_tokens([])
         if self._cache is None:
             self._cache = Cache(fixed=fixed, rho=self.spec.cache_rho)
         self._cache.fixed = fixed
@@ -884,57 +888,14 @@ class InfiniteContextV5(CliffCompaction):
     def _hard(self):
         return self.spec.hard_t or self.t
 
-    # Sizes with measure tokens (CliffCompaction's unit hooks return 4 x tokens): an item is its wire form by the
-    # tokenizer (rewrite: hostsize.item_tokens; kept text and summaries as they are sent), the model's reasoning at
-    # the reasoning tokens the provider reported, the rest of the request (instructions, tools) the last answered
-    # request's input tokens less its items, so the size of an unchanged request is what the provider billed.
     def _size(self, sim):
-        """Size of the request about to be sent (chars/4, or tokens)."""
-        return self._request_units(sim) // 4
+        """Input tokens of the request about to be sent (sim.request_tokens: live, estimated from the bill)."""
+        return sim.request_tokens()
 
-    def _request_units(self, sim):
-        if self.spec.measure != "tokens":
-            return super()._request_units(sim)
-        return 4 * sim.request_tokens(fixed=self._fixed_tokens(sim))
-
-    def _fixed_chars(self, sim):
-        return super()._fixed_chars(sim) if self.spec.measure != "tokens" else 4 * self._fixed_tokens(sim)
-
-    def _chars(self, sim, x):
-        if self.spec.measure != "tokens":
-            return super()._chars(sim, x)
-        return 4 * (sim.message_tokens(x["text"]) if x.get("virtual") else sim.seg_size(x))
-
-    def _units(self, text):
-        return super()._units(text) if self.spec.measure != "tokens" else 4 * _count(text)
-
-    def _summary_room(self, sim, fixed, summary):
-        if self.spec.measure != "tokens":
-            return super()._summary_room(sim, fixed, summary)
-        rest = self._size(sim) - sim.seg_size(summary)
-        return 4 * (self.t - rest - sim.message_tokens(SUMMARY_HEADER))
-
-    def _fixed_tokens(self, sim):
-        if self._billed is not None:
-            return self._billed
-        return sim.fixed_tokens if sim.fixed_tokens is not None else sim.prefix
-
-    def _length(self, text):
-        """Length of a text in the measure's unit, in characters (tokens x 4 with measure tokens)."""
-        return len(text) if self.spec.measure != "tokens" else 4 * _count(text)
-
-    def observe_response(self, sim, info):
-        """The provider's usage of a request (rewrite.observe_response; only full Responses prompts). The context
-        still holds what that request sent: the response's items arrive with the next request."""
-        usage = info.get("usage") or {}
-        used, rendered = usage.get("input_tokens"), info.get("rendered_prompt_tokens")
-        if self.spec.measure != "tokens" or not (type(used) is int and used > 0 and type(rendered) in (int, float)
-                                                 and rendered > 0):
-            return
-        self._billed = used - sim.request_tokens(fixed=0)
-        reasoning = (usage.get("output_tokens_details") or {}).get("reasoning_tokens")
-        self._reasoning = reasoning if type(reasoning) is int and reasoning > 0 else None
-        sim.M["v5_billed_samples"] += 1
+    @staticmethod
+    def _length(text):
+        """Length of a text for the authors' content caps (output_keep_chars): characters."""
+        return len(text)
 
     def _stay(self, size_now):
         """Requests a saving lasts: until the context would reach the hard limit anyway (then everything old goes),
@@ -1064,7 +1025,7 @@ class InfiniteContextV5(CliffCompaction):
             hsizes[at] += s.writer_tokens
             members = sum(sim.seg_size(x) for x in res["summary"]["members"])
             if s.writer_model:
-                members = min(members, s.writer_input_tokens if s.measure == "tokens" else s.writer_input_chars // 4)
+                members = min(members, s.writer_input_tokens)
             gain = self._summary_net(sim, now, (nkeys, hsizes), lost,
                                      writer_cost=members * s.writer_input_price + s.writer_tokens * s.writer_output_price,
                                      recovery_scale=s.state_recovery_factor)
@@ -1133,6 +1094,8 @@ class InfiniteContextV5(CliffCompaction):
                 self._audit(sim, best["items"])
                 for x in best["items"]:
                     self._forget(x)
+                if s.reread_use:
+                    self._gone |= {x["id"] for x in best["items"]}
                 self._compacted, self._wait_from, self._ph_seg = True, None, getattr(sim, "segid", 0)
                 sim.M["v5_segment"] += 1
                 sim.M["v5_choose_placeholder"] += 1
@@ -1155,6 +1118,8 @@ class InfiniteContextV5(CliffCompaction):
         """One summary with this writer; a hybrid whose writer fails falls back to the mechanical lines. Returns the
         writer that wrote it, or None when nothing changed."""
         self.knobs = knobs
+        present = {x["id"] for x in sim.ctx if x["seg"] == "out"}
+        lost = self._lost(sim, knobs)
         try:
             if writer == "hybrid":
                 if self._model_compaction(sim, "hybrid"):
@@ -1168,11 +1133,37 @@ class InfiniteContextV5(CliffCompaction):
                 new = next(x for x in reversed(sim.ctx) if x["seg"] == "summary")
                 body = (new.get("text") or "")[len(SUMMARY_HEADER):].strip()
                 new["text"] = SUMMARY_HEADER + "\n\n[state]\n" + state + (STEPS_MARK + body if body else "")
-                new["chars"] = sim.message_chars(new["text"])
-                new["size"] = sim.summary_size(new["text"])
+                new["size"] = sim.message_tokens(new["text"])
             return "mechanical"
         finally:
             self.knobs = self.spec
+            gone = present - {x["id"] for x in sim.ctx if x["seg"] == "out"}
+            if gone:
+                if self.spec.reread_use:
+                    self._gone |= gone
+                self._log_summary(sim, writer, lost)
+
+    def _lost(self, sim, knobs):
+        """The long outputs a summary now would remove, and the requests its saving lasts (for the decision log)."""
+        res = self._compact(list(sim.sent()), knobs)
+        size = self._size(sim)
+        if res is None:
+            return [], 1.0, size
+        lost = [x for x in res["summary"]["members"]
+                if x["seg"] == "out" and self._length(x.get("text") or "") > self.spec.output_keep_chars]
+        return lost, self._stay(size), size
+
+    def _log_summary(self, sim, writer, lost):
+        """What the cost model expected of this summary, for comparison with the re-reads that follow
+        (records: method_decision; op_reread_removed counts the re-reads of removed outputs)."""
+        items, stay, size = lost
+        n = max(1, int(stay))
+        self.last_decision = dict(
+            request=self._r, action="summary", writer=writer, tokens_before=round(size),
+            lost_outputs=len(items), stay=round(stay, 1),
+            expected_rereads=round(sum(self._use.p_reuse(x, n) for x in items), 3),
+            expected_reread_tokens=round(sum(self._use.p_reuse(x, n) * sim.seg_size(x) for x in items)),
+            reuse_observations=sum(self._use.n), reuse_hits=sum(self._use.k))
 
     def _deadline(self, sim, knobs):
         """Above t our own summary runs (the deadline every method's trigger has), written as the spec says; the
@@ -1279,8 +1270,7 @@ class InfiniteContextV5(CliffCompaction):
                 sim.M["v5_writer_failed"] += 1
                 return False
             state["text"] = SUMMARY_HEADER + "\n\n" + state["text"]
-            state["chars"] = sim.message_chars(state["text"])
-            state["size"] = sim.summary_size(state["text"])
+            state["size"] = sim.message_tokens(state["text"])
             return True
         # hybrid: a model-written state ahead of the mechanical lines. With a writer model the earlier summaries
         # are replaced too (their state is carried forward by the writer), as the mechanical chain replaces them.
@@ -1304,8 +1294,7 @@ class InfiniteContextV5(CliffCompaction):
         billed = not self.spec.writer_model       # a writer model's call is billed on its own route
         new = sim.summarize_segment(members, text=text, billed=billed, model_written=not billed, cliff=True)
         if new is not None:
-            new["chars"] = sim.message_chars(text)
-            new["size"] = sim.summary_size(text)
+            new["size"] = sim.message_tokens(text)
             sim.M["v5_writer_" + (self.spec.writer_model or "host")] += 1
         return new is not None
 
@@ -1351,7 +1340,7 @@ class InfiniteContextV5(CliffCompaction):
         steps = [x for x in members if not (x.get("cliff") or is_summary(x))]
         previous = "\n\n".join(p for p in (_state_of(x.get("text") or "") for x in earlier) if p)
         body = json.dumps(dict(previous_state=previous, steps=self._writer_input(sim, steps)), ensure_ascii=False)
-        limit = f"{s.writer_tokens} tokens" if s.measure == "tokens" else f"{s.writer_tokens * 4} characters"
+        limit = f"{s.writer_tokens} tokens"
         answer = sim.model_text(STATE_SYSTEM.replace("LIMIT", limit), body,
                                 purpose="infinite_context_compression", model=s.writer_model)
         try:
@@ -1364,30 +1353,24 @@ class InfiniteContextV5(CliffCompaction):
         state = _flat(reply.get("state", reply))
         if not state.strip():
             return None, []
-        state = (_head(state.strip(), s.writer_tokens * 3 // 2) if s.measure == "tokens"
-                 else truncate(state.strip(), s.writer_tokens * 6))
+        state = _head(state.strip(), s.writer_tokens * 3 // 2)   # the writer may overrun its target by half
         return state, keep if isinstance(keep, list) else []
 
     def _writer_input(self, sim, steps):
         """The removed steps as the writer reads them, oldest first: messages, one-line calls, outputs cut to their
-        head and tail with the archive number. Beyond writer_input_chars (measure tokens: writer_input_tokens) the
-        oldest fifth and the newest steps stay and the middle is left out, said so in its place."""
+        head and tail with the archive number (tokens: a message's first 750, a call's first 100, an output's first
+        250 and last 125). Beyond writer_input_tokens the oldest fifth and the newest steps stay and the middle is left
+        out, said so in its place."""
         s, lines = self.spec, []
-        tok = s.measure == "tokens"
-        size = _count if tok else len
-        cap = s.writer_input_tokens if tok else s.writer_input_chars
+        size, cap = _count, s.writer_input_tokens
         for x in steps:
             text = (x.get("text") or "").strip()
             if x["seg"] == "msg" and text:
-                lines.append(f"{x.get('role') or 'message'}: {_head(text, 750) if tok else truncate(text, 3000)}")
+                lines.append(f"{x.get('role') or 'message'}: {_head(text, 750)}")
             elif x["seg"] == "call":
-                lines.append(f"[{x.get('name') or 'call'}] {_head(text, 100) if tok else truncate(text, 400)}")
+                lines.append(f"[{x.get('name') or 'call'}] {_head(text, 100)}")
             elif x["seg"] == "out" and text:
-                if tok:
-                    cut = _head_tail(text, 250, 125)
-                else:
-                    cut = text if len(text) <= 1500 else (text[:1000] + f"\n... [{len(text) - 1500} chars cut] ...\n"
-                                                          + _failures(text[1000:-500]) + text[-500:])
+                cut = _head_tail(text, 250, 125)
                 stale = " (stale: superseded by a later read or edit)" if self._use.superseded(x) else ""
                 lines.append(f"output #{x.get('id')}{stale}: {cut}")
         sizes = [size(l) for l in lines]
@@ -1429,49 +1412,16 @@ def _failures(text, limit=600):
     return "[failure lines from the cut part]\n" + truncate("\n".join(found), limit) + "\n"
 
 
-_ENCODING = []
-
-
-def _encoding():
-    if not _ENCODING:
-        try:
-            import os
-            os.environ.setdefault("TIKTOKEN_CACHE_DIR", os.path.expanduser("~/.cache/tiktoken"))
-            import tiktoken
-            _ENCODING.append(tiktoken.get_encoding("o200k_base"))
-        except Exception:
-            _ENCODING.append(None)
-    return _ENCODING[0]
-
-
-@functools.lru_cache(maxsize=8192)
-def _count(text):
-    """Tokens of a text by o200k_base (tiktoken; the provider's own tokenizer is not published), chars/4 when
-    tiktoken or its vocabulary is not installed."""
-    enc = _encoding()
-    return len(enc.encode(text, disallowed_special=())) if enc else len(text) // 4
+_count = tokens.count
 
 
 def _head(text, n):
-    """The first n tokens of a text, "..." after them when cut (n <= 0: all of it)."""
-    text = text or ""
-    if n <= 0:
-        return text
-    enc = _encoding()
-    if enc is None:
-        return truncate(text, n * 4)
-    ids = enc.encode(text, disallowed_special=())
-    return text if len(ids) <= n else enc.decode(ids[:n]) + "..."
+    return tokens.head(text, n)
 
 
 def _head_tail(text, head, tail):
     """An output cut to its first `head` and last `tail` tokens, the failure lines between them kept."""
-    enc = _encoding()
-    if enc is None:
-        if len(text) <= 4 * (head + tail):
-            return text
-        cut = f"\n... [{len(text) // 4 - head - tail} tokens cut] ...\n"
-        return text[:4 * head] + cut + _failures(text[4 * head:-4 * tail]) + text[-4 * tail:]
+    enc = tokens.encoding()
     ids = enc.encode(text, disallowed_special=())
     if len(ids) <= head + tail:
         return text
@@ -1555,6 +1505,8 @@ class Usage:
         self.model = 0                    # model items so far
         self.req = 0                      # requests so far
         self.born, self.used = {}, {}     # output id -> model count at arrival / request of last reuse
+        self.arrived, self.res = {}, {}   # output id -> request of arrival / the paths it was read from
+        self.edited = {}                  # path -> request of its last edit
         self.lines, self.idents, self.paths = {}, {}, {}
         self.source, self.newer = {}, set()   # source key -> latest output id; ids replaced by a newer output
         self.pending = []                 # (request, id, bucket) waiting for the horizon to pass
@@ -1591,6 +1543,7 @@ class Usage:
         if x["seg"] == "out" and x.get("id") is not None:
             i = x["id"]
             self.born[i], self.used[i] = self.model, self.req
+            self.arrived[i], self.res[i] = self.req, set(x.get("res") or ())
             lines, idents = _features(_unescape(x.get("text") or ""))
             for h in lines:
                 ids = self.lines.setdefault(h, set())
@@ -1637,6 +1590,25 @@ class Usage:
 
     def seen(self, x):
         return self.model > self.born.get(x.get("id"), -1)
+
+    def edit(self, paths):
+        for p in paths:
+            self.edited[p] = self.req
+
+    def read_again(self, cmd, paths):
+        """A call reading a source earlier outputs came from: the same command, or (`paths`: a read's files) a file
+        they were read from, not edited since they arrived. Those outputs were needed again; returns their ids."""
+        ids = set()
+        old = self.source.get(("cmd", cmd)) if cmd else None
+        if old is not None:
+            ids.add(old)
+        if len(paths) <= self.max_paths:
+            for p in paths:
+                ids |= {i for i in self.paths.get(p, ()) if i not in self.broad}
+        ids = {i for i in ids if not any(self.edited.get(p, -1) >= self.arrived.get(i, 0) for p in self.res.get(i, ()))}
+        for i in ids:
+            self.used[i] = self.req
+        return ids
 
     def last(self, x):
         return self.used.get(x.get("id"), -1)

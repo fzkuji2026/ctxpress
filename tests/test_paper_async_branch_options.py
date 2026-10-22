@@ -71,18 +71,18 @@ def test_comem_rendered_prompt_trigger_is_inclusive(context):
     measurements = []
     rendered_tokens = [102399]
 
-    def measure(items):
+    def measure(items=None):
         measurements.append(items)
         return rendered_tokens[0]
 
-    sim.measure_history = measure
+    sim.request_tokens = measure                  # the whole next request, as the live context estimates it
     method.step(sim, 1)
     assert method.pending is None
     rendered_tokens[0] = 102400
     method.step(sim, 2)
     assert method.pending is not None
     method.pending[2].result(timeout=3)
-    assert measurements == [sim.ctx, sim.ctx]
+    assert measurements == [None, None]
     assert summary.calls[0][1] == dict(purpose='history', model='aux')
 
 
@@ -139,10 +139,10 @@ def test_comem_default_preserves_author_scheduling_without_measurement(context):
     sim = context(method, summarizer=summary)
     pair(sim, 'first')
 
-    def unexpected_measurement(items):
+    def unexpected_measurement(items=None):
         pytest.fail('the default scheduling must not depend on a token measurement')
 
-    sim.measure_history = unexpected_measurement
+    sim.request_tokens = unexpected_measurement
     method.step(sim, 1)
     assert method.pending is None
     method.step(sim, 2)
@@ -269,7 +269,7 @@ def test_context_folding_token_return_fallback_remains_with_count_caps_disabled(
                                  branch_timeout=None, branch_tokens=25600)
     sim = context(method)
     opening = branch(sim, 'branch')
-    work = pair(sim, 'work', text='large evidence ' * 8000)
+    work = pair(sim, 'work', text='large evidence ' * 16000)     # ~32k tokens, above branch_tokens
     method.step(sim, 1)
     assert method.branch == opening and method.forced_turn is not None
     output = next(s for s in sim.ctx if s['id'] == work)

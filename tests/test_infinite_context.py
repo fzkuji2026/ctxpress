@@ -41,9 +41,9 @@ def method(**kwargs):
 def test_spec_pair_user_and_recent_work_survive_and_shrink():
     m = method()
     ctx = context(m)
-    before = ctx.request_chars()
+    before = ctx.request_tokens()
     view = ctx.before_request()
-    assert ctx.request_chars() < before
+    assert ctx.request_tokens() < before
     assert any(s.get('call_id') == 'spec' and s['seg'] == 'call' for s in view)
     assert any('EXACT_API_NAME' in s['text'] for s in view)
     assert any('SOURCE_11' in s['text'] for s in view)
@@ -99,9 +99,9 @@ def test_high_risk_prediction_rejects_compaction():
 @pytest.mark.parametrize('loss', [float('nan'), float('inf'), -0.1, True])
 def test_invalid_numeric_prediction_cannot_commit(loss):
     ctx = context(method(predictor_mode='control', predictor_model='test'), Predictor(loss=loss))
-    before = ctx.request_chars()
+    before = ctx.request_tokens()
     ctx.before_request()
-    assert ctx.request_chars() == before
+    assert ctx.request_tokens() == before
     assert ctx.M['infinite_context_prediction_invalid'] == 1
 
 
@@ -115,10 +115,10 @@ def test_predictor_timeout_keeps_history_and_respects_cooldown():
 
     predictor = Unavailable()
     ctx = context(method(predictor_mode='control', predictor_model='test'), predictor)
-    before = ctx.request_chars()
+    before = ctx.request_tokens()
     ctx.before_request()
     ctx.before_request()
-    assert ctx.request_chars() == before
+    assert ctx.request_tokens() == before
     assert predictor.calls == 1 and ctx.M['summary_failed'] == 1
 
 

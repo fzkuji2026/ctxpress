@@ -52,16 +52,17 @@ def search_space(traces, capacity, trials=32, seed=0, version=1):
     lengths = sorted(len(t['reqs']) for t in traces)
     if not sizes:
         raise ValueError('no tool-output history')
-    budget = max(32, min(4096, int(statistics.median(sizes)/4)))
+    median = statistics.median(sizes)                  # tokens of the median tool output
+    budget = max(32, min(4096, int(0.25 * median)))     # a summary: a quarter of it
     rhythm = max(1, min(16, int(statistics.median(lengths)**.5)))
     grid = dict(trigger_ratio=[.4, .7, .9], target_ratio=[.2, .35], work_turns=[0, 1, 3, 6],
         cooldown=sorted({0, rhythm, min(64, rhythm*2)}), batch_size=[1, 4, 16],
         summary_tokens=sorted({budget, min(8192, budget*2)}),
-        evidence_tokens=sorted({max(256, budget*4), min(65536, max(256, budget*16))}),
+        evidence_tokens=sorted({max(256, int(median)), min(65536, max(256, int(4 * median)))}),
         horizon_scale=[.5, 1., 2.], risk_scale=[1., 2., 4.], prior_strength=[4, 16, 64], min_gain=[0., .1, .5])
     if version == 2:
         # Evidence must cover typical large records; summary size is selected
-        # independently from the old median-output/4 heuristic.
+        # independently from a quarter of the median output.
         p90 = sizes[max(0, math.ceil(.9*len(sizes))-1)]
         evidence = max(1024, min(32768, int(p90)))
         grid.update(trigger_ratio=[.4, .6, .75], target_ratio=[.2, .35],
@@ -82,7 +83,8 @@ def _evaluate(trace, bundle):
     from ctxpress.core.metrics import perf
     method = InfiniteContext(policy=bundle)
     accounted = copy.deepcopy(trace)
-    catalog_tokens = len(json.dumps(method.agent_tools, ensure_ascii=False))/4
+    from ctxpress.core import tokens
+    catalog_tokens = tokens.count(json.dumps(method.agent_tools, ensure_ascii=False))
     accounted['prefix'] += catalog_tokens
     result = engine.run(accounted, method)
     # Replay's recorded outputs are identical across arms; include them explicitly in the total.

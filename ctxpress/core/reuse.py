@@ -11,7 +11,7 @@ actual text)."""
 from __future__ import annotations
 import collections
 from ctxpress.core import engine
-from ctxpress.core import textops
+from ctxpress.core import textops, tokens
 from ctxpress.core.trace import content_type
 from ctxpress.core.calibration import bucket, remaining_from_lengths
 
@@ -132,7 +132,7 @@ def coverage_rates(traces, budget_tokens=2000):
             if it["seg"] != "out" or "text" not in it or not it.get("need_calls"):
                 continue
             ct = content_type(it)
-            versions = {"truncated": textops.head_tail(it["text"], budget_tokens * 4),
+            versions = {"truncated": tokens.head_tail(it["text"], budget_tokens),
                         "structured": textops.structured(it["text"], ct)}
             for c, p in it["need_calls"]:
                 an = (c.get("anchors") or {}).get(p)

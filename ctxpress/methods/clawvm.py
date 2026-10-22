@@ -177,15 +177,17 @@ class ClawVM(Method):
     def _page(self, sim, s):
         c = s.setdefault("_cvm", {})
         if "structured" not in c:
-            from ctxpress.core import textops
+            from ctxpress.core import textops, tokens
             text = s.get("text") or ""
-            c["structured"] = len(textops.structured(text, content_type(s))) // 4 + 12 if text else s["size"] // 4 + 12
-            c["compressed"] = max(1, s["size"] // 3) + 12
+            o = sim.overhead(s)
+            c["structured"] = (tokens.count(textops.structured(text, content_type(s))) if text
+                               else int(0.25 * (sim.seg_size(s) - o))) + o
+            c["compressed"] = max(1, (sim.seg_size(s) - o) // 3) + o
         spec = s["kind"] == "spec"
         rc = 12.0 if s["kind"] == "edit" else 8.0 if s["kind"] in ("read", "command", "spec") else 6.0
         return dict(page_id=str(s["id"]), type="constraint" if spec else "evidence", pin_class="hard" if spec else "soft",
                     min_repr="structured" if spec else "pointer", base_utility=7.0 if spec else 5.0, recompute_cost=1.0 if spec else rc,
-                    tokens=dict(pointer=sim.PH + 5, structured=min(c["structured"], s["size"]), compressed=min(c["compressed"], s["size"]), full=s["size"]))
+                    tokens=dict(pointer=sim.placeholder_size(s, "memid"), structured=min(c["structured"], s["size"]), compressed=min(c["compressed"], s["size"]), full=s["size"]))
 
     def step(self, sim, r):
         outs = sim.outputs()

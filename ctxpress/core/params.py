@@ -69,8 +69,6 @@ class Params:
     # ---------------- context
     window: P = field(default_factory=lambda: P(230000, "measured", "Codex auto-compact limit for the models in our traces"))
     summary_tokens: P = field(default_factory=lambda: P(8000, "measured", "typical Codex compaction summary"))
-    placeholder_tokens: P = field(default_factory=lambda: P(20, "assumed", "'[removed: <call>]'"))
-    label_tokens: P = field(default_factory=lambda: P(15, "assumed", "extra tokens when a placeholder names what it was and its memory id"))
     segsummary_ratio: P = field(default_factory=lambda: P(0.05, "assumed", "segment summary length / segment length"))
     segsummary_min: P = field(default_factory=lambda: P(200, "assumed", ""))
     bill_summary_call: P = field(default_factory=lambda: P(True, "measured", "the compaction request reads the whole context; Codex does not report it in token_count"))

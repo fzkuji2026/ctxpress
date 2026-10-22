@@ -76,7 +76,7 @@ def test_moving_cache_breakpoints_is_not_a_history_revision():
 
 
 def test_deletions_keep_a_valid_tool_loop_and_the_last_thinking():
-    body = conversation(8, size=6000)
+    body = conversation(8, size=12000)                 # ~1500 tokens per result, 12k in all
     (out, _), _ = rewrite({"class": "SlidingWindow", "args": {"t": 9000}}, body)
     assert valid(out) and len(out["messages"]) < len(body["messages"])
     last = out["messages"][-2]

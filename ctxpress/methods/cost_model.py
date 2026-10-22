@@ -20,7 +20,7 @@ With only placeholders and summaries allowed and memory off, this is exactly the
 """
 from __future__ import annotations
 from ctxpress.methods.base import Method
-from ctxpress.core import textops
+from ctxpress.core import textops, tokens
 from ctxpress.core import calibration
 from ctxpress.core.engine import item_type
 from ctxpress.core.trace import content_type
@@ -136,14 +136,16 @@ class CostModel(Method):
     def kept_after(self, sim, s, op):
         """Tokens the item would keep under operation `op` (computed once per item)."""
         if op == "placeholder":
-            return sim.PH + {None: 0, "id": 5, "label": sim.LABEL}[self.memory]
+            return sim.placeholder_size(s, {None: "placeholder", "id": "memid", "label": "memlabel"}[self.memory])
         key = (s["id"], op)
         if key not in self._trial:
             text = s.get("text")
             if op == "truncate":
-                k = (int(len(textops.head_tail(text, int(self.budget / sim.alpha * 4))) / 4 * sim.alpha) + 12) if text is not None else min(s["size"], self.budget) + 12
+                room = max(1, int(self.budget - sim.overhead(s)))
+                k = (tokens.count(tokens.head_tail(text, room)) + sim.overhead(s)) if text is not None else min(sim.seg_size(s), self.budget)
             else:
-                k = (int(len(textops.structured(text, content_type(s))) / 4 * sim.alpha) + 12) if text is not None else int(s["size"] * 0.25) + 12
+                k = (tokens.count(textops.structured(text, content_type(s))) + sim.overhead(s)) if text is not None \
+                    else int(0.25 * (sim.seg_size(s) - sim.overhead(s))) + sim.overhead(s)
             self._trial[key] = k
         return self._trial[key]
 

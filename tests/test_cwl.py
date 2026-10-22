@@ -56,7 +56,7 @@ def session(ctx, tool, script):
         if kind == "u":
             ctx.add_message("user", value)
             continue
-        ctx.add_other("reasoning", 10, text="thinking " * 20)
+        ctx.add_other("reasoning", text="thinking " * 20)
         args = value if kind == "d" else {"path": "f.py"}
         ctx.add_call(f"c{i}", json.dumps(args), name="delimiter" if kind == "d" else kind, args=json.dumps(args, separators=(",", ":")))
         ctx.add_output(f"c{i}", tool.call_tool("delimiter", value)[0] if kind == "d" else value)
@@ -69,11 +69,11 @@ END = lambda desc=None: ("d", dict({"action": "end"}, **({"description": desc} i
 
 
 def test_graduated_eviction_oldest_action_first_and_dependency_order():
-    big = "x" * 4000
+    big = "alpha " * 1000                     # ~1000 tokens
     script = [START("e1"), ("read", big), ("grep", big), END("found it"),
               START("a1", "act", ["e1"]), ("grep", big), ("bash", big), ("read", big), ("edit", big), END(),
               START("e2"), ("read", "small")]
-    ctx = LiveContext(CWL(budget=3500))
+    ctx = LiveContext(CWL(budget=3000))        # ~6400 tokens: three evictions leave ~3400, the episode ~2300
     view = session(ctx, CWL(), script)
     outs = [t for s, t in view if s == "out"]
     # e1 has a dependent, so a1 goes first: search, bash, read, then the whole episode (its opening call stays, as
@@ -83,23 +83,23 @@ def test_graduated_eviction_oldest_action_first_and_dependency_order():
 
 
 def test_action_loses_search_then_bash_then_read_before_the_rest():
-    big = "y" * 4000
+    big = "beta " * 1000
     script = [START("e1"), ("read", "r"), END("ok"), START("a1", "act", ["e1"]), ("grep", big), ("bash", big),
               ("read", big), ("edit", "patched"), END(), START("e2"), ("read", "tail")]
-    ctx = LiveContext(CWL(budget=2600))
+    ctx = LiveContext(CWL(budget=1800))        # ~3400 tokens: grep leaves ~2400, bash ~1400
     outs = [t for s, t in session(ctx, CWL(), script) if s == "out"]
-    assert outs.count("y" * 4000) == 1 and "patched" in outs                # grep and bash gone, read and edit kept
+    assert outs.count(big) == 1 and "patched" in outs                # grep and bash gone, read and edit kept
 
 
 def test_evicted_exploration_returns_when_a_new_action_depends_on_it():
-    big = "z" * 6000
+    big = "zeta " * 750                      # ~1500 tokens; with the bash output the total passes 2200
     script = [START("e1"), ("read", big), END("context"), START("e2"), ("read", "s"), END("more"),
-              ("bash", "w" * 3000), START("a1", "act", ["e1"])]
+              ("bash", "gamma " * 750), START("a1", "act", ["e1"])]
     views = []
     for k in range(len(script)):
-        ctx2 = LiveContext(CWL(budget=2500))
+        ctx2 = LiveContext(CWL(budget=2200))   # the bash output takes the total (~2400) past it
         views.append([t for s, t in session(ctx2, CWL(), script[:k + 1]) if s == "out"])
-    assert "z" * 6000 not in views[-2] and "z" * 6000 in views[-1]
+    assert big not in views[-2] and big in views[-1]
 
 
 def test_user_messages_survive_and_the_host_request_stays_paired():

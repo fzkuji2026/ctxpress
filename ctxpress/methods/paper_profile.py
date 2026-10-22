@@ -92,7 +92,7 @@ def describe(window=WINDOW):
     from ctxpress.methods.experiment_context import role
     window_notes, names = notes(window), settings(window)
     return dict(version=version(window), context=profile(window),
-                counting='complete rendered agent input; shared chars/4 and media estimate, not exact provider tokens',
+                counting='complete rendered agent input; o200k_base tokens per item plus overhead fitted on billed input tokens (ctxpress.core.sizes)',
                 scope=('Shared agent input limit. Every method keeps the host native compaction at the '
                        'window as the only fallback; ctxpress never cuts or refuses an agent request, and a '
                        'request over the window is forwarded and recorded (over_limit). Auxiliary-model inputs '

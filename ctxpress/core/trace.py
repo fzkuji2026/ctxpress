@@ -1,11 +1,14 @@
 """Request-level traces: the agent's real sequence of requests, tool calls and outputs.
 
 A trace is a dict
-  name, file, prefix (tokens of the fixed prefix), alpha (token scale), compacted (bool), harness
+  name, file, prefix (tokens of the fixed prefix), compacted (bool), harness
+  overhead {seg: tokens} and per_enc {seg: tokens per unit of enc}: what an item bills beyond its counted text,
+           fitted on the session's recorded input tokens (fit_overhead)
   reqs: list of requests; request r = dict(input, cached, out_tokens, t, before=[segments appended since r-1])
 A segment is a dict
   seg      'call' | 'out' | 'msg' | 'reason'
-  size     tokens (chars/4 before scaling by alpha)
+  size     tokens of the item's text (o200k_base, ctxpress.core.tokens); the simulator adds the fitted overhead
+  enc      reasoning: the reasoning tokens the provider reported (the text the model reads back is not recorded)
   kind     for call/out: 'read' | 'spec' | 'search' | 'command' | 'edit' | 'other'
   res      file paths the call touches
   outpaths file paths listed in a search / command output
@@ -103,19 +106,42 @@ def patch_anchors(patch_text, path):
     return out
 
 
-def fit_alpha(reqs, prefix):
-    """Token scale: real input tokens vs chars/4 of the context, least squares through the origin."""
-    c = 0; xs = []; ys = []
+FIT_SEGS = ("call", "out", "msg", "reason")
+DEFAULT_OVERHEAD = dict(overhead={}, per_enc={"reason": 1.0})
+
+
+def fit_overhead(reqs):
+    """What the session's recorded input tokens say an item costs beyond its counted text. Request r carries every
+    item recorded before it, so
+        input_r - Σ counted = b + Σ_k o_k · n_k(r) + e · Σ reasoning tokens(r)
+    least squares over the requests, o and e >= 0, b (the fixed prefix: instructions, tools) free."""
+    from ctxpress.core.sizes import nonneg_solve
+    dim = 2 + len(FIT_SEGS)
+    A = [[0.0] * dim for _ in range(dim)]; rhs = [0.0] * dim
+    x = [1.0] + [0.0] * (dim - 1); counted = 0
     for r in reqs:
-        c += sum(x["size"] for x in r["before"]); xs.append(c); ys.append(r["input"] - prefix)
-    return sum(x * y for x, y in zip(xs, ys)) / sum(x * x for x in xs)
+        for s in r["before"]:
+            if s["seg"] in FIT_SEGS:
+                x[1 + FIT_SEGS.index(s["seg"])] += 1
+            x[-1] += s.get("enc", 0); counted += s["size"]
+        y = r["input"] - counted
+        for i in range(dim):
+            rhs[i] += x[i] * y
+            for j in range(dim):
+                A[i][j] += x[i] * x[j]
+    th = nonneg_solve(A, rhs, free=(0,))
+    return max(0, int(round(th[0]))), dict(overhead=dict(zip(FIT_SEGS, th[1:-1])), per_enc={"reason": th[-1]})
 
 
-def finish(name, file, reqs, compacted, harness, fit=True, alpha=1.17):
-    prefix = reqs[0]["input"] - sum(x["size"] for x in reqs[0]["before"])
-    if fit:
-        alpha = fit_alpha(reqs, prefix)
-    return dict(name=name, file=file, reqs=reqs, prefix=prefix, alpha=alpha, compacted=compacted, harness=harness)
+def finish(name, file, reqs, compacted, harness, fit=True):
+    """fit=False: the session's input is not its full context (it ran another method); overhead 0, reasoning at the
+    reported tokens, prefix from the first request."""
+    if fit and reqs:
+        prefix, sizes = fit_overhead(reqs)
+    else:
+        sizes = DEFAULT_OVERHEAD
+        prefix = reqs[0]["input"] - sum(x["size"] + x.get("enc", 0) for x in reqs[0]["before"]) if reqs else 0
+    return dict(name=name, file=file, reqs=reqs, prefix=prefix, compacted=compacted, harness=harness, **sizes)
 
 
 _EXEC_CMD = re.compile(r'cmd\s*:\s*"((?:[^"\\]|\\.)*)"')

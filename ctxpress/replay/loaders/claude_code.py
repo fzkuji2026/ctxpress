@@ -7,6 +7,7 @@ Stops at the first compaction (a 'system' line with subtype compact_boundary) wh
 from __future__ import annotations
 import json
 from datetime import datetime
+from ctxpress.core import tokens
 from ctxpress.core.trace import PATH, SPEC, TEST, classify, norm, sub_of, finish
 
 EDIT_TOOLS = {"Edit", "MultiEdit", "Write", "NotebookEdit"}
@@ -47,7 +48,7 @@ def classify_tool(name, inp):
     return "other", set(), None
 
 
-def load(path, stop_at_compaction=True, keep_text=True, name=None, fit_alpha=True):
+def load(path, stop_at_compaction=True, keep_text=True, name=None, fit=True):
     reqs, cur, calls, compacted, seen = [], [], {}, False, set()
     for line in open(path, encoding="utf-8", errors="ignore"):
         try:
@@ -84,19 +85,19 @@ def load(path, stop_at_compaction=True, keep_text=True, name=None, fit_alpha=Tru
                     kind, res, anchors = classify_tool(b.get("name"), inp)
                     s = json.dumps(inp, ensure_ascii=False)
                     calls[b.get("id")] = (kind, res, t, s)
-                    seg = dict(seg="call", size=len(s) // 4 + 8, kind=kind, res=sorted(res), t=t)
+                    seg = dict(seg="call", size=tokens.count(b.get("name") or "") + tokens.count(s), kind=kind, res=sorted(res), t=t)
                     if anchors is not None:
                         seg["anchors"] = anchors
                     if keep_text:
                         seg["text"] = s
                     cur.append(seg)
                 elif b.get("type") == "text":
-                    cur.append(dict(seg="msg", size=len(b.get("text", "")) // 4 + 4, role="assistant", t=t))
+                    cur.append(dict(seg="msg", size=tokens.count(b.get("text", "")), role="assistant", t=t))
                 elif b.get("type") == "thinking":
-                    cur.append(dict(seg="reason", size=len(b.get("thinking", "")) // 4, t=t))
+                    cur.append(dict(seg="reason", size=tokens.count(b.get("thinking", "")), t=t))
         elif d.get("type") == "user":
             if isinstance(content, str):
-                cur.append(dict(seg="msg", size=len(content) // 4 + 4, role="user", t=t)); continue
+                cur.append(dict(seg="msg", size=tokens.count(content), role="user", t=t)); continue
             for b in content if isinstance(content, list) else []:
                 if not isinstance(b, dict):
                     continue
@@ -104,12 +105,12 @@ def load(path, stop_at_compaction=True, keep_text=True, name=None, fit_alpha=Tru
                     kind, res, t0, inp = calls.get(b.get("tool_use_id"), ("other", set(), None, ""))
                     out = text_of(b.get("content"))
                     outp = sorted({norm(x.group(1)) for x in PATH.finditer(out[:20000])})[:200] if kind in ("search", "command") else []
-                    seg = dict(seg="out", size=len(out) // 4 + 8, kind=kind, res=sorted(res), outpaths=outp,
+                    seg = dict(seg="out", size=tokens.count(out), kind=kind, res=sorted(res), outpaths=outp,
                                sub=sub_of(kind, res), test=bool(kind == "command" and TEST.search(inp)),
                                dur=(t - t0) if (t and t0) else None, t=t)
                     if keep_text:
                         seg["text"] = out
                     cur.append(seg)
                 elif b.get("type") == "text":
-                    cur.append(dict(seg="msg", size=len(b.get("text", "")) // 4 + 4, role="user", t=t))
-    return finish(name or path, path, reqs, compacted, "claude-code", fit=fit_alpha)
+                    cur.append(dict(seg="msg", size=tokens.count(b.get("text", "")), role="user", t=t))
+    return finish(name or path, path, reqs, compacted, "claude-code", fit=fit)

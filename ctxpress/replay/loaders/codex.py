@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 from datetime import datetime
+from ctxpress.core import tokens
 from ctxpress.core.trace import PATH, TEST, classify, norm, sub_of, unescape, finish, patch_anchors
 
 
@@ -21,7 +22,7 @@ def ts(d):
         return None
 
 
-def load(path, stop_at_compaction=True, keep_text=True, name=None, fit_alpha=True):
+def load(path, stop_at_compaction=True, keep_text=True, name=None, fit=True):
     """stop_at_compaction: keep only the part before the first real compaction (the counterfactual replay
     needs the agent's behaviour without compaction)."""
     reqs, cur, calls, compacted = [], [], {}, False
@@ -45,7 +46,7 @@ def load(path, stop_at_compaction=True, keep_text=True, name=None, fit_alpha=Tru
                 inp = p.get("input") or p.get("arguments") or ""
                 kind, res = classify(inp)
                 calls[p.get("call_id")] = (kind, res, t, inp)
-                seg = dict(seg="call", size=len(inp) // 4 + 8, kind=kind, res=sorted(res), t=t)
+                seg = dict(seg="call", size=tokens.count(p.get("name") or "") + tokens.count(inp), kind=kind, res=sorted(res), t=t)
                 if kind == "edit":
                     seg["anchors"] = {p_: patch_anchors(inp, p_) for p_ in res}
                 if keep_text:
@@ -55,16 +56,16 @@ def load(path, stop_at_compaction=True, keep_text=True, name=None, fit_alpha=Tru
                 kind, res, t0, inp = calls.get(p.get("call_id"), ("other", set(), None, ""))
                 out = text_of(p.get("output"))
                 outp = sorted({norm(m.group(1)) for m in PATH.finditer(out[:20000])})[:200] if kind in ("search", "command") else []
-                seg = dict(seg="out", size=len(out) // 4 + 8, kind=kind, res=sorted(res), outpaths=outp,
+                seg = dict(seg="out", size=tokens.count(out), kind=kind, res=sorted(res), outpaths=outp,
                            sub=sub_of(kind, res), test=bool(kind == "command" and TEST.search(unescape(inp))),
                            dur=(t - t0) if (t and t0) else None, t=t)
                 if keep_text:
                     seg["text"] = out
                 cur.append(seg)
             elif pt == "message":
-                cur.append(dict(seg="msg", size=len(text_of(p.get("content"))) // 4 + 4, role=p.get("role"), t=t))
+                cur.append(dict(seg="msg", size=tokens.count(text_of(p.get("content"))), role=p.get("role"), t=t))
             elif pt == "reasoning":
-                cur.append(dict(seg="reason", size=0, t=t))
+                cur.append(dict(seg="reason", size=0, enc=0, t=t))
         elif pt == "token_count":
             u = (p.get("info") or {}).get("last_token_usage") or {}
             if not u.get("input_tokens"):
@@ -75,11 +76,11 @@ def load(path, stop_at_compaction=True, keep_text=True, name=None, fit_alpha=Tru
             rt = u.get("reasoning_output_tokens", 0) or 0
             for x in cur[k:]:
                 if x["seg"] == "reason":
-                    x["size"] = rt
+                    x["enc"] = rt
             reqs.append(dict(input=u["input_tokens"], cached=u.get("cached_input_tokens", 0),
                              out_tokens=u.get("output_tokens", 0), t=t, before=cur[:k]))
             cur = cur[k:]
-    return finish(name or path, path, reqs, compacted, "codex", fit=fit_alpha)
+    return finish(name or path, path, reqs, compacted, "codex", fit=fit)
 
 
 def requests_from_rollout(path, limit=None):

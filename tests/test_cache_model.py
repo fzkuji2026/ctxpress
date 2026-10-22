@@ -79,7 +79,10 @@ def test_summary_waits_for_rent_then_pays():
     now, new = (keys(10), [100] * 10), ([("s", 0)], [200])
 
     class Sim:
-        fixed_chars, fixed_tokens, prefix = 0, 0, 0
+        prefix = 0
+
+        def request_tokens(self, items=None):
+            return 0
     m._sizes, m._cycle = [1000], 0
     young = m._summary_net(Sim(), now, new, [])
     m._sizes = [300 + 50 * k for k in range(15)]
@@ -101,7 +104,10 @@ def test_boundary_takes_a_topic_change_early_and_waits_longer_without_one():
     now, new = (keys(10), [100] * 10), ([("s", 0)], [200])
 
     class Sim:
-        fixed_chars, fixed_tokens, prefix = 0, 0, 0
+        prefix = 0
+
+        def request_tokens(self, items=None):
+            return 0
     first = m._cache.cost(*new, 0.05) - 0.05 * 200
     m._cycle, m._sizes = 0, [200 + 800] * int(0.5 * first / (0.05 * 800) + 1)   # rent just above F / 2
     m._topic_req = None

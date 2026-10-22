@@ -7,6 +7,7 @@ from __future__ import annotations
 import json, math
 from ctxpress.methods.base import Method, K
 from ctxpress.methods.budget import BudgetSpec
+from ctxpress.core import tokens
 from ctxpress.core.compat import js_length, js_stringify
 
 # core/tools/delimiter.ts
@@ -114,7 +115,7 @@ def is_delimiter(name):
 class CWL(Method):
     """Context Window Lifecycle: the agent opens and closes typed episodes with the `delimiter` tool (exploration
     `expl`, ending with a one-line description; action `act`, declaring the explorations it depends on). Above
-    `budget` tokens (the authors' estimate: ceil(chars / 4) per message, system prompt excluded), completed episodes
+    `budget` tokens (o200k_base tokens per message, system prompt excluded; the authors estimate ceil(chars / 4)), completed episodes
     are stripped oldest first, an exploration only after every action depending on it: an action loses its search,
     then bash, then read calls with their results, then the whole episode; an exploration first loses its reasoning.
     The check runs after every level. User messages and everything before the first episode are never removed.
@@ -201,21 +202,22 @@ class CWL(Method):
 
     @staticmethod
     def estimate(sim):
-        """compaction.ts estimateTokens summed over the messages: one assistant message per model turn."""
-        total, chars, turn = 0, None, None
+        """compaction.ts estimateTokens summed over the messages (one assistant message per model turn), each message
+        counted by the tokenizer instead of the authors' ceil(chars / 4)."""
+        total, text_of_turn, turn = 0, None, None
         for s in [x for x in sim.sent() if not (x["seg"] == "msg" and x.get("role") in ("system", "developer"))]:
             model = s["seg"] in ("reason", "call") or (s["seg"] == "msg" and s.get("role") == "assistant")
             if not model or s.get("turn") != turn:
-                if chars is not None:
-                    total += math.ceil(chars / 4)
-                chars, turn = None, None
+                if text_of_turn is not None:
+                    total += tokens.count(text_of_turn)
+                text_of_turn, turn = None, None
             text = sim.render(s) if hasattr(sim, "render") else s.get("text", "")
             if model:
-                chars, turn = (chars or 0) + (js_length(s.get("name") or "") + js_length(js_stringify(s.get("args") or "{}")) if s["seg"] == "call"
-                                              else js_length(text or "")), s.get("turn")
+                part = ((s.get("name") or "") + js_stringify(s.get("args") or "{}")) if s["seg"] == "call" else (text or "")
+                text_of_turn, turn = (text_of_turn or "") + part, s.get("turn")
             else:
-                total += math.ceil(js_length(text or "") / 4)
-        return total + (math.ceil(chars / 4) if chars is not None else 0)
+                total += tokens.count(text or "")
+        return total + (tokens.count(text_of_turn) if text_of_turn is not None else 0)
 
     def segments(self, sim):
         """segmentChunks: start / end anchors are the delimiter outputs; open episodes run to the end."""

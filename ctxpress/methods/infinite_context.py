@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from pathlib import Path
-from ctxpress.core import calibration, infinite_policy, textops
+from ctxpress.core import calibration, infinite_policy, textops, tokens
 from ctxpress.core.engine import item_type
 from ctxpress.core.trace import content_type
 from ctxpress.methods.base import Method
@@ -200,10 +200,8 @@ class InfiniteContext(Method):
         text = self._text(sim, item, summary)
         if text is None:
             return None
-        # Match the engine's retained representation and memory suffix accounting conservatively.
-        size = max(1, int(len(text)/4*sim.alpha)) + 12
         suffix = f'\n[Full output stored at {self._source(sim, item)}.]'
-        size += len(suffix)//4 + 4
+        size = tokens.count(text + suffix) + sim.overhead(item)
         saved = sim.seg_size(item)-size
         risk, life, coverage = self._risk(item, r, op)
         if saved <= 0 or risk > self.policy['constraints']['max_risk']:
@@ -222,7 +220,7 @@ class InfiniteContext(Method):
         out = []
         for item in items:
             text = item.get('text', '')
-            choices = [self._candidate(sim, item, textops.head_tail(text, self.cfg['summary_tokens']*4), 'truncated', r),
+            choices = [self._candidate(sim, item, tokens.head_tail(text, self.cfg['summary_tokens']), 'truncated', r),
                        self._candidate(sim, item, textops.structured(text, content_type(item)), 'structured', r)]
             choices = [c for c in choices if c is not None]
             if choices:
@@ -235,8 +233,8 @@ class InfiniteContext(Method):
             text = item.get('text', '')
             # Never ask the agent to judge omitted portions as though it read the whole record.
             row = dict(id=item['id'], kind=content_type(item), text=text)
-            size = len(json.dumps(row, ensure_ascii=False))
-            if used+size > self.cfg['evidence_tokens']*4:
+            size = tokens.count(json.dumps(row, ensure_ascii=False))
+            if used+size > self.cfg['evidence_tokens']:
                 continue
             payload.append(row); used += size
             if len(payload) >= self.cfg['batch_size']:
@@ -249,14 +247,15 @@ class InfiniteContext(Method):
                 if s.get('role') in ('user', 'system', 'developer')]
         # Bounded task excerpts are flagged; task originals always stay visible to the main model.
         task_text = json.dumps(task, ensure_ascii=False)
-        body = dict(task=task_text[-self.cfg['evidence_tokens']*4:], task_truncated=len(task_text)>self.cfg['evidence_tokens']*4,
+        body = dict(task=tokens.tail(task_text, self.cfg['evidence_tokens']),
+                    task_truncated=tokens.count(task_text)>self.cfg['evidence_tokens'],
                     records=payload, summary_tokens=self.cfg['summary_tokens'])
         fingerprint = infinite_policy.digest(body)
         agent = self.policy['agent']
         prompt = json.dumps(body, ensure_ascii=False)
-        estimate = agent['input']*(len(prompt)+len(PROMPT))/4 + agent['output']*len(payload)*(self.cfg['summary_tokens']+64)
+        estimate = agent['input']*tokens.count(prompt+PROMPT) + agent['output']*len(payload)*self.cfg['summary_tokens']
         # Optimistic gross savings bound: if even this cannot pay, do not call the agent.
-        possible = sim.CACHED*sum(len(row['text'])/4 for row in payload)*self._horizon(r)
+        possible = sim.CACHED*sum(tokens.count(row['text']) for row in payload)*self._horizon(r)
         if fingerprint not in self.proposals and possible <= estimate*(1+self.cfg['min_gain']):
             sim.M['infinite_agent_not_worth_calling'] += 1
             return [], 0., set()
@@ -281,7 +280,7 @@ class InfiniteContext(Method):
                 seen.add(iid)
                 if row['retention'] not in ('persistent', 'working', 'ephemeral') or not isinstance(row['summary'], str):
                     raise ValueError('invalid retention or summary')
-                if len(row['summary']) > self.cfg['summary_tokens']*4 or not row['summary'].strip():
+                if tokens.count(row['summary']) > self.cfg['summary_tokens'] or not row['summary'].strip():
                     raise ValueError('invalid summary size')
                 if row['retention'] == 'persistent':
                     veto.add(iid)
@@ -324,9 +323,9 @@ class InfiniteContext(Method):
         return best, score
 
     def step(self, sim, r):
-        over = bool(self.policy and sim.request_chars()/4 > self.policy['constraints']['capacity'])
+        over = bool(self.policy and sim.request_tokens() > self.policy['constraints']['capacity'])
         self._run(sim, r, force=over)
-        if self.policy and sim.request_chars()/4 > self.policy['constraints']['capacity']:
+        if self.policy and sim.request_tokens() > self.policy['constraints']['capacity']:
             sim.M['infinite_capacity_unresolved'] += 1
             if hasattr(sim, 'store'):
                 from ctxpress.core.host_contract import HostContractError
@@ -397,7 +396,7 @@ class InfiniteContext(Method):
 
     def on_overflow(self, sim, request):
         changed = self._run(sim, max(0, sim.r-1), force=True)
-        if self.policy and sim.request_chars()/4 > self.policy['constraints']['capacity'] and hasattr(sim,'store'):
+        if self.policy and sim.request_tokens() > self.policy['constraints']['capacity'] and hasattr(sim,'store'):
             from ctxpress.core.host_contract import HostContractError
             raise HostContractError('infinite-context overflow remains above declared capacity')
         return changed

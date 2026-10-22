@@ -201,7 +201,7 @@ def rewrite_chat(rewriter, body, key=None, summarizer=None, volatile=None):
     if info is None:
         return body, None
     result = unflatten(body, refs, flat, rewritten["input"], volatile)
-    rewriter.check_context(result, info)
+    rewriter.check_context(result, info, measured=rewritten)
     return result, info
 
 

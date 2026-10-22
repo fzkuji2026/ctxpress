@@ -31,8 +31,23 @@ def validate(profile):
 
 
 def context_tokens(sim):
-    measure = getattr(sim, 'measure_history', None)
-    return math.ceil(measure(sim.ctx)) if measure else sim.size()
+    """Estimated input tokens of the next request (live: the session's size model, ctxpress.core.sizes)."""
+    return math.ceil(sim.request_tokens())
+
+
+def payload_tokens(payload, model=None):
+    """Estimated input tokens of a request body that is not the session's next turn (a summary or compaction
+    request): o200k_base tokens of every item and of the instructions and tools, plus `model`'s fitted overhead
+    per item (a fresh model's prior without one). Chat Completions bodies count their messages' text."""
+    from ctxpress.core import sizes, tokens
+    model = model or sizes.SizeModel()
+    if isinstance(payload.get('input'), list):
+        x, counted = sizes.features([sizes.parts(i) for i in payload['input']])
+        return round(model.model(x, counted + sizes.fixed_tokens(payload)))
+    rows = [("message", tokens.count(m.get('content') if isinstance(m.get('content'), str) else
+                                     sizes._text(m.get('content'))), 0) for m in payload.get('messages') or []]
+    x, counted = sizes.features(rows)
+    return round(model.model(x, counted + sizes.fixed_tokens(payload)))
 
 
 # What a method manages (class attribute `context_role`), reported only; the run setup is the same:
@@ -79,15 +94,17 @@ class ContextLimitError(ValueError):
                          f"{profile['max_context_tokens']}; request not forwarded")
 
 
-def check_body(body, profile):
-    """Measure the request about to be sent. Nothing is cut or refused: a request over the window is
-    forwarded and recorded (`over_limit`), since the host's native compaction is the only fallback."""
-    from ctxpress.core.hostsize import billable_chars
-    tokens = math.ceil(billable_chars(body) / 4)
+def check_body(tokens, profile):
+    """Measure the request about to be sent (`tokens`: its estimated input tokens, the session's size model).
+    Nothing is cut or refused: a request over the window is forwarded and recorded (`over_limit`), since the
+    host's native compaction is the only fallback."""
+    if tokens is None:
+        return dict(**profile, input_tokens_estimate=None, trigger_reached=None, over_limit=None,
+                    counting='no size estimate')
     return dict(**profile, input_tokens_estimate=tokens,
                 trigger_reached=tokens >= profile['compression_trigger_tokens'],
                 over_limit=tokens > profile['max_context_tokens'],
-                counting='shared rendered request chars/4 with media estimate; not exact provider tokens')
+                counting='o200k_base tokens of each item plus overhead fitted on billed input tokens (ctxpress.core.sizes)')
 
 
 def check_auxiliary(client, payload, purpose):
@@ -95,7 +112,7 @@ def check_auxiliary(client, payload, purpose):
     profile = getattr(client, 'context_profile', None)
     if not profile:
         return
-    measured = check_body(payload, profile)
+    measured = check_body(payload_tokens(payload), profile)
     if measured['over_limit']:
         error = ContextLimitError(measured['input_tokens_estimate'], profile)
         if client.record:

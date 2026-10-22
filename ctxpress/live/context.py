@@ -14,26 +14,31 @@ Live bookkeeping that the replay gets from the trace:
 Dedicated memory: with `store_dir`, the original text of every output is written to <store_dir>/<id>.txt and a
 memory placeholder tells the agent where it is (`store_prefix` = the same directory as seen by the agent), so
 retrieval is an ordinary file read and needs no extra tool.
-Summaries need a model; a method's summarize step uses `summarizer(items) -> str` if given, otherwise it is
+Sizes are tokens (ctxpress.core.sizes): each item's text counted with o200k_base when it arrives (`content`), its
+framing and encrypted parts fitted from what the provider billed (`sizes`, one model per requested model), and a
+request estimated from the last answered one. Summaries need a model; a method's summarize step uses `summarizer(items) -> str` if given, otherwise it is
 skipped (the harness's own compaction is expected to handle the window).
 """
 from __future__ import annotations
 import os, time
 import copy
+from ctxpress.core import sizes as sizemodel, tokens
 from ctxpress.core.engine import Simulator
 from ctxpress.core.params import DEFAULT
 from ctxpress.core.trace import classify, sub_of, TEST, PATH, norm, patch_anchors, unescape
 
 
 class LiveContext(Simulator):
-    def __init__(self, method, params=DEFAULT, prefix_tokens=0, summarizer=None, tokens=None,
-                 store_dir=None, store_prefix=None, store_namespace=None, retrieve_tool=None):
-        super().__init__(dict(name="live", reqs=[], prefix=prefix_tokens, alpha=1.0), method, params)
+    def __init__(self, method, params=DEFAULT, prefix_tokens=0, summarizer=None, store_dir=None, store_prefix=None,
+                 store_namespace=None, retrieve_tool=None, size_models=None):
+        super().__init__(dict(name="live", reqs=[], prefix=prefix_tokens), method, params)
         self.base_prefix = prefix_tokens
         self.window = None if getattr(method, "unbounded", False) else self.window
         self.summarizer = summarizer
-        count = self.count
-        self.tokens = tokens or ((lambda s: count(s) + 4) if count else (lambda s: len(s) // 4 + 4))
+        self.size_models = {} if size_models is None else size_models   # requested model -> SizeModel
+        self.request_model = None
+        self.fixed = 0                   # counted tokens of the request apart from its input (instructions, tools)
+        self._order = (None, None, {})
         self.store_dir, self.store_prefix = store_dir, store_prefix or store_dir
         self.store_namespace = store_namespace
         self.retrieve_tool = bool(os.environ.get("CTXPRESS_MCP")) if retrieve_tool is None else retrieve_tool
@@ -54,11 +59,13 @@ class LiveContext(Simulator):
         return self.pinned + self.ctx
 
     # Keyword arguments `host` (all optional) describe the item as the host sends it: htype (its type in the
-    # host's API), chars (its serialized size, hostsize.billable_chars), name / args (a call's tool name and raw
-    # arguments), raw_text (an output's content as the host serializes it, when it is not plain text).
+    # host's API), skind / content / enc (sizes.parts of the wire item: its size kind, counted tokens, encrypted
+    # characters), media (tokens of its images), name / args (a call's tool name and raw arguments).
 
     def add_message(self, role, text, fixed=False, **host):
-        seg = dict(seg="msg", size=self.tokens(text), role=role, text=text, t=time.time(), **host)
+        host.setdefault("skind", "user" if role == "user" else "message")
+        host.setdefault("content", tokens.count(text))
+        seg = dict(seg="msg", size=0, role=role, text=text, t=time.time(), **host)
         if fixed:
             seg["protected"] = True
         head = self.turn == 0                                 # nothing from the model yet: instructions and the task
@@ -66,9 +73,11 @@ class LiveContext(Simulator):
             return self._pin(seg)["id"]
         return self.add(seg)["id"]
 
-    def add_other(self, kind, size, text=None, **host):
+    def add_other(self, kind, text=None, **host):
         """Items methods leave alone (reasoning, the harness's own compaction items); `text`: readable part."""
-        seg = dict(seg="reason", size=size, kind=kind, t=time.time(), **host)
+        host.setdefault("skind", kind if kind in ("reasoning", "compaction") else "other")
+        host.setdefault("content", tokens.count(text or ""))
+        seg = dict(seg="reason", size=0, kind=kind, t=time.time(), **host)
         if kind in ("compaction", "additional_tools"):
             # Host state and executable tool declarations must survive compression.
             seg["protected"] = True
@@ -79,7 +88,9 @@ class LiveContext(Simulator):
     def add_call(self, call_id, text, kind=None, res=None, name=None, **host):
         k, rs = classify(text)
         kind, res = kind or k, sorted(res if res is not None else rs)
-        seg = dict(seg="call", size=self.tokens(text), kind=kind, res=res, text=text, call_id=call_id, name=name,
+        host.setdefault("skind", "call")
+        host.setdefault("content", tokens.count(name or "") + tokens.count(text))
+        seg = dict(seg="call", size=0, kind=kind, res=res, text=text, call_id=call_id, name=name,
                    t=time.time(), **host)
         if kind == "edit":
             seg["anchors"] = {p: patch_anchors(text, p) for p in res}
@@ -101,7 +112,9 @@ class LiveContext(Simulator):
     def add_output(self, call_id, text, dur=None, **host):
         c = self.calls.get(call_id, dict(kind="other", res=[], text=""))
         outp = sorted({norm(m.group(1)) for m in PATH.finditer(text[:20000])})[:200] if c["kind"] in ("search", "command") else []
-        seg = dict(seg="out", size=self.tokens(text), kind=c["kind"], res=c["res"], outpaths=outp, sub=sub_of(c["kind"], c["res"]),
+        host.setdefault("skind", "output")
+        host.setdefault("content", tokens.count(text) + host.get("media", 0))
+        seg = dict(seg="out", size=0, kind=c["kind"], res=c["res"], outpaths=outp, sub=sub_of(c["kind"], c["res"]),
                    test=bool(c["kind"] == "command" and TEST.search(unescape(c.get("text", "")))), text=text, call_id=call_id, dur=dur, t=time.time(),
                    call_name=c.get("name"), call_text=c.get("text", ""), **host)
         s = self.add(seg)
@@ -120,12 +133,89 @@ class LiveContext(Simulator):
         The same method configuration and current summary service are reused.
         """
         metrics, store, next_id = self.M, self.store, self._nid
+        model, fixed = self.request_model, self.fixed
         self.__init__(self.method, self.P, prefix_tokens=self.base_prefix,
-                      summarizer=self.summarizer, tokens=self.tokens,
+                      summarizer=self.summarizer,
                       store_dir=self.store_dir, store_prefix=self.store_prefix,
-                      store_namespace=self.store_namespace, retrieve_tool=self.retrieve_tool)
+                      store_namespace=self.store_namespace, retrieve_tool=self.retrieve_tool,
+                      size_models=self.size_models)
         self.M, self.store, self._nid = metrics, store, next_id
+        self.request_model, self.fixed = model, fixed
         self.M["history_rebases"] += 1
+
+    # ---------------------------------------------------------------- sizes (tokens)
+    @property
+    def sizes(self):
+        return self.size_models.setdefault(self.request_model or "", sizemodel.SizeModel())
+
+    @staticmethod
+    def _row_kind(s):
+        """Size kind of an item as sent (sizes.KINDS, "user" for a user message)."""
+        if s["seg"] == "summary" or s.get("virtual"):
+            return "user" if (s.get("role") or "user") == "user" else "message"
+        if s.get("skind"):
+            return s["skind"]
+        if s["seg"] == "msg":
+            return "user" if s.get("role") == "user" else "message"
+        return {"out": "output", "call": "call"}.get(s["seg"], "other")
+
+    def _positions(self):
+        """{item id: position} in the request and the position of its last user message (memoized on the order)."""
+        items = self.pinned + self.ctx
+        key = (len(items), items[0]["id"] if items else None, items[-1]["id"] if items else None, self._seg_edits)
+        if self._order[0] != key:
+            pos = {x["id"]: i for i, x in enumerate(items)}
+            last = max((i for i, x in enumerate(items) if self._row_kind(x) == "user"), default=-1)
+            self._order = (key, last, pos)
+        return self._order[2], self._order[1]
+
+    def overhead(self, s):
+        kind = self._row_kind(s)
+        kind = "message" if kind == "user" else kind
+        if kind == "reasoning":
+            pos, last = self._positions()
+            if pos.get(s["id"], last) < last:
+                kind = "reasoning_old"
+        return self.sizes.overhead(kind, s.get("enc", 0))
+
+    def kept_suffix(self, s):
+        where = f"{self.store_prefix}/{s['id']}.txt" if self.store_prefix else f"#{s['id']}"
+        return f"\n[Full output stored at {where}.]" if self.memory else ""
+
+    def _counted(self, s):
+        """Counted tokens of an item as it would be sent now."""
+        if s.get("virtual") or s["seg"] == "summary":
+            return tokens.count(s.get("text", ""))
+        f = s.get("form", "full")
+        if f == "full" and not (s["seg"] == "out" and hasattr(self.method, "output_text")):
+            return s["content"]
+        return tokens.count(self.render(s)) + s.get("media", 0)
+
+    def seg_size(self, s):
+        return self._counted(s) + self.overhead(s)
+
+    def message_tokens(self, text):
+        return tokens.count(text) + self.sizes.overhead("message")
+
+    def request_tokens(self, items=None):
+        """Estimated input tokens of the next request with `items` (default: what it would send now), the method's
+        instructions message and the fixed part included: the last billed request plus the modelled difference."""
+        items = self.sent() if items is None else items
+        rows = [(self._row_kind(s), self._counted(s), s.get("enc", 0)) for s in items]
+        from ctxpress.methods.experiment_context import instructions
+        instr = instructions(self.method)
+        if instr:
+            at = next((i for i, s in enumerate(items) if s.get("role") not in ("developer", "system")), len(items))
+            rows.insert(at, ("message", tokens.count(instr), 0))
+        x, counted = sizemodel.features(rows)
+        return self.sizes.estimate(x, counted + self.fixed)
+
+    def size(self):
+        return self.request_tokens()
+
+    def measure_history(self, items):
+        """Estimated input tokens of a request whose history after the fixed head is `items`."""
+        return self.request_tokens(self.pinned + list(items))
 
     # ---------------------------------------------------------------- before each model request
     def before_request(self, t=None):
@@ -158,7 +248,7 @@ class LiveContext(Simulator):
             return
         super().summarize(keep=keep, size=size, keep_user=keep_user, bill_call=False, sid=sid)
         self.ctx[0]["text"] = text
-        self.ctx[0]["size"] = self.tokens(self.ctx[0]["text"])
+        self.ctx[0]["size"] = self.message_tokens(text)
 
     def summarize_segment(self, items, size=None, text=None, billed=True, guidance=None, prompt=None, text_format=None,
                           **extra):
@@ -168,7 +258,7 @@ class LiveContext(Simulator):
         if text is not None:                                  # the method wrote the summary itself
             new = super().summarize_segment(items, size, text=text, billed=billed, **extra)
             if new is not None:
-                new["size"] = self.tokens(text)
+                new["size"] = self.message_tokens(text)
             return new
         if not self.summarizer:
             self.M["summary_skipped"] += 1
@@ -190,7 +280,7 @@ class LiveContext(Simulator):
             text = text_format.replace("{summary}", text)
         new = super().summarize_segment(items, size, billed=billed, **extra)
         if new is not None:
-            new["text"] = text; new["size"] = self.tokens(text)
+            new["text"] = text; new["size"] = self.message_tokens(text)
         return new
 
     def _summary_text(self, items, purpose, budget, guidance=None):
@@ -265,23 +355,10 @@ class LiveContext(Simulator):
             return self.method.output_text(s, s.get("text", ""))       # a method's own presentation (the original's)
         if f == "full" or s["seg"] == "summary":
             return s.get("text", "")
-        what = (s.get("res") or [s.get("kind", "output")])[0]
-        where = f"{self.store_prefix}/{s['id']}.txt" if self.store_prefix else f"#{s['id']}"
-        if f == "placeholder":
-            if hasattr(self.method, "placeholder_text"):                  # a method's own wording (the original's)
-                return self.method.placeholder_text(s, s.get("text", ""))
-            return f"[Old tool output removed to save context ({what}). Re-run the call if you need it.]"
-        tool = f" or call ctxpress_retrieve with id {s['id']}" if self.retrieve_tool else ""
-        if tool and self.store_namespace:
-            tool += f" and session {self.store_namespace}"
-        if f == "memid":
-            return f"[Old tool output stored at {where}. Read it{tool} if you need it.]"
-        if f == "memlabel":
-            label = {"spec": "requirements document", "read": "file content", "search": "search result",
-                     "command": "command output"}.get(s.get("kind"), "tool output")
-            return f"[Old {label} of {what}, stored at {where}. Read it{tool} if you need it.]"
+        if f in ("placeholder", "memid", "memlabel"):
+            return self.placeholder_text(s, f)
         if f in ("truncated", "structured"):
-            return (s.get("kept_text") or "") + (f"\n[Full output stored at {where}.]" if self.memory else "")
+            return (s.get("kept_text") or "") + self.kept_suffix(s)
         return ""
 
     def view(self):

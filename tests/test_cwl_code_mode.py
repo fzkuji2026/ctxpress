@@ -51,11 +51,12 @@ def test_freeform_input_is_included_in_method_argument_accounting():
     rw.rewrite_body(dict(input=wrapped('c', [], 'small', script=script)), 's')
     ctx = rw.sessions['s'].ctx
     assert ctx.calls['c']['args'] == script
-    assert CWL.estimate(ctx) > 2000
+    from ctxpress.core import tokens
+    assert CWL.estimate(ctx) > tokens.count(script)
 
 
 def test_search_eviction_preserves_read_and_edit_outputs_in_the_same_completed_episode():
-    rw = Rewriter(lambda: CWL(budget=2000))
+    rw = Rewriter(lambda: CWL(budget=1300))     # search ~700 tokens, read ~900: only the search has to go
     tool = CWL()
     history = []
     def delimiter(identity, args):

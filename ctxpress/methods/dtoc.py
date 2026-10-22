@@ -3,6 +3,7 @@ chaturvediabhay24/opencode, session/dtoc.ts, tool/manage_context.ts and the tool
 from __future__ import annotations
 import json, math
 from ctxpress.methods.base import Method
+from ctxpress.core import tokens
 from ctxpress.core.compat import js_length
 
 # tool/manage_context.txt
@@ -96,7 +97,7 @@ class Registry:
 
 class DTOC(Method):
     """DTOC: every tool output is shown in an envelope {tool_key, tool, estimated_tokens, tool_result} (keys
-    tk_001, tk_002, ... in history order, estimated_tokens = ceil(chars / 4)); the agent calls
+    tk_001, tk_002, ... in history order, estimated_tokens: o200k_base tokens; the fork estimates ceil(chars / 4)); the agent calls
     manage_context(enable, disable) with keys to hide outputs, which then read {tool_key, tool, estimated_tokens,
     timestamp, status: "hidden"}, or to show them again. As in the fork, keys are registered when a request is
     assembled, so a manage_context call sees the keys of the previous request; its own result is an output too.
@@ -146,7 +147,7 @@ class DTOC(Method):
                 continue
             call = calls.get(s.get("call_id")) or {}
             s["dtoc_key"] = self.registry.register(s.get("call_id") or s["id"], call.get("name") or "tool",
-                                                   math.ceil(js_length(self.answers.get(s["id"], s.get("text", ""))) / 4),
+                                                   tokens.count(self.answers.get(s["id"], s.get("text", ""))),
                                                    int(s.get("t", 0) * 1000))
         for s in sim.ctx:
             key = s.get("dtoc_key")

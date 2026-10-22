@@ -225,8 +225,8 @@ def reuse_profile(rate, kind='read', n=1000):
 
 
 def test_reuse_memory_keeps_likely_needed_outputs_and_their_calls():
-    cliff = run(lambda: InfiniteContext(version=5, t=1000))[-1]
-    kept = run(lambda: InfiniteContext(version=5, t=1000, reuse_profile=reuse_profile(0.5), reuse_keep_frac=1.0, reuse_min_lift=0.5))[-1]
+    cliff = run(lambda: InfiniteContext(version=5, t=3000))[-1]      # a long output is ~1300 tokens
+    kept = run(lambda: InfiniteContext(version=5, t=3000, reuse_profile=reuse_profile(0.5), reuse_keep_frac=1.0, reuse_min_lift=0.5))[-1]
     old = [x for x in kept if x.get('type') == 'function_call_output' and 'line ' in str(x.get('output'))]
     assert len(old) > len([x for x in cliff if x.get('type') == 'function_call_output' and 'line ' in str(x.get('output'))])
     calls = {x['call_id'] for x in kept if x.get('type') == 'function_call'}

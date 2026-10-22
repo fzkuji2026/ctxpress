@@ -101,7 +101,7 @@ def test_clawvm_selects_under_budget():
     ctx.add_message("user", "task")
     for i in range(8):                                                        # one request per tool call, as live
         ctx.add_call(f"c{i}", "sed -n 1,200p docs/srs/m_SRS.md" if i == 0 else f"cat a/f{i}.go")
-        ctx.add_output(f"c{i}", "".join(f"line {i} {j}\n" for j in range(60)))
+        ctx.add_output(f"c{i}", "".join(f"line {i} {j}\n" for j in range(30)))   # ~150 tokens each
         view = ctx.before_request()
     outs = [v for v in view if v["seg"] == "out"]
     assert outs[-1]["form"] == "full"                                         # demanded: the newest output
@@ -116,7 +116,9 @@ def test_cliff_rewrites_requests():
     body, info = rw.rewrite_body({"model": "m", "input": history(8)}, "s")
     inp = body["input"]
     assert info["changed"] and inp[1]["role"] == "user" and inp[1]["content"][0]["text"].startswith("The following is a summary")
-    assert [x["type"] for x in inp[2:]] == ["function_call", "function_call_output"] * 3      # keep_recent = 3
+    # the last summary kept keep_recent = 3 whole turns; turns that came after it are still there
+    pairs = len(inp[2:]) // 2
+    assert [x["type"] for x in inp[2:]] == ["function_call", "function_call_output"] * pairs and 3 <= pairs < 8
 
 
 def test_swepruner_prunes_annotated_outputs():

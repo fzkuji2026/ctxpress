@@ -61,9 +61,9 @@ class Agent:
 
 def test_archive_survives_and_recoverable_text_reduces_context(tmp_path):
     ctx = live(tmp_path)
-    before = ctx.request_chars()
+    before = ctx.request_tokens()
     ctx.before_request()
-    assert ctx.request_chars() < before and ctx.M['infinite_compacted_records']
+    assert ctx.request_tokens() < before and ctx.M['infinite_compacted_records']
     for item in ctx.ctx:
         if item['seg'] == 'out':
             assert (tmp_path/f'{item["id"]}.txt').read_text() == item['text']

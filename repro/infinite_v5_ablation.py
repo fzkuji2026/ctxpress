@@ -15,7 +15,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.environ.get("CTXPRESS_DATA", os.path.join(ROOT, "data"))
 sys.path.insert(0, REPO)
 from ctxpress.replay.loaders.codex import requests_from_rollout as requests  # noqa: E402
-from ctxpress.core.hostsize import billable_chars  # noqa: E402
+from ctxpress.core import sizes as sizemodel, tokens  # noqa: E402
 
 CACHED_PRICE = 0.1                     # a cached input token costs a tenth of an uncached one
 ARMS = {
@@ -71,7 +71,7 @@ def measure(path, threshold, switches):
     sent = breaks = refused = 0
     cost = observed = 0.0
     prev = None
-    cache = Cache(fixed=len(instr or "") // 4)   # the provider as measured (core/cache_model.py)
+    cache = Cache(fixed=tokens.count(instr or ""))   # the provider as measured (core/cache_model.py)
     for n, inp in enumerate(reqs):
         body = {"model": "gpt-5", "instructions": instr, "input": inp, "tools": [], "stream": True}
         try:
@@ -80,8 +80,8 @@ def measure(path, threshold, switches):
             refused, reqs = 1, reqs[:n]
             break
         cur = [json.dumps(x, sort_keys=True) for x in out["input"]]
-        chars = [billable_chars(x) for x in out["input"]]   # images by dimensions, not base64 length
-        size = sum(chars) // 4
+        sizes = sizemodel.item_tokens(out["input"], sizemodel.SizeModel())   # o200k_base, prior overhead
+        size = sum(sizes)
         sent += size
         j = 0                                # items served from the cache: the prefix shared with the last request
         if prev is not None:
@@ -89,14 +89,13 @@ def measure(path, threshold, switches):
                 j += 1
             if j < len(prev):
                 breaks += 1
-        cached = sum(chars[:j]) // 4
+        cached = sum(sizes[:j])
         cost += CACHED_PRICE * cached + (size - cached)
-        sizes = [c // 4 for c in chars]
         hit = cache.expect(cur, sizes)
         observed += CACHED_PRICE * hit + (cache.fixed + sum(sizes) - hit)
         cache.record(cur, sizes)
         prev = cur
-    raw = sum(billable_chars(x) for inp in reqs for x in inp) // 4
+    raw = sum(sum(sizemodel.item_tokens(inp, sizemodel.SizeModel())) for inp in reqs)
     M = next(iter(rw.sessions.values())).ctx.M if rw.sessions else {}
     layers = {k: int(M.get(k, 0)) for k in COUNTERS}
     return dict(requests=len(reqs), sent_tokens=sent, raw_tokens=raw, cache_breaks=breaks, refused=refused,

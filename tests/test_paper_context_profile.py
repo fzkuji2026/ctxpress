@@ -9,8 +9,17 @@ import pytest
 
 from ctxpress.methods import build
 from ctxpress.methods.paper_catalog import method_entries
-from ctxpress.methods.experiment_context import PROFILE, ContextLimitError, check_body, instructions, role
+from ctxpress.methods.experiment_context import PROFILE, ContextLimitError, check_body, instructions, payload_tokens, role
 from ctxpress.live.rewrite import Rewriter
+
+
+def filler(n):
+    """A text of about n o200k_base tokens (one per ' x')."""
+    return 'x ' * n
+
+
+def measured(request):
+    return check_body(payload_tokens(request), PROFILE)
 
 
 def body(text='task', **extra):
@@ -48,11 +57,11 @@ def test_all_profiles_reach_runtime_and_clone_without_losing_limits():
     assert not hasattr(build({'class': 'CWL'}), 'context_profile')
 
 
-def history(outputs, size=16000):
+def history(outputs, size=4000):
     request = body()
     for i in range(outputs):
         request['input'] += [dict(type='function_call', call_id=str(i), name='exec', arguments='{}'),
-                             dict(type='function_call_output', call_id=str(i), output='x' * size)]
+                             dict(type='function_call_output', call_id=str(i), output=filler(size))]
     return request
 
 
@@ -63,17 +72,17 @@ def test_over_window_request_is_sent_unchanged_and_recorded():
     assert outputs(result) == outputs(request)  # only the method's instructions are added
     row = info['experiment_context']
     assert row['over_limit'] and row['input_tokens_estimate'] > 128000 and 'overflow_fallback' not in row
-    assert not check_body(history(20), PROFILE)['over_limit']
+    assert not measured(history(20))['over_limit']
 
 
 def test_maximum_is_decimal_and_counts_fixed_prompt_and_tools():
-    request = body(instructions='x' * 20000, tools=[{'name': 'exec', 'description': 'x' * 30000}])
-    row = check_body(request, PROFILE)
+    request = body(instructions=filler(5000), tools=[{'name': 'exec', 'description': filler(7500)}])
+    row = measured(request)
     assert row['input_tokens_estimate'] > 12500
     result, info = Rewriter(factory()).rewrite_body(request, 'session')
     assert '128000' in json.dumps(result) and '131072' not in json.dumps(result)
     assert info['experiment_context']['max_context_tokens'] == 128000
-    _, info = Rewriter(factory()).rewrite_body(body(instructions='x' * (128000 * 4)), 'session')
+    _, info = Rewriter(factory()).rewrite_body(body(instructions=filler(128000)), 'session')
     assert info['experiment_context']['over_limit']
 
 
@@ -81,8 +90,8 @@ def test_final_render_is_checked_after_the_method_can_compress():
     request = body()
     for i in range(3):
         request['input'] += [dict(type='function_call', call_id=str(i), name='exec', arguments='{}'),
-                             dict(type='function_call_output', call_id=str(i), output='x' * 180000)]
-    assert check_body(request, PROFILE)['over_limit']
+                             dict(type='function_call_output', call_id=str(i), output=filler(45000))]
+    assert measured(request)['over_limit']
     _, info = Rewriter(factory('ComplexityTrap', n=1)).rewrite_body(request, 'session')
     assert info['experiment_context']['input_tokens_estimate'] < 102400
     assert info['host_contract']['valid']
@@ -92,7 +101,7 @@ def test_final_render_is_checked_after_the_method_can_compress():
 def test_nonresponses_hosts_check_final_tools_and_system(dialect):
     manager = Rewriter(factory())
     request = dict(model='test-model', messages=[dict(role='user', content='task')],
-                   tools=[dict(name='exec', description='x' * 520000)])
+                   tools=[dict(name='exec', description=filler(130000))])
     if dialect == 'chat':
         from ctxpress.live.chat import rewrite_chat as rewrite
     else:
@@ -111,10 +120,10 @@ def test_acon_uses_whole_input_not_just_selected_history():
         ctx.add_output(str(i), 'short result')
     seen = []
     ctx.model_text = lambda *a, **kw: seen.append(kw['purpose']) or '# History Summary\nsummary'
-    ctx.measure_history = lambda _: 102399
+    ctx.request_tokens = lambda items=None: 102399
     ctx.before_request()
     assert not seen
-    ctx.measure_history = lambda _: 102400
+    ctx.request_tokens = lambda items=None: 102400
     ctx.before_request()
     assert seen == ['history']
 
@@ -182,7 +191,7 @@ def test_auxiliary_calls_cannot_use_a_larger_window(dialect):
     client = Client(no_connect, '/test', {}, {'model': 'test'}, rows.append)
     client.context_profile = PROFILE
     with pytest.raises(ContextLimitError):
-        client.summarize_prompt('', 'x' * 520000)
+        client.summarize_prompt('', filler(130000))
     assert rows[-1]['caller'] == 'summary' and rows[-1]['upstream_sent'] is False
 
 
@@ -255,7 +264,7 @@ def test_every_token_setting_follows_the_window(window):
 
 @pytest.mark.parametrize('outputs,masked', [(3, False), (12, True)])
 def test_window_complexity_trap_masks_only_once_the_input_reaches_the_trigger(outputs, masked):
-    request = history(outputs, size=40000)   # 10k tokens each
+    request = history(outputs, size=10000)   # 10k tokens each
     result, _ = Rewriter(factory('ComplexityTrap', n=1, trigger_tokens=102400)).rewrite_body(copy.deepcopy(request), 's')
     kept = [i['output'] for i in result['input'] if i.get('type') == 'function_call_output']
     assert (sum('omitted' in text for text in kept) == outputs - 1) is masked
@@ -277,10 +286,10 @@ def test_window_complexity_trap_summary_checkpoints_all_but_latest_m_at_the_trig
         ctx.add_message('assistant', 'inspect')
         ctx.add_call(str(i), 'ls')
         ctx.add_output(str(i), 'result')
-    ctx.measure_history = lambda _: 102399
+    ctx.request_tokens = lambda items=None: 102399
     ctx.before_request()
     assert not calls
-    ctx.measure_history = lambda _: 102400
+    ctx.request_tokens = lambda items=None: 102400
     ctx.before_request()
     assert len(calls) == 1
     assert len(ctx.method.turns(ctx)) == 2 and any(s['seg'] == 'summary' for s in ctx.ctx)
@@ -293,16 +302,16 @@ def test_author_turn_schedule_is_unchanged_without_a_trigger():
 
 def test_anthropic_capacity_trigger_counts_the_system_prompt():
     from ctxpress.live.anthropic import rewrite_messages
-    request = dict(model='test-model', system='s' * 80000, tools=[dict(name='exec', description='run')],
+    request = dict(model='test-model', system=filler(20000), tools=[dict(name='exec', description='run')],
                    messages=[dict(role='user', content=[dict(type='text', text='task')])])
     result, info = rewrite_messages(Rewriter(factory()), request, 'session')
     assert info['rendered_prompt_tokens'] >= 20000  # the measured body includes the 20k-token system prompt
-    assert result['system'][0]['text'] == 's' * 80000 and len(result['system']) <= 2  # not duplicated
+    assert result['system'][0]['text'] == filler(20000) and len(result['system']) <= 2  # not duplicated
 
 
 def test_comparison_reports_window_conformance_beside_the_grade():
     from ctxpress.harness.results.task_compare import _context_window
-    row = lambda tokens, **extra: dict(request=1, experiment_context=check_body(body('x' * tokens * 4), PROFILE), **extra)
+    row = lambda tokens, **extra: dict(request=1, experiment_context=measured(body(filler(tokens))), **extra)
     clean = _context_window(dict(rewrites=[row(1000), row(2000, experiment_context_provider_check=dict(
         input_tokens=2100, max_context_tokens=128000, within_limit=True))]))
     assert clean['conformant'] and clean['over_limit_requests'] == 0 and clean['provider_checked_requests'] == 1

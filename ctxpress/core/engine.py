@@ -27,9 +27,10 @@ from __future__ import annotations
 import collections, statistics
 from ctxpress.core.params import DEFAULT, Params
 from ctxpress.core.trace import content_type
-from ctxpress.core import textops
+from ctxpress.core import textops, tokens
 
 SUMMARY_FORMS = ("summary", "segsummary")
+PLACEHOLDER_FORMS = ("placeholder", "memid", "memlabel")
 
 
 def item_type(s):
@@ -66,7 +67,6 @@ class Simulator:
             params = frozen
         self.trace, self.method, self.P = trace, method, params
         self.reqs, self.prefix = trace["reqs"], trace["prefix"]
-        self.alpha = trace.get("alpha", 1.17)
         self.start, self.horizon = start, horizon
         self.window = params.get("window") if window == "default" else window
         if getattr(method, "unbounded", False):
@@ -76,7 +76,7 @@ class Simulator:
         self.ec = params.get("e_cold") if e_cold is None else e_cold
         g = params.get
         self.CACHED, self.WRITE, self.OUT = g("cached"), g("write"), g("out")
-        self.PH, self.LABEL, self.EXTRA_OUT = g("placeholder_tokens"), g("label_tokens"), g("extra_out")
+        self.EXTRA_OUT = g("extra_out")
         self.ctx, self.r, self.t = [], 0, None
         self.M = collections.Counter()
         self._nid = 0
@@ -87,9 +87,6 @@ class Simulator:
         self._seen_summaries = set()
         self.segid, self._seg_edits, self._last_user_r = 0, 0, 0
         self.turn, self.uturn, self._prev_model, self._prev_out = 0, 0, False, False
-        self.fixed_chars = None               # host: size of the request without its items (set by the host)
-        self.fixed_tokens = None              # host, with count: its tokens
-        self.count = getattr(method, "count_tokens", None)   # tokenizer: sizes are tokens of the serialized item
         self.n_input = None                   # host: number of items in the request as the harness sent it
         self.host = None                      # host adapter (rewrite.ResponsesHost): renders method-written messages
         self.memory = getattr(method, "memory", None)
@@ -97,53 +94,42 @@ class Simulator:
         gaps = [b - a for a, b in zip(ts, ts[1:]) if b and a and b > a]
         self.model_time = params.get("latency_extra_request") or (statistics.median(gaps) if gaps else 10.0)
 
-    # ------------------------------------------------------------------ sizes
+    # ------------------------------------------------------------------ sizes (tokens: ctxpress.core.tokens)
+    def overhead(self, s):
+        """Tokens an item bills beyond its counted text: the trace's fit per segment kind (trace.fit_overhead; a
+        summary is a message), plus its fitted rate per unit of `enc` (replay: reported reasoning tokens). The live
+        context fits the same from the provider's bill."""
+        k = "msg" if s["seg"] == "summary" else s["seg"]
+        return (self.trace.get("overhead") or {}).get(k, 0.0) + (self.trace.get("per_enc") or {}).get(k, 0.0) * s.get("enc", 0)
+
     def seg_size(self, s):
         f = s.get("form", "full")
         if f == "full":
-            return s["size"]
-        return s.get("kept", self.PH)
+            return s["content"] + self.overhead(s) if "content" in s else s["size"]
+        if f in ("truncated", "structured"):
+            return s["kept"] + tokens.count(self.kept_suffix(s)) + s.get("media", 0) + self.overhead(s)
+        if f in PLACEHOLDER_FORMS:
+            return tokens.count(self.placeholder_text(s, f)) + s.get("media", 0) + self.overhead(s)
+        return s.get("kept", 0)
+
+    def kept_suffix(self, s):
+        """Text a truncated or structured item carries after what it kept (the live context: where the original is)."""
+        return ""
+
+    def tokens(self, text):
+        return tokens.count(text)
 
     def size(self):
         return self.prefix + sum(self.seg_size(s) for s in self.ctx)
 
-    def host_chars(self, s):
-        """Characters the item takes in the host's request (exact for live items in full; otherwise ~4 / token)."""
-        if s.get("form", "full") == "full" and "chars" in s:
-            return s["chars"]
-        return self.seg_size(s) * 4
-
-    def request_chars(self, items=None):
-        from ctxpress.core.hostsize import request_chars
-        items = self.sent() if items is None else items
-        fixed = self.fixed_chars if self.fixed_chars is not None else self.prefix * 4
-        return request_chars(fixed, [self.host_chars(s) for s in items])
-
-    def message_chars(self, text):
-        """Host size of a user message the method adds (a summary)."""
-        return self.host.message_chars(text) if self.host else len(text) + 60
-
     def message_tokens(self, text):
-        """With count: tokens of that message as the host serializes it."""
-        if self.host:
-            import json
-            return self.count(json.dumps(self.host.message(text), ensure_ascii=False))
-        return self.count(text) + 15
+        """Tokens of a message the method adds (a summary)."""
+        return tokens.count(text) + self.overhead(dict(seg="summary"))
 
-    def summary_size(self, text):
-        """Size of a summary message the method writes: tokens with count, else the context's estimate."""
-        return self.message_tokens(text) if self.count else self.tokens(text)
-
-    def request_tokens(self, items=None, fixed=None):
-        """With count: tokens of the next request, `fixed` (default the host's fixed_tokens) plus every item."""
+    def request_tokens(self, items=None):
+        """Tokens of the next request: the fixed part and every item (`virtual`: a summary not yet committed)."""
         items = self.sent() if items is None else items
-        if fixed is None:
-            fixed = self.fixed_tokens if self.fixed_tokens is not None else self.prefix
-        return fixed + sum(self.message_tokens(s["text"]) if s.get("virtual") else self.seg_size(s) for s in items)
-
-    def text_size(self, text):
-        """Size of text an operation keeps: tokens with count, else chars/4 at alpha."""
-        return self.count(text) if self.count else max(1, int(len(text) / 4 * self.alpha))
+        return self.prefix + sum(self.message_tokens(s["text"]) if s.get("virtual") else self.seg_size(s) for s in items)
 
     def sent(self):
         """The items of the next request, in order (the live context adds its fixed head in front)."""
@@ -178,10 +164,9 @@ class Simulator:
 
     def new(self, seg):
         s = dict(seg); s["id"] = self._nid; self._nid += 1
-        if "tok" in s:                        # counted by the tokenizer over the wire item
-            s["size"] = max(1, s["tok"])
-        else:
-            s["size"] = max(1, int(s["size"] * self.alpha)) if s["seg"] != "summary" else s["size"]
+        if s["seg"] != "summary":
+            s.setdefault("content", s["size"])       # the loader's counted tokens; size adds the fitted overhead
+            s["size"] = max(1, round(s["content"] + self.overhead(s)))
         s.setdefault("form", "full"); s["born"] = self.r; s["last"] = self.r
         return s
 
@@ -239,19 +224,37 @@ class Simulator:
     def placeholder_form(self):
         return {None: "placeholder", "id": "memid", "label": "memlabel"}[self.memory]
 
-    def placeholder_size(self, form=None):
+    def placeholder_text(self, s, form=None):
+        """What a placeholder says in the request (a method's own wording if it has one, the original's)."""
         form = form or self.placeholder_form()
-        return self.PH + {"placeholder": 0, "memid": 5, "memlabel": self.LABEL}[form]
+        what = (s.get("res") or [s.get("kind", "output")])[0]
+        prefix = getattr(self, "store_prefix", None)
+        where = f"{prefix}/{s['id']}.txt" if prefix else f"#{s['id']}"
+        if form == "placeholder":
+            if hasattr(self.method, "placeholder_text"):
+                return self.method.placeholder_text(s, s.get("text", ""))
+            return f"[Old tool output removed to save context ({what}). Re-run the call if you need it.]"
+        tool = f" or call ctxpress_retrieve with id {s['id']}" if getattr(self, "retrieve_tool", False) else ""
+        if tool and getattr(self, "store_namespace", None):
+            tool += f" and session {self.store_namespace}"
+        if form == "memid":
+            return f"[Old tool output stored at {where}. Read it{tool} if you need it.]"
+        label = {"spec": "requirements document", "read": "file content", "search": "search result",
+                 "command": "command output"}.get(s.get("kind"), "tool output")
+        return f"[Old {label} of {what}, stored at {where}. Read it{tool} if you need it.]"
+
+    def placeholder_size(self, s, form=None):
+        """Tokens of item `s` as a placeholder."""
+        return tokens.count(self.placeholder_text(s, form)) + self.overhead(s)
 
     def to_placeholder(self, items, form=None):
         form = form or self.placeholder_form()
-        size = self.placeholder_size(form)
         for s in items:
             if s.get("protected"):
                 continue
             if s.get("form", "full") != form:
                 self.M["op_" + form] += 1
-            s["form"] = form; s["kept"] = size; s.pop("kept_text", None)
+            s["form"] = form; s.pop("kept", None); s.pop("kept_text", None)
             if form != "placeholder":
                 self.M["stored"] += 1
 
@@ -285,7 +288,8 @@ class Simulator:
                 and s.get("form", "full") in ("full", "truncated", "structured"))
 
     def _commit_compression(self, s, text, size, form):
-        if size >= self.seg_size(s):
+        """`size`: tokens of the kept text (suffix, images and framing come on top)."""
+        if size + tokens.count(self.kept_suffix(s)) + s.get("media", 0) + self.overhead(s) >= self.seg_size(s):
             return False
         s.update(kept_text=text, kept=size, form=form)
         self.M["op_" + form] += 1
@@ -296,19 +300,13 @@ class Simulator:
         if not self._text_compressible(s):
             return False
         text = self.current_text(s)
-        if text is not None and self.count:
-            chars = int(budget * 4)               # head and tail within `budget` tokens
-            for _ in range(8):
-                kept = textops.head_tail(text, chars)
-                size = self.count(kept) + 12
-                if size <= budget or chars <= 1:
-                    break
-                chars = max(1, int(chars * budget / size * 0.97))
-        elif text is not None:
-            kept = textops.head_tail(text, int(budget / self.alpha * 4))
-            size = max(1, int(len(kept) / 4 * self.alpha)) + 12
+        # `budget`: tokens of the whole item
+        room = max(1, int(budget - self.overhead(s) - s.get("media", 0) - tokens.count(self.kept_suffix(s))))
+        if text is not None:
+            kept = tokens.head_tail(text, room)
+            size = tokens.count(kept)
         else:
-            kept, size = None, min(self.seg_size(s), int(budget)) + 12
+            kept, size = None, min(self.seg_size(s) - self.overhead(s), room)
         return self._commit_compression(s, kept, size, "truncated")
 
     def structure(self, s, ratio_if_no_text=0.25, keep_also=()):
@@ -319,9 +317,9 @@ class Simulator:
         text = self.current_text(s)
         if text is not None:
             kept = textops.structured(text, content_type(s), keep_also=keep_also)
-            size = self.text_size(kept) + 12
+            size = tokens.count(kept)
         else:
-            kept, size = None, int(self.seg_size(s) * ratio_if_no_text) + 12
+            kept, size = None, int((self.seg_size(s) - self.overhead(s)) * ratio_if_no_text)
         return self._commit_compression(s, kept, size, "structured")
 
     def keep_text(self, s, text, form="structured"):
@@ -329,7 +327,7 @@ class Simulator:
         content; recovery checks run on it as on any kept text."""
         if s.get("protected"):
             return False
-        s["kept_text"] = text; s["kept"] = self.text_size(text) + 12
+        s["kept_text"] = text; s["kept"] = tokens.count(text)
         s["form"] = form; self.M["op_" + form] += 1
         return True
 
@@ -374,7 +372,7 @@ class Simulator:
             return None
         tok = sum(self.seg_size(s) for s in items)
         if text is not None:
-            size = self.message_tokens(text) if self.count else len(text) // 4 + 4
+            size = self.message_tokens(text)
         size = size or max(self.P.get("segsummary_min"), int(self.P.get("segsummary_ratio") * tok))
         ids = {s["id"] for s in items}
         pos = min(i for i, x in enumerate(self.ctx) if x["id"] in ids)

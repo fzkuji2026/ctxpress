@@ -3,16 +3,16 @@ sessions:
 - name: navidrome-a
   harness: codex
   pattern: milestone-official-002-evidence/sessions/2026/09/22/rollout-2026-09-22T05-22-24-*.jsonl
-  alpha: fit
+  fit: true
 - name: retro
   harness: codex
   pattern: official-astra-low-retro-20260922/retro-console-soc__DR8FM4h/agent/sessions/2026/09/*/rollout*.jsonl
-  alpha: fit
+  fit: true
 - name: payments
   harness: codex
   pattern: ours-costgate-payments-20260921/payments-pipeline-fix__fvGn5Hr/agent/sessions/2026/09/*/rollout*.jsonl
-  alpha: 1.17
+  fit: false
 - name: go-zero-regression
   harness: codex
   pattern: 20261010/infinite-milestone-deepseek-v1/jobs/m001-t000-r000/attempt-2/agent-logs/sessions/2026/10/10/rollout-2026-10-10T10-41-00-01a12566-dbe0-75a2-af0b-7d744a10f311.jsonl
-  alpha: fit
+  fit: true

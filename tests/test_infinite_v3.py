@@ -3,7 +3,6 @@ import json
 import time
 import pytest
 from ctxpress.core import infinite_policy as policy
-from ctxpress.core.hostsize import billable_chars
 from ctxpress.live.rewrite import Rewriter
 from ctxpress.methods import infinite_memory as memory
 from ctxpress.methods.infinite_context import InfiniteContext
@@ -52,7 +51,7 @@ def test_full_pipeline_compacts_calls_reasoning_and_retains_exact_sources(tmp_pa
     add_turn(items,0);run(w,items);add_turn(items,1);out,info=run(w,items)
     assert info['method_decision']['selected']
     assert out['input'][0]==items[0]
-    assert info['method_decision']['host_tokens_after']==billable_chars(out)/4
+    assert info['method_decision']['host_tokens_after']==pytest.approx(info['rendered_prompt_tokens'],abs=1)
     ctx=w.sessions['session'].ctx
     summaries=[s for s in ctx.ctx if s['seg']=='summary'];assert summaries
     stage=memory.get(ctx.store_dir,summaries[0]['memory_key'])
@@ -190,7 +189,7 @@ def test_exact_measurement_includes_fixed_tools_and_keeps_raw_history(tmp_path):
               tools=[dict(type='function',name='tool',description='large schema '*100,parameters={'type':'object'})])
     saved=copy.deepcopy(body);out,info=w.rewrite_body(body,'session')
     assert body==saved
-    assert info['method_decision']['host_tokens_after']==billable_chars(out)/4
+    assert info['method_decision']['host_tokens_after']==pytest.approx(info['rendered_prompt_tokens'],abs=1)
     assert out['tools']==body['tools'];w.close()
 
 
@@ -200,7 +199,7 @@ def test_long_running_history_stays_bounded_with_recursive_memory(tmp_path):
     for i in range(100):
         add_turn(items,i,150)
         out,info=run(w,items)
-        sizes.append(billable_chars(out)/4)
+        sizes.append(info['rendered_prompt_tokens'])
         if info['method_decision'].get('pressure'):targets.append(info['method_decision'].get('target_reached'))
     ctx=w.sessions['session'].ctx
     assert max(sizes)<18000
@@ -233,7 +232,7 @@ def test_coverage_allows_paraphrase_dedup_but_rejects_missing_facts(tmp_path):
     m.deadline=time.monotonic()+10;m.budget={'calls':0,'fee':0.,'deadline':m.deadline}
     row=dict(goal='g',phase='p',retention='working',completed=False,summary='s',state={k:[] for k in FIELDS})
     row['state']['constraints']=['Keep API','Do not change interface']
-    body=dict(operation='compact',task=[],records=[row],max_chars=4096)
+    body=dict(operation='compact',task=[],records=[row],max_tokens=1024)
     result=m._ask3(ctx,body)
     assert result['state']['constraints']==['API unchanged']
     # A nonempty partial coverage map must never grant permission to drop facts.
@@ -245,7 +244,7 @@ def test_coverage_allows_paraphrase_dedup_but_rejects_missing_facts(tmp_path):
 def test_changed_global_deficit_does_not_rebill_same_summary(tmp_path):
     w,a=writer(tmp_path);run(w,[dict(role='user',content='Fix module')]);ctx=w.sessions['session'].ctx;m=ctx.method
     m.deadline=time.monotonic()+10;m.budget={'calls':0,'fee':0.,'deadline':m.deadline}
-    body=dict(operation='pressure_compact',task=[],records=[],max_chars=4096,required_reduction=10000)
+    body=dict(operation='pressure_compact',task=[],records=[],max_tokens=1024,required_reduction=10000)
     assert m._ask3(ctx,body)
     body['required_reduction']=20000
     assert m._ask3(ctx,body)
@@ -368,7 +367,7 @@ def test_large_protected_prompt_uses_working_space_target_and_preserves_it(tmp_p
     assert d['protected_floor']>d['configured_target']
     assert d['target']>d['protected_floor']
     assert d['target_feasible'] is True
-    assert d['host_tokens_after']==billable_chars(out)/4
+    assert d['host_tokens_after']==pytest.approx(info['rendered_prompt_tokens'],abs=1)
     w.close()
 
 
@@ -406,7 +405,7 @@ def test_retry_backoff_does_not_consume_model_call_budget(tmp_path):
     # Transport failure, so retry is delayed without caching an invalid answer.
     ctx.summarizer=SimpleNamespace(summarize_prompt=lambda *args,**kwargs: None)
     m.deadline=time.monotonic()+10;m.budget={'calls':0,'fee':0.,'deadline':m.deadline}
-    body=dict(operation='annotation',task=[],records=[],max_chars=4096)
+    body=dict(operation='annotation',task=[],records=[],max_tokens=1024)
     assert m._ask3(ctx,body) is None
     calls=m.budget['calls'];fee=m.budget['fee']
     for _ in range(20):assert m._ask3(ctx,body) is None

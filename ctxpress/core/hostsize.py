@@ -1,9 +1,8 @@
-"""How big an item is for the host: the serialized JSON of a request item, in characters, with each image counted
-by its pixel dimensions instead of its base64 length (28x28-px patches, capped; the estimate CliffCompaction
-uses, from its images.py). Methods that trigger on request size (chars / 4) use these numbers; the replay
-simulator, which has no raw items, falls back to tokens x 4."""
+"""Images in a request: each counted by its pixel dimensions (28x28-px patches, capped; the estimate
+CliffCompaction uses, from its images.py), not by its base64 payload. ctxpress.core.sizes adds them to the
+tokenizer counts of the text."""
 from __future__ import annotations
-import base64, json, struct
+import base64, struct
 
 PATCH_PX = 28
 # Providers downscale before counting, so cost is bounded no matter the input.
@@ -122,8 +121,8 @@ def image_payloads(obj):
     Chat       {"type": "image_url", "image_url": {"url": "data:..."}}
 
     Documents are deliberately not included: a PDF's cost tracks its text,
-    not its pixels, so a per-image constant would understate it. They keep
-    the chars/4 estimate, which errs high rather than low.
+    not its pixels (ctxpress.core.sizes counts a file item without its data and
+    leaves the rest to the fitted framing of its kind).
     """
     if isinstance(obj, dict):
         kind = obj.get("type")
@@ -144,44 +143,3 @@ def image_payloads(obj):
     elif isinstance(obj, list):
         for value in obj:
             yield from image_payloads(value)
-
-
-def billable_chars(obj):
-    """Serialized length of `obj` (json.dumps, ensure_ascii=False), images priced by dimensions."""
-    try:
-        n = len(json.dumps(obj, ensure_ascii=False))
-    except (TypeError, ValueError):
-        return 0
-    for payload in image_payloads(obj):
-        n += tokens_for_payload(payload) * 4 - len(payload)
-    return max(n, 0)
-
-
-def request_chars(fixed, item_chars):
-    """Length of the serialized request body: the body without items (`fixed`, input = []) plus the items and
-    the ", " between them."""
-    n = len(item_chars)
-    return fixed + sum(item_chars) + 2 * max(n - 1, 0)
-
-
-def encrypted_tokens(blob: str) -> int:
-    """Codex's estimate of an encrypted reasoning or compaction blob (codex-rs context_manager/history.rs): the
-    base64 decodes to 3/4 of its length, about 650 bytes of it are envelope, 4 bytes per token."""
-    return max(0, len(blob) * 3 // 4 - 650) // 4
-
-
-def item_tokens(item, count) -> int:
-    """Tokens of one wire item with the tokenizer `count` over its serialized form, as billable_chars measures
-    characters: encrypted content at Codex's estimate, images at their dimension price."""
-    rest, n = item, 0
-    if isinstance(item, dict) and isinstance(item.get("encrypted_content"), str):
-        rest = dict(item, encrypted_content="")
-        n += encrypted_tokens(item["encrypted_content"])
-    try:
-        text = json.dumps(rest, ensure_ascii=False)
-    except (TypeError, ValueError):
-        return n
-    for payload in image_payloads(rest):
-        text = text.replace(payload, "", 1)
-        n += tokens_for_payload(payload)
-    return n + count(text)

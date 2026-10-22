@@ -55,7 +55,7 @@ class ScoredMethod(Method):
                 break
             before = sim.seg_size(s)
             if self.op == "placeholder":
-                if sim.placeholder_size() >= before:
+                if sim.placeholder_size(s) >= before:
                     continue
                 sim.to_placeholder([s])
             elif self.op == "truncate":

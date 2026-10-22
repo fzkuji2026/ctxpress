@@ -71,7 +71,7 @@ def test_masking_rewrites_old_results_in_place():
 
 
 def test_deletions_keep_a_valid_tool_loop():
-    body = conversation(8, size=6000)
+    body = conversation(8, size=12000)                 # ~1500 tokens per result, 12k in all
     (out, _), _ = rewrite({"class": "SlidingWindow", "args": {"t": 9000}}, body)
     assert valid(out) and len(out["messages"]) < len(body["messages"])
     assert out["messages"][0] == body["messages"][0] and out["messages"][-1] == body["messages"][-1]

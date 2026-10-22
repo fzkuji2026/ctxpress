@@ -22,11 +22,14 @@ def test_js_string_length(text, units):
 def test_cwl_counts_unicode_in_messages_reasoning_and_call_arguments():
     ctx = LiveContext(CWL())
     ctx.add_message("user", "😀" * 4)
-    ctx.add_other("reasoning", 2, text="😀" * 4)
+    ctx.add_other("reasoning", text="😀" * 4)
     ctx.add_call("c", "{}", name="😀", args="😀😀")
     ctx.add_output("c", "中😀ab")
-    # user=2, one assistant message=(8+2+4)/4 rounded up=4, output=2.
-    assert CWL.estimate(ctx) == 8
+    # the user message, one assistant message (reasoning, then the call's name and stringified arguments), the output
+    from ctxpress.core import tokens
+    from ctxpress.core.compat import js_stringify
+    assert CWL.estimate(ctx) == (tokens.count("😀" * 4) + tokens.count("😀" * 4 + "😀" + js_stringify("😀😀"))
+                                 + tokens.count("中😀ab"))
 
 
 @pytest.fixture

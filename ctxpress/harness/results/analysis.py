@@ -497,7 +497,7 @@ def analyze(path, eligibility=None, prices=None, reference=None, families=None):
                 eligibility=str(eligibility) if eligibility else None, families=found,
                 limits=["descriptive; single runs per task do not establish causal effects or non-inferiority",
                         "cache breaks are inferred from usage counts; the provider does not say why a prefix missed",
-                        "proxy history sizes and composition are serialized-chars/4 estimates, not tokenizer counts"]), tables
+                        "proxy history sizes and composition are estimates: o200k_base tokens per item plus overhead fitted on billed input tokens"]), tables
 
 
 # ---- summaries ----------------------------------------------------------------------------------------------

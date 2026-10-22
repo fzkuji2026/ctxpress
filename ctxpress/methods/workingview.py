@@ -33,7 +33,7 @@ class WorkingView(Method):
         if not cand:
             return False
         self.read += sum(min(sim.seg_size(s), self.preview) for s in cand)
-        saved = sum(sim.seg_size(s) - sim.PH for s in cand) * sim.CACHED * self.h
+        saved = sum(sim.seg_size(s) - sim.placeholder_size(s) for s in cand) * sim.CACHED * self.h
         first = min(sim.ctx.index(s) for s in cand)
         brk = (sim.WRITE - sim.CACHED) * sum(sim.seg_size(x) for x in sim.ctx[first:])
         if force or saved > brk:

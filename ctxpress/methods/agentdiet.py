@@ -1,5 +1,6 @@
 """AgentDiet (Xiao et al., FSE 2026, arXiv 2509.23586): inference-time trajectory reduction by a reflection model."""
 from __future__ import annotations
+from ctxpress.core import tokens
 from ctxpress.methods.base import Method
 
 # trae_agent/agents/traj_analyzer.py SYS_PROMPT (artifact, figshare 10.6084/m9.figshare.30073654).
@@ -85,7 +86,7 @@ class AgentDiet(Method):
         return "\n".join(out + ["</step>"])
 
     def tokens(self, sim, text):
-        return sim.tokens(text) if hasattr(sim, "tokens") else len(text) // 4 + 4
+        return tokens.count(text)          # the authors' count_token: tiktoken gpt-4o = o200k_base, the text only
 
     def step(self, sim, r):
         steps = self.steps(sim)

@@ -8,6 +8,7 @@ are never task quality or cost evidence.
     ctxpress smoke --method DTOC --method CWL --turns 40 --output runs/smoke-two
 """
 from __future__ import annotations
+from ctxpress.core import tokens
 import argparse, copy, json, os, re, subprocess, sys, threading, time, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -52,7 +53,7 @@ def policy_inputs(directory):
             reqs.append(dict(before=[dict(seg="call", size=5, kind="command", res=[], text="true"),
                                      dict(seg="out", size=200, kind="command", res=[], outpaths=[], text="ok\n" * 200)],
                              input=0, cached=0, t=i + 1))
-        return dict(name=name, prefix=50, alpha=1.0, reqs=reqs)
+        return dict(name=name, prefix=50, reqs=reqs)
 
     path = Path(directory) / "smoke-policy.json"
     if not path.exists():
@@ -80,7 +81,7 @@ class FakeAPI:
                     lines = body.get("code", "").splitlines()
                     kept = "\n".join(lines[: max(1, len(lines) // 3)])
                     raw = json.dumps(dict(pruned_code=kept, origin_token_cnt=len(lines), left_token_cnt=max(1, len(lines) // 3),
-                                          model_input_token_cnt=len(body.get("code", "")) // 4)).encode()
+                                          model_input_token_cnt=tokens.count(body.get("code", "")))).encode()
                     self.send_response(200); self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", str(len(raw))); self.end_headers(); self.wfile.write(raw)
                     return
@@ -105,8 +106,9 @@ class FakeAPI:
             # History compression removes visible outputs. IDs must still be
             # unique, especially for authoritative method-control receipts.
             turn = sum(c["main"] for c in self.calls) - 1 if main else len(self.calls)
-        usage = dict(input_tokens=len(text) // 4, output_tokens=40, total_tokens=len(text) // 4 + 40,
-                     input_tokens_details=dict(cached_tokens=shared // 4))
+        n = tokens.count(text)                    # the fake upstream bills its input by the tokenizer
+        usage = dict(input_tokens=n, output_tokens=40, total_tokens=n + 40,
+                     input_tokens_details=dict(cached_tokens=tokens.count(text[:shared])))
         namespace = next((t for t in body.get("tools") or [] if isinstance(t, dict) and t.get("type") == "namespace"
                           and t.get("name") == "mcp__ctxpress"), {})
         control = method_call(turn, {t.get("name") for t in namespace.get("tools") or []}, text, self.disabled) if main else None

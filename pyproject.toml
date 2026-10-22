@@ -16,7 +16,7 @@ classifiers = [
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-dependencies = []          # the proxy / plug-and-play path uses the standard library only
+dependencies = ["tiktoken>=0.7"]   # every size is o200k_base tokens (ctxpress.core.tokens); the rest is the standard library
 
 [project.urls]
 Homepage = "https://github.com/fzkuji2026/ctxpress"

@@ -8,6 +8,7 @@ import json
 import math
 from collections import Counter
 from ctxpress.core import infinite_policy
+from ctxpress.core import tokens
 from ctxpress.core.trace import content_type
 from ctxpress.methods.infinite_context import InfiniteContext, PROMPT
 
@@ -21,7 +22,7 @@ class InfiniteContextV2(InfiniteContext):
         self.invalid_proposals = set()
 
     def _size(self, sim):
-        return sim.request_chars()/4
+        return sim.request_tokens()
 
     def _horizon(self, r):
         lengths = self.policy['statistics']['lengths']
@@ -46,10 +47,8 @@ class InfiniteContextV2(InfiniteContext):
             self.rejections['archive_unavailable'] += 1
             return None
         suffix = f'\n[Full output stored at {self._source(sim, item)}.]'
-        size = max(1, int(len(text)/4*sim.alpha))+12+len(suffix)//4+4
-        # Existing host envelope is charged before compression, retained memory
-        # suffix charged after it. Trigger and capacity use this same host unit.
-        saved = sim.host_chars(item)/4-size
+        size = tokens.count(text + suffix) + sim.overhead(item)
+        saved = sim.seg_size(item)-size
         if saved <= 0 or size >= sim.seg_size(item):
             self.rejections['no_size_reduction'] += 1
             return None
@@ -73,13 +72,13 @@ class InfiniteContextV2(InfiniteContext):
             return self.proposals[key], 0.
         prompt = json.dumps(body, ensure_ascii=False)
         agent = self.policy['agent']
-        instructions = PROMPT+'\nEach summary MUST be at most summary_max_chars characters. If essential details cannot fit, set retention=persistent and provide a short reason as summary.'
+        instructions = PROMPT+'\nEach summary MUST be at most summary_tokens tokens. If essential details cannot fit, set retention=persistent and provide a short reason as summary.'
         answer = sim.model_text(instructions, prompt, purpose='infinite_context_compression', model=self.agent_model)
         sim.M['infinite_agent_calls'] += 1
         # Cache only successful parsed proposals. A transient outage must not
         # poison all future opportunities for the same archived record.
-        fee = agent['input']*(len(prompt)+len(instructions))/4
-        fee += agent['output']*(len(answer)/4 if isinstance(answer, str) else self.cfg['summary_tokens']+64)
+        fee = agent['input']*tokens.count(prompt+instructions)
+        fee += agent['output']*(tokens.count(answer) if isinstance(answer, str) else self.cfg['summary_tokens'])
         try:
             rows = json.loads(answer)['records']
             if not isinstance(rows, list) or len(rows) != 1:
@@ -88,7 +87,7 @@ class InfiniteContextV2(InfiniteContext):
             if (type(row['id']) is not int or row['id'] != body['records'][0]['id'] or
                     row['retention'] not in ('persistent', 'working', 'ephemeral') or
                     not isinstance(row['summary'], str) or not row['summary'].strip() or
-                    len(row['summary']) > body['summary_tokens']*4):
+                    tokens.count(row['summary']) > body['summary_tokens']):
                 raise ValueError()
         except (ValueError, TypeError, KeyError):
             if isinstance(answer, str):
@@ -102,15 +101,14 @@ class InfiniteContextV2(InfiniteContext):
     def _review(self, sim, item, task, task_version):
         # Every original character is reviewed. Large records are split into
         # bounded chunks; no head/tail excerpt can stand for unread content.
-        width = self.cfg['evidence_tokens']*4
+        width = self.cfg['evidence_tokens']
         text = item.get('text', '')
-        chunks = [text[i:i+width] for i in range(0, len(text), width)]
+        chunks = tokens.split(text, width) or ['']
         pieces, fee = [], 0.
         for index, chunk in enumerate(chunks):
-            body = dict(task=task[-width:], task_truncated=len(task)>width,
+            body = dict(task=tokens.tail(task, width), task_truncated=tokens.count(task)>width,
                         records=[dict(id=item['id'], kind=content_type(item), text=chunk)],
-                        part=index+1, parts=len(chunks), summary_tokens=self.cfg['summary_tokens'],
-                        summary_max_chars=self.cfg['summary_tokens']*4)
+                        part=index+1, parts=len(chunks), summary_tokens=self.cfg['summary_tokens'])
             row, cost = self._ask(sim, body)
             fee += cost
             if row is None:
@@ -142,7 +140,7 @@ class InfiniteContextV2(InfiniteContext):
                 continue
             batch.append(c)
             first = min(positions[x['item']['id']] for x in batch)
-            retained = sum(sim.host_chars(s)/4 for s in sim.ctx[first:])-sum(x['saved'] for x in batch)
+            retained = sum(sim.seg_size(s) for s in sim.ctx[first:])-sum(x['saved'] for x in batch)
             ttl = sim.P.get('cache_ttl')
             warm = sim._prev is not None and not (ttl is not None and sim.t is not None and sim._last_t is not None and sim.t-sim._last_t > ttl)
             rebuild = max(0., sim.WRITE-sim.CACHED)*max(0., retained) if warm else 0.
@@ -185,7 +183,7 @@ class InfiniteContextV2(InfiniteContext):
         items = [s for s in items if s['id'] not in self.agent_persistent.get(task_version, set())]
         # A step may use several batches when necessary, bounded by the original
         # eligible set. Failed, vetoed and committed records are never retried here.
-        items.sort(key=lambda s: (-sim.host_chars(s), s['id']))
+        items.sort(key=lambda s: (-sim.seg_size(s), s['id']))
         changed = False
         for offset in range(0, len(items), self.cfg['batch_size']):
             batch = items[offset:offset+self.cfg['batch_size']]
@@ -193,9 +191,10 @@ class InfiniteContextV2(InfiniteContext):
             if self.agent_mode in ('control', 'shadow'):
                 for item in batch:
                     agent = self.policy['agent']
-                    n = max(1, math.ceil(len(item.get('text', ''))/(self.cfg['evidence_tokens']*4)))
-                    estimate = n*(agent['input']*(len(PROMPT)/4+self.cfg['evidence_tokens']*2+128)+agent['output']*(self.cfg['summary_tokens']+64))
-                    possible = sim.CACHED*sim.host_chars(item)/4*self._horizon(r)
+                    n = max(1, math.ceil(tokens.count(item.get('text', ''))/self.cfg['evidence_tokens']))
+                    # each part: the prompt, the task excerpt and the part (evidence_tokens each), one summary out
+                    estimate = n*(agent['input']*(tokens.count(PROMPT)+2*self.cfg['evidence_tokens'])+agent['output']*self.cfg['summary_tokens'])
+                    possible = sim.CACHED*sim.seg_size(item)*self._horizon(r)
                     if not pressure and possible <= estimate*(1+self.cfg['min_gain']):
                         self.rejections['agent_not_worth_calling'] += 1
                         continue

@@ -77,7 +77,8 @@ def test_no_text_replay_tracks_current_sizes_and_does_not_repeat_structure():
     item = {'id': 0, 'seg': 'out', 'kind': 'read', 'size': 4000, 'res': ['a.py']}
     assert sim.truncate(item, 1000)
     assert sim.structure(item)
-    assert sim.seg_size(item) == int(1012 * .25) + 12
+    over = sim.overhead(item)                         # framing of an output, fitted per trace
+    assert sim.seg_size(item) == int((1000 - over) * .25) + over
     before = copy.deepcopy((item, sim.M))
     assert not sim.structure(item) and (item, sim.M) == before
     assert not sim.truncate(item, 2000) and (item, sim.M) == before
@@ -129,7 +130,7 @@ def test_scored_placeholder_cannot_enlarge_a_small_current_view():
     item = output(ctx)
     ctx.keep_text(item, 'tiny')
     before = copy.deepcopy(item)
-    assert ctx.placeholder_size() > ctx.seg_size(item)
+    assert ctx.placeholder_size(item) > ctx.seg_size(item)
     ctx.before_request()
     assert item == before
 
@@ -138,7 +139,7 @@ def test_scored_size_order_uses_current_sizes_instead_of_archive_sizes():
     ctx = live(ScoredMethod(budget=350, score='size', protect=0))
     big_archive = output(ctx, 'archive', 'archive line\n' * 10000)
     ctx.keep_text(big_archive, 'already small view\n' * 5)
-    current_big = output(ctx, 'current', 'current line\n' * 100)
+    current_big = output(ctx, 'current', 'current line\n' * 200)   # ~600 tokens, above the budget
     ctx.before_request()
     assert big_archive['form'] == 'structured' and current_big['form'] == 'placeholder'
 

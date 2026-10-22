@@ -160,7 +160,7 @@ def rewrite_messages(rewriter, body, key=None, summarizer=None):
     if info is None:
         return body, None
     result = unflatten(body, refs, flat, rewritten["input"])
-    rewriter.check_context(result, info)
+    rewriter.check_context(result, info, measured=rewritten)
     return result, info
 
 

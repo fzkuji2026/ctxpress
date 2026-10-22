@@ -12,8 +12,9 @@
      the method gave it another role).
 Call/output pairing and every item the method did not touch are kept byte-for-byte, so the harness's own
 behaviour (reasoning items, compaction items, instructions) is unchanged. Each context item also carries how the
-host sends it (type, tool name and raw arguments, serialized size with images priced by dimensions), so methods
-that work on the request as sent (CliffCompaction's size trigger and summary) see exactly what the host sees.
+host sends it (type, tool name and raw arguments, its tokens counted on the wire item: ctxpress.core.sizes), and
+every answered request's billed input tokens refit the session's size model (observe_response), so methods that
+work on the request as sent (CliffCompaction's size trigger and summary) measure what the provider bills.
 Summary methods use an optional common callback (the proxy supplies a service using the current upstream
 model). With no service, model-written summaries leave history intact for the harness's own compaction.
 """
@@ -21,7 +22,7 @@ from __future__ import annotations
 import copy, hashlib, json, os, time, threading
 from ctxpress.live.context import LiveContext
 from ctxpress.core.params import DEFAULT
-from ctxpress.core.hostsize import billable_chars, item_tokens
+from ctxpress.core import sizes as sizemodel
 
 OUT_TYPES = ("function_call_output", "custom_tool_call_output")
 CALL_TYPES = ("function_call", "custom_tool_call")
@@ -36,10 +37,12 @@ def operation_delta(ctx, before):
             if value > before.get(key, 0)}
 
 
-def item_view(items):
-    """Per-item digests and serialized sizes: what the next request's prompt prefix can share with this one."""
+def item_view(items, model=None):
+    """Per-item digests and token sizes (sizes.item_tokens under the session's size model): what the next
+    request's prompt prefix can share with this one."""
     dumped = [json.dumps(x, ensure_ascii=False, sort_keys=True) for x in items]
-    return [hashlib.sha256(d.encode("utf-8")).hexdigest()[:16] for d in dumped], [len(d) for d in dumped]
+    digests = [hashlib.sha256(d.encode("utf-8")).hexdigest()[:16] for d in dumped]
+    return digests, (sizemodel.item_tokens(items, model) if model is not None else [0] * len(items))
 
 
 def prefix_change(previous, digests, sizes):
@@ -51,12 +54,12 @@ def prefix_change(previous, digests, sizes):
         if a != b:
             break
         kept += 1
-    return dict(previous_items=len(previous), kept_items=kept, kept_tokens=sum(sizes[:kept]) // 4,
+    return dict(previous_items=len(previous), kept_items=kept, kept_tokens=round(sum(sizes[:kept])),
                 edited=kept < len(previous))
 
 
 def composition(items, sizes):
-    """Estimated tokens (serialized chars / 4) by kind of item."""
+    """Estimated tokens (sizes.item_tokens) by kind of item."""
     out = {}
     for item, size in zip(items, sizes):
         t = item.get("type") or ("message" if "role" in item else "other")
@@ -69,8 +72,8 @@ def composition(items, sizes):
             kind = "tool_output"
         else:
             kind = "reasoning" if t == "reasoning" else "other"
-        out[kind] = out.get(kind, 0) + size // 4
-    return out
+        out[kind] = out.get(kind, 0) + size
+    return {k: round(v) for k, v in out.items()}
 
 
 PROMPT_PARTS = ("model", "instructions", "tools")   # the non-history part of a Responses prompt prefix
@@ -147,9 +150,6 @@ class ResponsesHost:
     def message(text, role="user"):
         part = "output_text" if role == "assistant" else "input_text"       # assistant content is model output
         return {"type": "message", "role": role, "content": [{"type": part, "text": text}]}
-
-    def message_chars(self, text):
-        return billable_chars(self.message(text))
 
 
 def history_keys(items):
@@ -282,9 +282,7 @@ class Session:
         ctx.host = self.host
         ctx.n_input = len(inp)
         if body is not None:
-            ctx.fixed_chars = billable_chars(dict(body, input=[]))
-            if ctx.count:
-                ctx.fixed_tokens = ctx.count(json.dumps(dict(body, input=[]), ensure_ascii=False))
+            ctx.fixed = sizemodel.fixed_tokens(body)
             # Request metadata is local context, never injected into wire input.
             # A physical model window must come from explicit configuration,
             # not from arbitrary conversation text or a fitted working target.
@@ -294,9 +292,9 @@ class Session:
             if k in self.ids:
                 continue
             t = item.get("type") or ("message" if "role" in item else None)
-            host = dict(htype=t, chars=billable_chars(item), has_media=has_media(item))
-            if ctx.count:
-                host["tok"] = item_tokens(item, ctx.count)
+            skind, content, enc = sizemodel.parts(item)
+            host = dict(htype=t, has_media=has_media(item), skind=skind, content=content, enc=enc,
+                        media=sizemodel.media_tokens(item))
             if t in CALL_TYPES:
                 text = item.get("input") or item.get("arguments") or ""
                 self.ids[k] = ctx.add_call(item.get("call_id"), text, name=item.get("name") or t,
@@ -320,7 +318,7 @@ class Session:
                 if t and t != "reasoning" and t.endswith("_call"):
                     host.update(name=item.get("name") or t, args=item.get("arguments", ""))
                 text = reasoning_text(item) if t == "reasoning" else None
-                self.ids[k] = ctx.add_other(t, host["chars"] // 4, text=text, **host)
+                self.ids[k] = ctx.add_other(t, text=text, **host)
         self.history = keys
         if getattr(ctx.method, 'requires_host_view', False):
             # V3 archives all original wire items, not just tool output strings.
@@ -329,15 +327,6 @@ class Session:
                 seg = by_id.get(self.ids.get(k))
                 if seg is not None:
                     seg['host_wire'] = copy.deepcopy(item)
-            def measure_history(items):
-                saved_ctx, saved_contract = ctx.ctx, getattr(self,'host_contract',None)
-                try:
-                    ctx.ctx = items
-                    rendered, _, _ = self.render(inp, keys, ctx.view())
-                    return billable_chars(dict(body or {}, input=rendered)) / 4
-                finally:
-                    ctx.ctx, self.host_contract = saved_ctx, saved_contract
-            ctx.measure_history = measure_history
         profile = getattr(ctx.method, "context_profile", None)
         if profile:
             from ctxpress.methods.experiment_context import context_tokens
@@ -350,8 +339,7 @@ class Session:
                     history_difference=difference,
                     history_epoch=self.history_epoch, forks_undone=self.forks,
                     items=len(inp), kept=len(out), changed=changed, dropped=dropped,
-                    tokens_before=sum(len(json.dumps(x, ensure_ascii=False)) for x in inp) // 4,
-                    tokens_after=sum(len(json.dumps(x, ensure_ascii=False)) for x in out) // 4,
+                    tokens_before=round(self.estimate(inp)), tokens_after=round(self.estimate(out)),
                     forms=ctx.form_counts(), method_overhead_estimate=ctx.last_overhead_estimate,
                     operations=operation_delta(ctx, before_operations),
                     **{key: ctx.M[key] - previous_usage[key] for key in meters})
@@ -359,6 +347,7 @@ class Session:
             info["experiment_context_before"] = dict(input_tokens_estimate=context_before,
                 trigger_reached=context_before >= profile["compression_trigger_tokens"])
         received = item_view(inp)[0]
+        info["size_features"] = self.features(out)
         decision = getattr(ctx.method, "last_decision", None)
         if isinstance(decision, dict) and decision.get("request") == ctx.r - 1:
             info["method_decision"] = copy.deepcopy(decision)
@@ -369,7 +358,7 @@ class Session:
         """Process telemetry for one rendered request: prefix kept against the previous request (as received
         from the host and as sent after the method), whether the fixed part changed, and the sent composition."""
         last_in, last_out, last_fixed = self.compared
-        sent, sizes = item_view(out)
+        sent, sizes = item_view(out, self.ctx.sizes)
         self.views = (received, sent, fixed)
         host = prefix_change(last_in, received, [0] * len(received))
         if host is not None:
@@ -457,9 +446,17 @@ class Session:
             changed += len(pending)
         out = pair_check(out)
         return out, dict(items=len(inp), known=known, new=len(inp) - known, kept=len(out), changed=changed,
-                         dropped=dropped,
-                         tokens_before=sum(len(json.dumps(x, ensure_ascii=False)) for x in inp) // 4,
-                         tokens_after=sum(len(json.dumps(x, ensure_ascii=False)) for x in out) // 4)
+                         dropped=dropped, tokens_before=round(self.estimate(inp)), tokens_after=round(self.estimate(out)))
+
+    def features(self, items):
+        """Size features of a request with these input items (sizes.features; counted includes the fixed part)."""
+        x, counted = sizemodel.features([sizemodel.parts(i) for i in items])
+        return dict(x=x, counted=counted + self.ctx.fixed)
+
+    def estimate(self, items):
+        """Estimated input tokens of a request with these input items under the session's size model."""
+        f = self.features(items)
+        return self.ctx.sizes.estimate(f["x"], f["counted"])
 
 
 def pair_check(items):
@@ -515,7 +512,7 @@ class Rewriter:
         body = dict(body, input=new)
         info.update(session=session_key, t=time.time(), request_model=body.get('model'),
                     request_output_limit=body.get('max_output_tokens'),
-                    rendered_prompt_tokens=billable_chars(body)/4)
+                    rendered_prompt_tokens=self.estimate_body(body, session_key))
         if check_context:
             body = self.check_context(body, info)
         if self.log:
@@ -534,19 +531,27 @@ class Rewriter:
             out, info = s.project(inp)
         return dict(body, input=out), info
 
+    def estimate_body(self, body, session_key):
+        """Estimated input tokens of `body` under its session's size model (sizes.SizeModel.estimate)."""
+        session = self.sessions.get(session_key)
+        inp = body.get("input") if isinstance(body, dict) else None
+        if session is None or not isinstance(inp, list):
+            return None
+        return round(session.estimate(inp))
+
     def context_profile(self, session_key):
         session = self.sessions.get(session_key)
         return getattr(session.ctx.method, "context_profile", None) if session else None
 
-    def check_context(self, body, info):
-        """Measure the final host body against the window (recorded, never cut); returns the body.
-        Adapters call again after unflattening."""
+    def check_context(self, body, info, measured=None):
+        """Measure the final host body against the window (recorded, never cut); returns the body. Adapters of
+        other wire formats call it after unflattening, with `measured`: the same request as Responses input."""
         if not info:
             return body
         profile = self.context_profile(info.get("session"))
         if profile:
             from ctxpress.methods.experiment_context import check_body
-            info["experiment_context"] = check_body(body, profile)
+            info["experiment_context"] = check_body(self.estimate_body(measured or body, info.get("session")), profile)
         return body
 
     def observe_response(self, info):
@@ -559,31 +564,21 @@ class Rewriter:
         if session is None:
             return False
         with session.lock:
-            from ctxpress.core.context_budget import TokenCalibration
             model = info.get('response_model') or info.get('request_model')
-            rendered = info.get('rendered_prompt_tokens')
             used = info['usage'].get('input_tokens')
+            sample = info.get('size_features')
             profile = getattr(session.ctx.method, 'context_profile', None)
             if profile and type(used) is int:
                 info['experiment_context_provider_check'] = dict(
                     input_tokens=used, max_context_tokens=profile['max_context_tokens'],
                     within_limit=used <= profile['max_context_tokens'])
-            if (not isinstance(model, str) or not model or
-                    type(rendered) not in (int, float) or type(used) is not int or
-                    rendered <= 0 or used <= 0):
+            if (not isinstance(model, str) or not model or not isinstance(sample, dict) or
+                    type(used) is not int or used <= 0):
                 return False
-            # Store by actual served model when provided: an alias must not
-            # silently pool different model tokenizers or context capacities.
-            calibrations = getattr(session.ctx, 'token_calibrations', None)
-            if calibrations is None:
-                calibrations = session.ctx.token_calibrations = {}
-            calibration = calibrations.setdefault(model, TokenCalibration())
-            try:
-                learned = calibration.observe(
-                    (info.get('history_epoch'), info.get('request'), info.get('http_attempt', 0)),
-                    rendered, used)
-            except ValueError:
-                return False
+            # One size model per requested model: an alias must not pool different tokenizers.
+            fit = session.ctx.size_models.setdefault(info.get('request_model') or "", sizemodel.SizeModel())
+            learned = fit.observe((info.get('history_epoch'), info.get('request'), info.get('http_attempt', 0)),
+                                  sample['x'], sample['counted'], used)
             requested = info.get('request_model')
             if learned and isinstance(requested, str) and requested:
                 aliases = getattr(session.ctx, 'observed_model_aliases', None)
@@ -645,9 +640,9 @@ class Rewriter:
                 ctx.M["cost"] += overhead
             process = session.process(session.views[0], out, session.views[2])
             updated = dict(info, **process, host_contract=session.host_contract, kept=len(out), changed=changed, dropped=dropped, forms=ctx.form_counts(),
-                rendered_prompt_tokens=billable_chars(body)/4,
+                rendered_prompt_tokens=round(session.estimate(out)), size_features=session.features(out),
                 operations=operation_delta(ctx, before_operations),
-                tokens_after=sum(len(json.dumps(x, ensure_ascii=False)) for x in out)//4,
+                tokens_after=round(session.estimate(out)),
                 summary_failed=ctx.M["summary_failed"], summary_skipped=ctx.M["summary_skipped"],
                 summary_guidance_skipped=ctx.M["summary_guidance_skipped"],
                 method_overhead_estimate=overhead, t=time.time(), **{key:ctx.M[key]-before_usage[key] for key in meters})

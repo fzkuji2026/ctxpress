@@ -6,7 +6,6 @@ content or infer the model's physical context limit from a fitted threshold.
 """
 from dataclasses import dataclass, asdict
 import math
-from collections import deque
 import time
 
 
@@ -57,40 +56,6 @@ def choose_combinations(budget, occupied, evaluate, *, beam_width, deadline, **c
     result.update(selected_indices=by_key.get(result['selected']), pruned=pruned,
                   scope='bounded combination search; global optimality not guaranteed')
     return result
-
-
-class TokenCalibration:
-    """Causal, bounded calibration for one session/model and exact wire prompts.
-
-    The upper estimate is the largest observed ratio or the declared cold-start
-    ratio. This is an empirical envelope, not a statistical coverage guarantee.
-    """
-    def __init__(self, prior_ratio=1., sample_limit=128):
-        nonnegative(prior_ratio)
-        if prior_ratio == 0 or type(sample_limit) is not int or sample_limit < 1:
-            raise ValueError('positive calibration prior and sample limit required')
-        self.prior_ratio = prior_ratio
-        self.samples = deque(maxlen=sample_limit)
-        self.identities = deque(maxlen=sample_limit)
-
-    def observe(self, identity, rendered_tokens, input_tokens):
-        nonnegative(rendered_tokens)
-        nonnegative(input_tokens)
-        if identity in self.identities or rendered_tokens == 0 or input_tokens == 0:
-            return False
-        self.samples.append(input_tokens / rendered_tokens)
-        self.identities.append(identity)
-        return True
-
-    def estimate(self, rendered_tokens):
-        nonnegative(rendered_tokens)
-        ratios = sorted(self.samples)
-        ratio = ratios[len(ratios)//2] if ratios else self.prior_ratio
-        upper = max([self.prior_ratio, *ratios])
-        return dict(tokens=rendered_tokens * ratio,
-                    uncertainty=rendered_tokens * (upper-ratio),
-                    samples=len(ratios), ratio=ratio, upper_ratio=upper,
-                    scope='empirical envelope; no guaranteed provider-token bound')
 
 
 def nonnegative(value):

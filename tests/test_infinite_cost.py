@@ -4,22 +4,32 @@ from ctxpress.live.rewrite import Rewriter
 from ctxpress.methods import InfiniteContext
 from ctxpress.methods.infinite_v5 import Usage, _spec_paths
 from test_infinite_v5 import requests
+from test_sizes import billed
+
+
+def send(rw, inp, **kw):
+    """One host request, answered with the input tokens a provider with a known billing rule charges for it (the
+    size model learns item framing from these, as in a real session)."""
+    out, info = rw.rewrite_body(dict(model='gpt-5', instructions='sys', input=copy.deepcopy(inp), tools=[], stream=True),
+                                's', **kw)
+    rw.observe_response(dict(info, status=200, usage=dict(input_tokens=billed(out))))
+    return out, info
 
 
 def counters(factory):
     rw = Rewriter(factory)
     for inp in requests():
-        rw.rewrite_body(dict(model='gpt-5', instructions='sys', input=copy.deepcopy(inp), tools=[], stream=True), 's')
+        send(rw, inp)
     return next(iter(rw.sessions.values())).ctx.M
 
 
 def test_above_t_our_summary_runs_not_the_host():
-    M = counters(lambda: InfiniteContext(version=5, t=500, choose="cost"))
+    M = counters(lambda: InfiniteContext(version=5, t=200, choose="cost"))
     assert M["v5_choose_deadline"] > 0
 
 
 def test_at_hard_host_leaves_it_to_codex():
-    M = counters(lambda: InfiniteContext(version=5, t=500, choose="cost", at_hard="host"))
+    M = counters(lambda: InfiniteContext(version=5, t=200, choose="cost", at_hard="host"))
     assert M["v5_choose_deadline"] == 0 and M["v5_choose_host"] > 0
 
 
@@ -31,52 +41,38 @@ def test_cost_defaults_bound_specs_and_keep_user_messages():
 
 
 
-def test_cost_mode_counts_every_size_in_tokens():
-    from ctxpress.methods import infinite_v5
-    from ctxpress.core.hostsize import item_tokens
-    count = infinite_v5._count
+def test_cost_mode_sizes_are_the_size_model_estimate():
+    """The method decides on the request size the live context estimates from the bill: before any bill the
+    tokenizer count with the prior; an unchanged request after a bill is exactly what was billed."""
+    from ctxpress.core import sizes
     rw = Rewriter(lambda: InfiniteContext(version=5, t=100000, choose="cost"))
-    body = dict(model='gpt-5', instructions='sys', input=copy.deepcopy(requests()[0]), tools=[], stream=True)
-    rw.rewrite_body(copy.deepcopy(body), 's')
+    first = requests()[0]
+    out, info = rw.rewrite_body(dict(model='gpt-5', instructions='sys', input=copy.deepcopy(first), tools=[],
+                                     stream=True), 's')
     ctx = next(iter(rw.sessions.values())).ctx
-    m = ctx.method
-    assert m.spec.measure == "tokens" and ctx.count is count
-    assert ctx.fixed_tokens == count(json.dumps(dict(body, input=[]), ensure_ascii=False))
-    assert [x["size"] for x in ctx.sent()] == [item_tokens(i, count) for i in body["input"]]
-    assert m._size(ctx) == ctx.fixed_tokens + sum(item_tokens(i, count) for i in body["input"])   # nothing billed
-    assert rw.observe_response(dict(status=200, session='s', request_model='gpt-5', request=1, history_epoch=0,
-                                    rendered_prompt_tokens=1000,
-                                    usage=dict(input_tokens=700, output_tokens_details=dict(reasoning_tokens=321))))
-    assert m._size(ctx) == 700 and ctx.M["v5_billed_samples"] == 1      # the unchanged request: what was billed
-    out = dict(type="function_call_output", call_id="zz", output="hello world")
-    reasoning = dict(type="reasoning", summary=[], encrypted_content="e" * 4000)
-    body["input"] += [reasoning, out]
-    rw.rewrite_body(copy.deepcopy(body), 's')
-    assert m._size(ctx) == 700 + 321 + item_tokens(out, count)            # reasoning as reported, new items counted
-    m.observe_response(ctx, dict(usage=None, rendered_prompt_tokens=1000))          # no usage: kept as it was
-    assert m._size(ctx) == 700 + 321 + item_tokens(out, count)
-    assert InfiniteContext(version=5, t=1000, choose="cost", measure="chars").__dict__.get("count_tokens") is None
+    x, counted = sizes.features([sizes.parts(i) for i in out["input"]])
+    assert ctx.method._size(ctx) == ctx.request_tokens() == info["rendered_prompt_tokens"]
+    assert info["rendered_prompt_tokens"] == sizes.SizeModel().model(x, counted + sizes.fixed_tokens(out))
+    assert rw.observe_response(dict(info, status=200, usage=dict(input_tokens=billed(out))))
+    _, again = rw.rewrite_body(dict(model='gpt-5', instructions='sys', input=copy.deepcopy(first), tools=[],
+                                    stream=True), 's')
+    assert again["rendered_prompt_tokens"] == billed(out) == ctx.method._size(ctx)
 
 
-def test_token_sizes_of_wire_items_and_kept_text():
+def test_token_sizes_of_kept_text_and_writer_cuts():
+    from ctxpress.core import tokens
     from ctxpress.methods import infinite_v5
-    from ctxpress.core.hostsize import item_tokens, encrypted_tokens
-    count = infinite_v5._count
-    assert encrypted_tokens("e" * 4000) == (3000 - 650) // 4
-    assert item_tokens(dict(type="reasoning", encrypted_content="e" * 4000), count) == (
-        encrypted_tokens("e" * 4000) + count(json.dumps(dict(type="reasoning", encrypted_content=""))))
-    m = InfiniteContext(version=5, t=100000, choose="cost")
     from ctxpress.live.context import LiveContext
-    ctx = LiveContext(m)
+    ctx = LiveContext(InfiniteContext(version=5, t=100000, choose="cost"))
     text = "\n".join(f"line {i} " + "word " * 20 for i in range(400))
     ctx.add_call("c", "cat big.txt")
     oid = ctx.add_output("c", text)
     out = next(x for x in ctx.ctx if x["id"] == oid)
-    assert ctx.truncate(out, 500) and out["kept"] <= 500 and out["kept"] == count(out["kept_text"]) + 12
+    assert ctx.truncate(out, 500) and ctx.seg_size(out) <= 500 and out["kept"] == tokens.count(out["kept_text"])
     head = infinite_v5._head("one two three four five " * 10, 2)
-    assert head.endswith("...") and count(head[:-3]) <= 2 and head.startswith("one")
+    assert head.endswith("...") and tokens.count(head[:-3]) <= 2 and head.startswith("one")
     cut = infinite_v5._head_tail(text, 50, 20)
-    assert "tokens cut" in cut and count(cut) < count(text)
+    assert "tokens cut" in cut and tokens.count(cut) < tokens.count(text)
 
 
 def test_cost_mode_asks_the_proxy_to_report_reasoning_as_included():
@@ -85,9 +81,10 @@ def test_cost_mode_asks_the_proxy_to_report_reasoning_as_included():
 
 def test_the_proxy_hands_the_provider_usage_to_the_method():
     rw = Rewriter(lambda: InfiniteContext(version=5, t=1000, choose="cost"))
-    rw.rewrite_body(dict(model='gpt-5', instructions='sys', input=copy.deepcopy(requests()[0]), tools=[], stream=True), 's')
-    assert rw.observe_response(dict(status=200, session='s', request_model='gpt-5', request=1, history_epoch=0,
-                                    rendered_prompt_tokens=1000, usage=dict(input_tokens=700)))
+    body = dict(model='gpt-5', instructions='sys', input=copy.deepcopy(requests()[0]), tools=[], stream=True)
+    _, info = rw.rewrite_body(copy.deepcopy(body), 's')
+    assert rw.observe_response(dict(info, status=200, usage=dict(input_tokens=700)))
+    rw.rewrite_body(copy.deepcopy(body), 's')
     ctx = next(iter(rw.sessions.values())).ctx
     assert ctx.method._size(ctx) == 700
 
@@ -173,7 +170,7 @@ class Recorder:
         raise AssertionError("the host's summary service must not write when DeepSeek is the writer")
 
 
-def deepseek_run(monkeypatch, answer):
+def deepseek_run(monkeypatch, answer, **switches):
     import ctxpress.live.deepseek as deepseek
     bodies = []
 
@@ -182,12 +179,11 @@ def deepseek_run(monkeypatch, answer):
         bodies.append(json.loads(user))
         return answer(len(bodies))
     monkeypatch.setattr(deepseek, "summarize", fake)
-    factory = lambda: InfiniteContext(version=5, t=500, choose="cost")
+    factory = lambda: InfiniteContext(version=5, t=200, choose="cost", **switches)
     rw = Rewriter(factory)                      # as live/proxy.py: no service at construction, one per request
     service = factory().requires_summary         # ... and only for a method that asks for it
     for inp in requests():
-        rw.rewrite_body(dict(model='gpt-5', instructions='sys', input=copy.deepcopy(inp), tools=[], stream=True), 's',
-                        summarizer=Recorder() if service else None)
+        send(rw, inp, summarizer=Recorder() if service else None)
     return next(iter(rw.sessions.values())).ctx, bodies
 
 
@@ -222,18 +218,13 @@ def test_the_proxy_attaches_a_summary_service_for_the_deepseek_writer():
 
 
 def test_without_a_summary_service_summaries_are_planned_and_written_mechanically():
-    M = counters(lambda: InfiniteContext(version=5, t=500, choose="cost"))
+    M = counters(lambda: InfiniteContext(version=5, t=200, choose="cost"))
     assert M["v5_choose_deadline"] > 0 and M["v5_writer_failed"] == 0 and M["v5_writer_fallback"] == 0
 
 
 def test_writer_input_keeps_the_start_and_the_newest_steps():
     from ctxpress.methods.infinite_v5 import _count
-    m = InfiniteContext(version=5, t=500, choose="cost", measure="chars", writer_input_chars=10000)
-    steps = [dict(seg="out", id=i, text=f"out {i} " + "x" * 3000) for i in range(20)]
-    lines = m._writer_input(None, steps)
-    assert sum(len(l) for l in lines) <= 10100 and "steps left out" in "".join(lines)
-    assert lines[0].startswith("output #0:") and lines[-1].startswith("output #19:") and "chars cut" in lines[-1]
-    m = InfiniteContext(version=5, t=500, choose="cost", writer_input_tokens=2500)   # measure tokens
+    m = InfiniteContext(version=5, t=500, choose="cost", writer_input_tokens=2500)
     steps = [dict(seg="out", id=i, text=f"out {i} " + "word " * 3000) for i in range(20)]
     lines = m._writer_input(None, steps)
     assert sum(_count(l) for l in lines) <= 2525 and "steps left out" in "".join(lines)
@@ -389,7 +380,8 @@ def test_the_writer_keeps_outputs_it_judges_not_recoverable(monkeypatch):
     assert ctx.M["v5_writer_kept"] == 0
     first = next(int(l.split("#")[1].split(":")[0].split(" ")[0]) for l in bodies[0]["steps"] if l.startswith("output #"))
     keep["ids"] = [first, "junk"]
-    ctx, bodies = deepseek_run(monkeypatch, lambda n: answer(n))
+    # the kept outputs may take writer_keep_frac of t; at this small t the default 5% is below one output
+    ctx, bodies = deepseek_run(monkeypatch, lambda n: answer(n), writer_keep_frac=0.5)
     assert ctx.M["v5_writer_kept"] >= 1 and any(x.get("id") == first and x["seg"] == "out" for x in ctx.ctx)
 
 
@@ -406,7 +398,7 @@ def test_an_edit_supersedes_earlier_reads_and_identical_outputs_supersede():
 
 
 def test_failure_lines_in_the_middle_of_a_long_log_reach_the_writer():
-    m = InfiniteContext(version=5, t=500, choose="cost")
+    m = InfiniteContext(version=5, t=200, choose="cost")
     log = "x\n" * 800 + "FAILED tests/test_parser.py::test_empty - IndexError\n" + "y\n" * 800
     line = m._writer_input(None, [dict(seg="out", id=7, text=log)])[0]
     assert "FAILED tests/test_parser.py::test_empty" in line
@@ -447,3 +439,39 @@ def test_the_proxy_adds_the_reasoning_header_only_when_asked(tmp_path):
                 s.shutdown(); s.server_close()
 
     assert header(True) == "true" and header(False) is None
+
+
+def test_a_read_of_the_same_source_counts_as_using_the_output_again_unless_edited():
+    u = Usage()
+    out = dict(id=1, seg="out", text="def f(): pass", call_text="cat src/a.py", res=["src/a.py"])
+    u.add(out)
+    u.req = 5
+    assert u.read_again("cat src/a.py", ()) == {1} and u.last(out) == 5            # the same command
+    u.req = 8
+    assert u.read_again("sed -n 1,40p src/a.py", ["src/a.py"]) == {1}              # another range of the file
+    u.edit(["src/a.py"])
+    u.req = 9
+    assert u.read_again("cat src/a.py", ["src/a.py"]) == set()                     # edited since: new content
+
+
+def test_rereads_after_a_summary_are_counted_and_the_summary_logs_what_it_expected():
+    from test_infinite_v5 import session
+    items = session()
+    for i in range(6):                            # the agent reads the long outputs it lost again
+        items += [dict(type='function_call', name='shell', call_id=f'r{i}', arguments=json.dumps(dict(cmd=f'cat f{2 * i}.py'))),
+                  dict(type='function_call_output', call_id=f'r{i}', output='again')]
+    rw = Rewriter(lambda: InfiniteContext(version=5, t=200, choose="cost"))
+    decisions, ops = [], collections.Counter()
+    for n in range(2, len(items) + 1):
+        if items[n - 1].get('type') != 'function_call_output':
+            continue
+        _, info = send(rw, items[:n])
+        ops.update(info.get("operations") or {})
+        if info.get("method_decision"):
+            decisions.append(info["method_decision"])
+    ctx = next(iter(rw.sessions.values())).ctx
+    assert ops["reread"] >= 1 and ops["reread_removed"] >= 1
+    assert decisions and all(d["action"] == "summary" and d["expected_rereads"] >= 0 and "lost_outputs" in d
+                             for d in decisions)
+    m = ctx.method                                # removed outputs stay in the reuse statistics (resolved after 20)
+    assert m._gone and any(i in m._gone for _, i, _ in m._use.pending)

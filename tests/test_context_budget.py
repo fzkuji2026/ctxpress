@@ -1,6 +1,6 @@
 import pytest
 from ctxpress.core.context_budget import Action, Budget, choose
-from ctxpress.core.context_budget import TokenCalibration
+from ctxpress.core.sizes import SizeModel, DIM
 from ctxpress.core.context_budget import ModelCapacity
 from ctxpress.core.context_budget import choose_combinations
 import time
@@ -74,24 +74,25 @@ def test_model_capacity_cannot_be_silently_guessed_or_inconsistent():
         ModelCapacity(1000, 200, 100, '')
 
 
-def test_token_estimates_use_only_observed_pairs_and_keep_cold_start_envelope():
-    calibration = TokenCalibration(prior_ratio=1.2)
-    assert calibration.estimate(100)['tokens'] == 120
-    assert calibration.observe((1, 0), 100, 80)
-    assert not calibration.observe((1, 0), 100, 900)
-    estimate = calibration.estimate(100)
-    assert estimate['tokens'] == 80
-    assert estimate['tokens'] + estimate['uncertainty'] == pytest.approx(120)
-    calibration.observe((2, 0), 100, 150)
-    assert calibration.estimate(100)['upper_ratio'] == 1.5
+def test_size_envelope_is_the_largest_recent_shortfall():
+    m = SizeModel()
+    x = [1.0] + [0.0] * (DIM - 1)
+    assert m.envelope() == (0.0, 0)
+    assert m.observe(1, x, 100, 120)
+    assert not m.observe(1, x, 100, 900)                 # the same request twice counts once
+    assert m.estimate(x, 100) == 120                     # unchanged: what was billed
+    assert m.observe(2, x, 100, 150)                     # billed 30 more than estimated
+    assert m.observe(3, x, 100, 140)
+    assert m.envelope() == (30, 2)
 
 
-def test_calibration_rejects_missing_usage_instead_of_learning_zero():
-    calibration = TokenCalibration()
-    with pytest.raises(ValueError):
-        calibration.observe(1, 100, None)
-    assert not calibration.observe(1, 100, 0)
-    assert calibration.estimate(100)['samples'] == 0
+def test_size_model_rejects_missing_usage_instead_of_learning_zero():
+    m = SizeModel()
+    x = [1.0] + [0.0] * (DIM - 1)
+    assert not m.observe(1, x, 100, None)
+    assert not m.observe(2, x, 100, 0)
+    assert not m.observe(3, x, 100, True)
+    assert m.last is None
 
 
 def decision(budget, actions, **changes):

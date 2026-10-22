@@ -201,7 +201,7 @@ def ours(s):
         else:
             for b in ev["blocks"]:
                 if b["type"] == "thinking":
-                    ctx.add_other("reasoning", len(b["thinking"]) // 4, text=b["thinking"])
+                    ctx.add_other("reasoning", text=b["thinking"])
                 elif b["type"] == "text":
                     ctx.add_message("assistant", b["text"])
             calls = [b for b in ev["blocks"] if b["type"] == "toolCall"]

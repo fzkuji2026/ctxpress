@@ -97,20 +97,20 @@ class InfiniteContextRules(CliffCompaction):
                     s.pop("protected", None)
 
     def _candidates(self, sim):
-        before = sim.request_chars() / 4
+        before = sim.request_tokens()
         candidates = []
         for recent in sorted({1, self.knobs.keep_recent, self.knobs.keep_recent * 2}):
             result = self._compact(sim.sent(), dataclasses.replace(self.knobs, keep_recent=recent))
             if result is None:
                 continue
             v = result["summary"]
-            v.update(size=len(v["text"]) // 4 + 4, chars=sim.message_chars(v["text"]))
-            after = sim.request_chars(result["new"]) / 4
+            v.update(size=sim.message_tokens(v["text"]))
+            after = sim.request_tokens(result["new"])
             if after >= before:
                 continue
             # Conservative approximation: the retained suffix must be prefetched
             # after the first changed item. This is not provider-measured cache use.
-            prefix = sim.request_chars(result["new"][:result["head"]]) / 4
+            prefix = sim.request_tokens(result["new"][:result["head"]])
             candidates.append(dict(id=f"recent_{recent}", recent=recent, before=before,
                                    after=after, saved=before-after,
                                    rebuild=max(0, after-prefix), result=result))
@@ -161,7 +161,7 @@ class InfiniteContextRules(CliffCompaction):
             return None
 
     def _run(self, sim, r, force=False):
-        before = sim.request_chars() / 4
+        before = sim.request_tokens()
         emergency = force or before >= self.emergency
         if not emergency and (before <= self.t or (self.last_attempt is not None and
                                                    r - self.last_attempt < self.cooldown)):
@@ -201,7 +201,6 @@ class InfiniteContextRules(CliffCompaction):
             summary = sim.summarize_segment(v["members"], text=v["text"], billed=False, cliff=True)
             if summary is None:
                 return False
-            summary["chars"] = sim.message_chars(v["text"])
             self.last_compaction = r
             sim.M["infinite_context_compaction"] += 1
             return True
