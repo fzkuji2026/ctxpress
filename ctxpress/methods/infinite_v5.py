@@ -384,10 +384,10 @@ class InfiniteContextV5(CliffCompaction):
             # (39% of chars) are never referenced later, and later references re-read the file first 72% of the
             # time, so the guard releases them (uses within 2 requests before the tag still hold). Specs get 15%:
             # sklearn documents reach 8.9k and Codex's compaction drops them, after which they were re-read within
-            # 1-4 requests in 24/24 cases. t counts provider tokens: by chars/4 encrypted reasoning (28% of it
-            # before a summary) counts ~3.9x what it bills, so all 42 summaries of the 10-22 run came at chars/4 t
-            # with 67-76k provider tokens, every 19-24 requests where the rent gives 29-34; Codex itself compacts
-            # near 115k provider tokens, above t = 102400 tokens.
+            # 1-4 requests in 24/24 cases. t counts provider tokens: chars/4 is 38% above the bill (median), so
+            # all 42 summaries of the 10-22 run came at chars/4 t with 52-83k provider tokens on the request
+            # before (median 72k), every 18-23 requests where the rent gives 28-35; Codex itself compacts near
+            # 115k provider tokens, above t = 102400 tokens.
             switches = {"measure": "tokens", "reasoning_header": True, "guard": True, "protect_spec": True, "recall": True, "supersede": True,
                         "protect_user": True, "guard_active": 15, "guard_keep_frac": 0.1, "spec_keep_frac": 0.15,
                         "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0,
