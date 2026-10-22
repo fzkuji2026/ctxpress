@@ -31,22 +31,52 @@ def test_cost_defaults_bound_specs_and_keep_user_messages():
 
 
 
-def test_cost_mode_counts_provider_tokens_from_the_last_request():
+def test_cost_mode_counts_every_size_in_tokens():
     from ctxpress.methods import infinite_v5
-    m = InfiniteContext(version=5, t=1000, choose="cost")
-    sim = type("S", (), {"M": collections.Counter(), "fixed_chars": 400, "prefix": 0,
-                         "host_chars": staticmethod(lambda x: len(x["text"]))})()
-    sim.ctx = [dict(id=1, seg="out", text="a" * 3600)]
-    sim.sent = lambda: list(sim.ctx)
-    assert m.spec.measure == "tokens" and m._tokens(sim, 1000) == 1000 and m._hard() == 1000   # nothing observed
-    m.observe_response(sim, dict(usage=dict(input_tokens=700, output_tokens=50), rendered_prompt_tokens=1000))
-    assert m._tokens(sim, 1000) == 700 and abs(m._hard() - 1000 / 0.7) < 1e-6 and sim.M["v5_billed_samples"] == 1
-    sim.ctx += [dict(id=2, seg="reason", text="x" * 4000), dict(id=3, seg="out", text="hello world")]
-    assert m._tokens(sim, 2000) == 700 + 50 + infinite_v5._count("hello world") + 4      # model items: output tokens
-    m.observe_response(sim, dict(usage=None, rendered_prompt_tokens=1000))       # no usage: kept as it was
-    assert m._billed[1] == 700.0
-    assert InfiniteContext(version=5, t=1000, choose="cost", measure="chars")._tokens(sim, 1000) == 1000
+    from ctxpress.core.hostsize import item_tokens
+    count = infinite_v5._count
+    rw = Rewriter(lambda: InfiniteContext(version=5, t=100000, choose="cost"))
+    body = dict(model='gpt-5', instructions='sys', input=copy.deepcopy(requests()[0]), tools=[], stream=True)
+    rw.rewrite_body(copy.deepcopy(body), 's')
+    ctx = next(iter(rw.sessions.values())).ctx
+    m = ctx.method
+    assert m.spec.measure == "tokens" and ctx.count is count
+    assert ctx.fixed_tokens == count(json.dumps(dict(body, input=[]), ensure_ascii=False))
+    assert [x["size"] for x in ctx.sent()] == [item_tokens(i, count) for i in body["input"]]
+    assert m._size(ctx) == ctx.fixed_tokens + sum(item_tokens(i, count) for i in body["input"])   # nothing billed
+    assert rw.observe_response(dict(status=200, session='s', request_model='gpt-5', request=1, history_epoch=0,
+                                    rendered_prompt_tokens=1000,
+                                    usage=dict(input_tokens=700, output_tokens_details=dict(reasoning_tokens=321))))
+    assert m._size(ctx) == 700 and ctx.M["v5_billed_samples"] == 1      # the unchanged request: what was billed
+    out = dict(type="function_call_output", call_id="zz", output="hello world")
+    reasoning = dict(type="reasoning", summary=[], encrypted_content="e" * 4000)
+    body["input"] += [reasoning, out]
+    rw.rewrite_body(copy.deepcopy(body), 's')
+    assert m._size(ctx) == 700 + 321 + item_tokens(out, count)            # reasoning as reported, new items counted
+    m.observe_response(ctx, dict(usage=None, rendered_prompt_tokens=1000))          # no usage: kept as it was
+    assert m._size(ctx) == 700 + 321 + item_tokens(out, count)
+    assert InfiniteContext(version=5, t=1000, choose="cost", measure="chars").__dict__.get("count_tokens") is None
 
+
+def test_token_sizes_of_wire_items_and_kept_text():
+    from ctxpress.methods import infinite_v5
+    from ctxpress.core.hostsize import item_tokens, encrypted_tokens
+    count = infinite_v5._count
+    assert encrypted_tokens("e" * 4000) == (3000 - 650) // 4
+    assert item_tokens(dict(type="reasoning", encrypted_content="e" * 4000), count) == (
+        encrypted_tokens("e" * 4000) + count(json.dumps(dict(type="reasoning", encrypted_content=""))))
+    m = InfiniteContext(version=5, t=100000, choose="cost")
+    from ctxpress.live.context import LiveContext
+    ctx = LiveContext(m)
+    text = "\n".join(f"line {i} " + "word " * 20 for i in range(400))
+    ctx.add_call("c", "cat big.txt")
+    oid = ctx.add_output("c", text)
+    out = next(x for x in ctx.ctx if x["id"] == oid)
+    assert ctx.truncate(out, 500) and out["kept"] <= 500 and out["kept"] == count(out["kept_text"]) + 12
+    head = infinite_v5._head("one two three four five " * 10, 2)
+    assert head.endswith("...") and count(head[:-3]) <= 2 and head.startswith("one")
+    cut = infinite_v5._head_tail(text, 50, 20)
+    assert "tokens cut" in cut and count(cut) < count(text)
 
 
 def test_cost_mode_asks_the_proxy_to_report_reasoning_as_included():
@@ -58,7 +88,8 @@ def test_the_proxy_hands_the_provider_usage_to_the_method():
     rw.rewrite_body(dict(model='gpt-5', instructions='sys', input=copy.deepcopy(requests()[0]), tools=[], stream=True), 's')
     assert rw.observe_response(dict(status=200, session='s', request_model='gpt-5', request=1, history_epoch=0,
                                     rendered_prompt_tokens=1000, usage=dict(input_tokens=700)))
-    assert next(iter(rw.sessions.values())).ctx.method._billed[:2] == (1000.0, 700.0)
+    ctx = next(iter(rw.sessions.values())).ctx
+    assert ctx.method._size(ctx) == 700
 
 def test_a_requirements_read_inside_a_mixed_command_is_a_spec_read():
     assert _spec_paths('sed -n 1,200p srs/M002/SRS.md && sed -n 1,80p src/main.rs') == {'srs/M002/SRS.md'}
@@ -70,12 +101,16 @@ def test_a_requirements_read_inside_a_mixed_command_is_a_spec_read():
 class FakeSim:
     def __init__(self, ctx):
         self.ctx, self.M = ctx, collections.Counter()
+        self.fixed_tokens, self.prefix = None, 0
 
     def seg_size(self, x):
         return len(x.get("text") or "") // 4
 
     def request_chars(self):
         return sum(len(x.get("text") or "") for x in self.ctx)
+
+    def request_tokens(self, fixed=0):
+        return fixed + sum(self.seg_size(x) for x in self.ctx)
 
 
 def test_window_hold_releases_a_superseded_read():
@@ -192,11 +227,17 @@ def test_without_a_summary_service_summaries_are_planned_and_written_mechanicall
 
 
 def test_writer_input_keeps_the_start_and_the_newest_steps():
-    m = InfiniteContext(version=5, t=500, choose="cost", writer_input_chars=10000)
+    from ctxpress.methods.infinite_v5 import _count
+    m = InfiniteContext(version=5, t=500, choose="cost", measure="chars", writer_input_chars=10000)
     steps = [dict(seg="out", id=i, text=f"out {i} " + "x" * 3000) for i in range(20)]
     lines = m._writer_input(None, steps)
     assert sum(len(l) for l in lines) <= 10100 and "steps left out" in "".join(lines)
     assert lines[0].startswith("output #0:") and lines[-1].startswith("output #19:") and "chars cut" in lines[-1]
+    m = InfiniteContext(version=5, t=500, choose="cost", writer_input_tokens=2500)   # measure tokens
+    steps = [dict(seg="out", id=i, text=f"out {i} " + "word " * 3000) for i in range(20)]
+    lines = m._writer_input(None, steps)
+    assert sum(_count(l) for l in lines) <= 2525 and "steps left out" in "".join(lines)
+    assert lines[0].startswith("output #0:") and lines[-1].startswith("output #19:") and "tokens cut" in lines[-1]
 
 
 def test_the_launcher_opens_deepseeks_route_for_the_cost_method():

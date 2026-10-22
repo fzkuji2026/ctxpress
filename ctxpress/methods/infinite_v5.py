@@ -48,7 +48,7 @@ checks that on recorded sessions. Every other setting is a departure from Cliff 
 difference in results can be traced to the switches that produced it.
 """
 from __future__ import annotations
-import collections, dataclasses, json, re
+import collections, dataclasses, functools, json, re
 from ctxpress.methods.cliff import (CliffCompaction, Knobs, SUMMARY_HEADER, _TASK_NOTIFICATION_RE, group_turns,
                                     is_summary, truncate)
 from ctxpress.core.engine import is_model
@@ -70,7 +70,7 @@ STATE_SYSTEM = ("You keep the working state of a coding agent whose older steps 
                 "changed, what was verified and how, logs and scripts under /tmp, processes still running); PROBLEMS (failures and their causes, unresolved issues); NEXT "
                 "(the next steps). Keep exact identifiers, paths, commands, error messages, and the #ID of outputs "
                 "worth reading again. Carry forward what still holds from previous_state, shortening DONE lines of "
-                "older work; do not invent progress. Plain text, at most CHARS characters. Also list in keep the #ID "
+                "older work; do not invent progress. Plain text, at most LIMIT. Also list in keep the #ID "
                 "of the few outputs among the steps that cannot be recovered from the environment and are still "
                 "needed verbatim: results of test or build runs whose failures are not fixed yet, error logs, output "
                 "of commands that cannot simply be run again. Never list file contents, requirement documents, "
@@ -166,6 +166,7 @@ class Spec(Knobs):
     writer_input_price: float = 1.0       # cost: the writer's price per input token, in uncached-input units
     writer_output_price: float = 8.0      # cost: the writer's price per output token, in uncached-input units
     writer_input_chars: int = 160_000     # hybrid with writer_model: most characters of history the writer reads
+    writer_input_tokens: int = 40_000     # ... the same with measure tokens (o200k_base tokens)
     writer_keep_frac: float = 0.0         # hybrid with writer_model: outputs the writer judges not recoverable from
                                           # the environment and still needed (unfixed test failures, error logs)
                                           # stay verbatim, together at most this share of t; file contents, docs,
@@ -209,7 +210,7 @@ class Spec(Knobs):
         if not (0 <= self.state_recovery_factor <= 1) or len(self.cache_rho) < 1:
             raise ValueError("state_recovery_factor in [0, 1]; cache_rho nonempty")
         if (self.writer_model not in ("", "deepseek-flash") or self.writer_input_price < 0
-                or self.writer_output_price < 0 or self.writer_input_chars < 1000 or not 0 <= self.writer_keep_frac <= 1):
+                or self.writer_output_price < 0 or self.writer_input_chars < 1000 or self.writer_input_tokens < 250 or not 0 <= self.writer_keep_frac <= 1):
             raise ValueError("writer_model is '' or deepseek-flash; writer prices >= 0; writer_input_chars >= 1000; "
                              "writer_keep_frac in [0, 1]")
         if self.measure not in ("chars", "tokens"):
@@ -305,33 +306,38 @@ CLIFF = dict(trigger="size", keep_recent=3, output_keep_chars=500, cmd_max_chars
 
 
 def render_item(x, k, session=None):
-    """Replacement lines for one item leaving the context. With Cliff's settings this is Cliff's summarize_item."""
+    """Replacement lines for one item leaving the context. With Cliff's settings this is Cliff's summarize_item.
+    With measure tokens every *_chars cap is a cap of value // 4 tokens, lengths counted by the tokenizer."""
     if x.get("cliff") or x["seg"] == "summary":
         return []
+    if getattr(k, "measure", "chars") == "tokens":
+        cut, size, unit, keep_max = (lambda text, n: _head(text, n // 4)), _count, "tokens", k.output_keep_chars // 4
+    else:
+        cut, size, unit, keep_max = truncate, len, "chars", k.output_keep_chars
     h = x.get("htype")
     if x["seg"] == "msg":
         role, text = x.get("role", ""), (x.get("text") or "").strip()
         if not text:
             return []
         if role == "assistant":
-            return [f"assistant: {truncate(text, k.thought_max_chars)}"]
+            return [f"assistant: {cut(text, k.thought_max_chars)}"]
         if text.startswith(SUMMARY_HEADER):
             return []
         if role == "user":
             text = _TASK_NOTIFICATION_RE.sub("", text).strip()
-            return [f"user: {truncate(text, k.human_max_chars)}"] if text else []
-        return [f"{role}: {truncate(text, k.human_max_chars)}"]
+            return [f"user: {cut(text, k.human_max_chars)}"] if text else []
+        return [f"{role}: {cut(text, k.human_max_chars)}"]
     if h == "reasoning" or (h is None and x["seg"] == "reason"):
         text = (x.get("text") or "").strip()
-        return [f"thinking: {truncate(text, k.thinking_max_chars)}"] if k.keep_thinking and text else []
+        return [f"thinking: {cut(text, k.thinking_max_chars)}"] if k.keep_thinking and text else []
     full = k.tool_dialect == "full"
     if h == "function_call_output" or (h is None and x["seg"] == "out") or (full and x["seg"] == "out"):
         out = (x.get("text") or "").strip()
-        if out and len(out) <= k.output_keep_chars:
+        if out and size(out) <= keep_max:
             return [f"result: {out}"]
         if out and k.recall and x.get("id") is not None:
             where = f" session={session}" if session else ""
-            return [f"result: [archived #{x['id']}{where}, {len(out)} chars]"]
+            return [f"result: [archived #{x['id']}{where}, {size(out)} {unit}]"]
         return []
     if (h or "").endswith("_call") or (h is None and x["seg"] == "call"):
         args = x.get("wire_arguments", x.get("args", x.get("text", "") if h is None else ""))
@@ -339,7 +345,7 @@ def render_item(x, k, session=None):
             args = x.get("args") or x.get("text") or ""
         if not isinstance(args, str):
             args = json.dumps(args, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        return [f"[{x.get('name') or h or 'call'}] {truncate(args, k.cmd_max_chars)}"]
+        return [f"[{x.get('name') or h or 'call'}] {cut(args, k.cmd_max_chars)}"]
     return []
 
 
@@ -396,6 +402,9 @@ class InfiniteContextV5(CliffCompaction):
                          cmd_max_chars=spec.cmd_max_chars)
         self.knobs = spec
         self.spec = spec
+        if spec.measure == "tokens":              # every size in tokens: the context counts items by the tokenizer
+            self.count_tokens = _count
+            self._sep = 0
         departures = {k: v for k, v in dataclasses.asdict(spec).items()
                       if k not in ("ops", "reuse_profile") and CLIFF.get(k, getattr(Spec, k, None)) != v}
         if spec.reuse_profile is not None:
@@ -448,8 +457,9 @@ class InfiniteContextV5(CliffCompaction):
         self._since = None                # requests since the last compaction
         self._cache = None                # cost: the provider cache of this session (requests sent so far)
         self._sizes = []                  # cost: request sizes sent, for growth per request
-        self._billed = None               # measure tokens: (chars/4, input tokens, output tokens, item ids) of the
-                                          # last request answered
+        self._billed = None               # measure tokens: the fixed part of the request, the last answered
+                                          # request's input tokens less its items by the tokenizer
+        self._reasoning = None            # measure tokens: reasoning tokens of the last response, for its item
         self._topic_pending = False       # cost: a topic change since the last summary
         self._cycle = 0                   # cost: index in _sizes of the first request after the last summary
         self._wait_from = None            # cost: request at which a placeholder batch started waiting
@@ -486,6 +496,8 @@ class InfiniteContextV5(CliffCompaction):
 
     def on_ingest(self, sim, item):
         s = self.spec
+        if s.measure == "tokens" and item.get("htype") == "reasoning" and self._reasoning is not None:
+            item["size"], self._reasoning = self._reasoning, None   # the response's reasoning, as reported
         self._use.add(item)
         if item["seg"] in ("call", "out"):
             self._recent = (self._recent + [item])[-16:]
@@ -534,7 +546,7 @@ class InfiniteContextV5(CliffCompaction):
             return
         if item.get("call_id") in self._spec_calls:    # an SRS read in a mixed command is still the SRS
             item["kind"] = "spec"
-        if s.same_output and len(item.get("text") or "") >= 200:
+        if s.same_output and self._length(item.get("text") or "") >= 200:
             key = hash(item["text"])
             if key in self._texts:
                 self._use.newer.add(self._texts[key])
@@ -593,7 +605,7 @@ class InfiniteContextV5(CliffCompaction):
         return [x for x in sim.ctx if x["seg"] == "out" and old(x) and (op is None or op.touches(x))
                 and x.get("form", "full") in ("full", "truncated", "structured")
                 and not x.get("protected") and not x.get("has_media") and x["id"] not in last_tests
-                and len(x.get("text") or "") > s.output_keep_chars
+                and self._length(x.get("text") or "") > s.output_keep_chars
                 and not (s.choose == "cost" and s.protect_spec and x.get("kind") == "spec")
                 and not (set(x.get("res") or ()) & self._sticky) and x["id"] not in self._keep
                 and (not held or x["id"] not in self._held)]
@@ -650,7 +662,7 @@ class InfiniteContextV5(CliffCompaction):
         live = [x for x in sim.ctx if x["seg"] == "out" and x.get("form", "full") in ("full", "truncated", "structured")
                 and not x.get("has_media") and x["id"] not in apart]
         if s.hold == "value":
-            size_now = sim.request_chars() // 4
+            size_now = self._size(sim)
             held = [x for x in live if not self._use.seen(x) or self._use.active(x, s.hold_floor)
                     or (not (s.supersede and self._use.superseded(x)) and self._worth(sim, x, size_now))]
         else:
@@ -760,7 +772,7 @@ class InfiniteContextV5(CliffCompaction):
         if s.guard:
             if self._since is not None:
                 self._since += 1
-            self._update_pressure(sim.request_chars() // 4)
+            self._update_pressure(self._size(sim))
             self._held = self._holding(sim)
         before = {x["id"]: x for x in sim.ctx if x["seg"] == "out"} if s.adaptive else {}
         try:
@@ -786,16 +798,16 @@ class InfiniteContextV5(CliffCompaction):
                 self._seg_done = getattr(sim, "segid", 0)
         topic_ops = [o for o in self.ops if o.when == "topic"]
         if topic_ops and self._topic_changed(sim):
-            size = sim.request_chars() // 4
+            size = self._size(sim)
             if any(o.frac * self.t < size <= self.t for o in topic_ops) and self._chain(sim, knobs, force=True):
                 self._compacted = True
-                self._after = sim.request_chars() // 4
+                self._after = self._size(sim)
                 self._since = 0
                 sim.M["v5_topic"] += 1
                 return
         if not any(o.when == "size" and o.transform == "summary" for o in self.ops):
             return                                # no size operator here, or the host compacts by itself
-        size = sim.request_chars() // 4
+        size = self._size(sim)
         if s.trigger == "size" and size <= self.t:
             return
         if (s.min_growth and self._after is not None and size < self._after + s.min_growth * self.t
@@ -807,7 +819,7 @@ class InfiniteContextV5(CliffCompaction):
         finally:
             self.knobs = s
         if self._compacted:
-            self._after = sim.request_chars() // 4
+            self._after = self._size(sim)
             self._since = 0
 
     def _step_compact(self, sim, r, size):
@@ -832,15 +844,15 @@ class InfiniteContextV5(CliffCompaction):
         if res is None:
             return None
         s = self.spec
-        before = sim.request_chars() // 4
-        fixed = (sim.fixed_chars if sim.fixed_chars is not None else sim.prefix * 4) // 4
-        after = fixed + sum(self._chars(sim, x) + 2 for x in res["new"]) // 4
+        before = self._size(sim)
+        fixed = self._fixed_chars(sim) // 4
+        after = fixed + sum(self._chars(sim, x) + self._sep for x in res["new"]) // 4
         removed = before - after
         if removed <= 0:
             return None
         saving = removed * s.horizon * (s.cached_price + s.length_penalty)
         rebuild = (after - fixed) * (1 - s.cached_price)
-        lost = sum(1 for x in res["summary"]["members"] if x["seg"] == "out" and len(x.get("text") or "") > s.output_keep_chars)
+        lost = sum(1 for x in res["summary"]["members"] if x["seg"] == "out" and self._length(x.get("text") or "") > s.output_keep_chars)
         recovery = lost * s.recovery_rate * (s.recovery_cost + after * s.cached_price)
         writer = 0.0 if s.writer == "mechanical" else removed + s.writer_tokens * s.output_price
         return saving - rebuild - recovery - writer
@@ -859,51 +871,70 @@ class InfiniteContextV5(CliffCompaction):
         keys, sizes = [], []
         for x in items:
             keys.append(("v", hash(x.get("text"))) if x.get("virtual") else (x["id"], x.get("form", "full"), x.get("kept")))
-            sizes.append((self._chars(sim, x) + 2) // 4)
+            sizes.append((self._chars(sim, x) + self._sep) // 4)
         return keys, sizes
 
     def _cache_for(self, sim):
-        fixed = (sim.fixed_chars if sim.fixed_chars is not None else sim.prefix * 4) // 4
+        fixed = self._fixed_chars(sim) // 4
         if self._cache is None:
             self._cache = Cache(fixed=fixed, rho=self.spec.cache_rho)
         self._cache.fixed = fixed
         return self._cache
 
     def _hard(self):
-        """The hard limit in the chars/4 units sizes are kept in (measure tokens: at the last request's ratio)."""
-        limit = self.spec.hard_t or self.t
-        if self.spec.measure == "tokens" and self._billed:
-            return limit * self._billed[0] / self._billed[1]
-        return limit
+        return self.spec.hard_t or self.t
 
-    def _tokens(self, sim, size):
-        """Provider input tokens of the request about to be sent (`size` its chars/4): the items the previous
-        request had at its input tokens / chars/4, the model's items since at its output tokens, other new items
-        (tool outputs, messages) counted by the tokenizer."""
-        if self.spec.measure != "tokens" or not self._billed:
-            return size
-        before, used, out, ids = self._billed
-        ratio, old, new, model = used / before, 0.0, 0, False
-        for x in sim.sent():
-            if x.get("id") in ids:
-                old += sim.host_chars(x) / 4
-            elif is_model(x):
-                model = True
-            else:
-                text = x.get("text")
-                new += _count(text) + 4 if isinstance(text, str) else sim.host_chars(x) // 4
-        fixed = (sim.fixed_chars if sim.fixed_chars is not None else sim.prefix * 4) / 4
-        return (fixed + old) * ratio + new + (out if model else 0)
+    # Sizes with measure tokens (CliffCompaction's unit hooks return 4 x tokens): an item is its wire form by the
+    # tokenizer (rewrite: hostsize.item_tokens; kept text and summaries as they are sent), the model's reasoning at
+    # the reasoning tokens the provider reported, the rest of the request (instructions, tools) the last answered
+    # request's input tokens less its items, so the size of an unchanged request is what the provider billed.
+    def _size(self, sim):
+        """Size of the request about to be sent (chars/4, or tokens)."""
+        return self._request_units(sim) // 4
+
+    def _request_units(self, sim):
+        if self.spec.measure != "tokens":
+            return super()._request_units(sim)
+        return 4 * sim.request_tokens(fixed=self._fixed_tokens(sim))
+
+    def _fixed_chars(self, sim):
+        return super()._fixed_chars(sim) if self.spec.measure != "tokens" else 4 * self._fixed_tokens(sim)
+
+    def _chars(self, sim, x):
+        if self.spec.measure != "tokens":
+            return super()._chars(sim, x)
+        return 4 * (sim.message_tokens(x["text"]) if x.get("virtual") else sim.seg_size(x))
+
+    def _units(self, text):
+        return super()._units(text) if self.spec.measure != "tokens" else 4 * _count(text)
+
+    def _summary_room(self, sim, fixed, summary):
+        if self.spec.measure != "tokens":
+            return super()._summary_room(sim, fixed, summary)
+        rest = self._size(sim) - sim.seg_size(summary)
+        return 4 * (self.t - rest - sim.message_tokens(SUMMARY_HEADER))
+
+    def _fixed_tokens(self, sim):
+        if self._billed is not None:
+            return self._billed
+        return sim.fixed_tokens if sim.fixed_tokens is not None else sim.prefix
+
+    def _length(self, text):
+        """Length of a text in the measure's unit, in characters (tokens x 4 with measure tokens)."""
+        return len(text) if self.spec.measure != "tokens" else 4 * _count(text)
 
     def observe_response(self, sim, info):
         """The provider's usage of a request (rewrite.observe_response; only full Responses prompts). The context
         still holds what that request sent: the response's items arrive with the next request."""
         usage = info.get("usage") or {}
-        used, rendered, out = usage.get("input_tokens"), info.get("rendered_prompt_tokens"), usage.get("output_tokens")
-        if type(used) is int and used > 0 and type(rendered) in (int, float) and rendered > 0:
-            self._billed = (float(rendered), float(used), out if type(out) is int and out >= 0 else 0,
-                            frozenset(x.get("id") for x in sim.ctx))
-            sim.M["v5_billed_samples"] += 1
+        used, rendered = usage.get("input_tokens"), info.get("rendered_prompt_tokens")
+        if self.spec.measure != "tokens" or not (type(used) is int and used > 0 and type(rendered) in (int, float)
+                                                 and rendered > 0):
+            return
+        self._billed = used - sim.request_tokens(fixed=0)
+        reasoning = (usage.get("output_tokens_details") or {}).get("reasoning_tokens")
+        self._reasoning = reasoning if type(reasoning) is int and reasoning > 0 else None
+        sim.M["v5_billed_samples"] += 1
 
     def _stay(self, size_now):
         """Requests a saving lasts: until the context would reach the hard limit anyway (then everything old goes),
@@ -1020,7 +1051,7 @@ class InfiniteContextV5(CliffCompaction):
         if res is None:
             return []
         lost = [x for x in res["summary"]["members"]
-                if x["seg"] == "out" and len(x.get("text") or "") > s.output_keep_chars]
+                if x["seg"] == "out" and self._length(x.get("text") or "") > s.output_keep_chars]
         nkeys, nsizes = self._keys(sim, res["new"])
         plans = []
         hybrid = "hybrid" in s.writers and self._can_write(sim)
@@ -1033,7 +1064,7 @@ class InfiniteContextV5(CliffCompaction):
             hsizes[at] += s.writer_tokens
             members = sum(sim.seg_size(x) for x in res["summary"]["members"])
             if s.writer_model:
-                members = min(members, s.writer_input_chars // 4)
+                members = min(members, s.writer_input_tokens if s.measure == "tokens" else s.writer_input_chars // 4)
             gain = self._summary_net(sim, now, (nkeys, hsizes), lost,
                                      writer_cost=members * s.writer_input_price + s.writer_tokens * s.writer_output_price,
                                      recovery_scale=s.state_recovery_factor)
@@ -1045,7 +1076,7 @@ class InfiniteContextV5(CliffCompaction):
         """Before the hold: a host compaction starts a new cycle (the user messages it re-sent are not a new
         topic); a commit or a new user message marks where use counts again (release_at_topic)."""
         rebases = sim.M.get("history_rebases", 0)
-        size = sim.request_chars() // 4
+        size = self._size(sim)
         host = rebases != self._rebases or (self._sizes and size < 0.6 * self._sizes[-1])
         if host:
             self._rebases = rebases
@@ -1076,7 +1107,7 @@ class InfiniteContextV5(CliffCompaction):
         s = self.spec
         knobs = s if not s.adaptive else dataclasses.replace(s, keep_recent=self._keep_recent())
         cache = self._cache_for(sim)
-        size = sim.request_chars() // 4
+        size = self._size(sim)
         self._summarized = False
         try:
             now = self._keys(sim, sim.sent())
@@ -1084,11 +1115,10 @@ class InfiniteContextV5(CliffCompaction):
             p = self._plan_placeholder(sim, now) if "placeholder" in s.candidates else None
             if p is not None:
                 plans.append(p)
-            limit = self.spec.hard_t or self.t
-            tokens = self._tokens(sim, size)
-            forced = tokens > limit
+            limit = self._hard()
+            forced = size > limit
             if not forced and ("summary" in s.candidates and (self._topic_pending or s.summary_at != "topic")
-                          and tokens > s.topic_min_frac * limit):
+                          and size > s.topic_min_frac * limit):
                 plans += self._plan_summaries(sim, now, knobs)
             sim.M["v5_choices"] += 1
             if forced:
@@ -1139,7 +1169,7 @@ class InfiniteContextV5(CliffCompaction):
                 body = (new.get("text") or "")[len(SUMMARY_HEADER):].strip()
                 new["text"] = SUMMARY_HEADER + "\n\n[state]\n" + state + (STEPS_MARK + body if body else "")
                 new["chars"] = sim.message_chars(new["text"])
-                new["size"] = sim.tokens(new["text"])
+                new["size"] = sim.summary_size(new["text"])
             return "mechanical"
         finally:
             self.knobs = self.spec
@@ -1177,7 +1207,7 @@ class InfiniteContextV5(CliffCompaction):
         if sim.seg_size(item) > budget:
             sim.truncate(item, budget)
         removed = before - sim.seg_size(item)
-        size_now = sim.request_chars() // 4
+        size_now = self._size(sim)
         stay = self._stay(size_now)
         gain = removed * (1 + (stay - 1) * (s.cached_price + s.length_penalty)) \
             - self._use.p_reuse(item, max(1, int(stay))) * (before + s.refetch_work + size_now * s.cached_price)
@@ -1250,7 +1280,7 @@ class InfiniteContextV5(CliffCompaction):
                 return False
             state["text"] = SUMMARY_HEADER + "\n\n" + state["text"]
             state["chars"] = sim.message_chars(state["text"])
-            state["size"] = sim.tokens(state["text"])
+            state["size"] = sim.summary_size(state["text"])
             return True
         # hybrid: a model-written state ahead of the mechanical lines. With a writer model the earlier summaries
         # are replaced too (their state is carried forward by the writer), as the mechanical chain replaces them.
@@ -1275,7 +1305,7 @@ class InfiniteContextV5(CliffCompaction):
         new = sim.summarize_segment(members, text=text, billed=billed, model_written=not billed, cliff=True)
         if new is not None:
             new["chars"] = sim.message_chars(text)
-            new["size"] = sim.tokens(text)
+            new["size"] = sim.summary_size(text)
             sim.M["v5_writer_" + (self.spec.writer_model or "host")] += 1
         return new is not None
 
@@ -1321,7 +1351,8 @@ class InfiniteContextV5(CliffCompaction):
         steps = [x for x in members if not (x.get("cliff") or is_summary(x))]
         previous = "\n\n".join(p for p in (_state_of(x.get("text") or "") for x in earlier) if p)
         body = json.dumps(dict(previous_state=previous, steps=self._writer_input(sim, steps)), ensure_ascii=False)
-        answer = sim.model_text(STATE_SYSTEM.replace("CHARS", str(s.writer_tokens * 4)), body,
+        limit = f"{s.writer_tokens} tokens" if s.measure == "tokens" else f"{s.writer_tokens * 4} characters"
+        answer = sim.model_text(STATE_SYSTEM.replace("LIMIT", limit), body,
                                 purpose="infinite_context_compression", model=s.writer_model)
         try:
             reply = json.loads(answer, strict=False)   # DeepSeek's JSON mode leaves raw line breaks in strings
@@ -1333,38 +1364,47 @@ class InfiniteContextV5(CliffCompaction):
         state = _flat(reply.get("state", reply))
         if not state.strip():
             return None, []
-        return truncate(state.strip(), s.writer_tokens * 6), keep if isinstance(keep, list) else []
+        state = (_head(state.strip(), s.writer_tokens * 3 // 2) if s.measure == "tokens"
+                 else truncate(state.strip(), s.writer_tokens * 6))
+        return state, keep if isinstance(keep, list) else []
 
     def _writer_input(self, sim, steps):
         """The removed steps as the writer reads them, oldest first: messages, one-line calls, outputs cut to their
-        head and tail with the archive number. Beyond writer_input_chars the oldest fifth and the newest steps
-        stay and the middle is left out, said so in its place."""
+        head and tail with the archive number. Beyond writer_input_chars (measure tokens: writer_input_tokens) the
+        oldest fifth and the newest steps stay and the middle is left out, said so in its place."""
         s, lines = self.spec, []
+        tok = s.measure == "tokens"
+        size = _count if tok else len
+        cap = s.writer_input_tokens if tok else s.writer_input_chars
         for x in steps:
             text = (x.get("text") or "").strip()
             if x["seg"] == "msg" and text:
-                lines.append(f"{x.get('role') or 'message'}: {truncate(text, 3000)}")
+                lines.append(f"{x.get('role') or 'message'}: {_head(text, 750) if tok else truncate(text, 3000)}")
             elif x["seg"] == "call":
-                lines.append(f"[{x.get('name') or 'call'}] {truncate(text, 400)}")
+                lines.append(f"[{x.get('name') or 'call'}] {_head(text, 100) if tok else truncate(text, 400)}")
             elif x["seg"] == "out" and text:
-                cut = text if len(text) <= 1500 else (text[:1000] + f"\n... [{len(text) - 1500} chars cut] ...\n"
-                                                      + _failures(text[1000:-500]) + text[-500:])
+                if tok:
+                    cut = _head_tail(text, 250, 125)
+                else:
+                    cut = text if len(text) <= 1500 else (text[:1000] + f"\n... [{len(text) - 1500} chars cut] ...\n"
+                                                          + _failures(text[1000:-500]) + text[-500:])
                 stale = " (stale: superseded by a later read or edit)" if self._use.superseded(x) else ""
                 lines.append(f"output #{x.get('id')}{stale}: {cut}")
-        if sum(len(l) for l in lines) <= s.writer_input_chars:
+        sizes = [size(l) for l in lines]
+        if sum(sizes) <= cap:
             return lines
         head, used = [], 0
-        for l in lines:
-            if used + len(l) > s.writer_input_chars // 5:
+        for l, n in zip(lines, sizes):
+            if used + n > cap // 5:
                 break
             head.append(l)
-            used += len(l)
+            used += n
         tail = []
-        for l in reversed(lines[len(head):]):
-            if used + len(l) > s.writer_input_chars:
+        for l, n in zip(reversed(lines[len(head):]), reversed(sizes[len(head):])):
+            if used + n > cap:
                 break
             tail.append(l)
-            used += len(l)
+            used += n
         left_out = len(lines) - len(head) - len(tail)
         return head + [f"[... {left_out} steps left out ...]"] + tail[::-1]
 
@@ -1392,9 +1432,7 @@ def _failures(text, limit=600):
 _ENCODING = []
 
 
-def _count(text):
-    """Tokens of a text by o200k_base (tiktoken; the provider's own tokenizer is not published), chars/4 when
-    tiktoken or its vocabulary is not installed."""
+def _encoding():
     if not _ENCODING:
         try:
             import os
@@ -1403,8 +1441,42 @@ def _count(text):
             _ENCODING.append(tiktoken.get_encoding("o200k_base"))
         except Exception:
             _ENCODING.append(None)
-    enc = _ENCODING[0]
+    return _ENCODING[0]
+
+
+@functools.lru_cache(maxsize=8192)
+def _count(text):
+    """Tokens of a text by o200k_base (tiktoken; the provider's own tokenizer is not published), chars/4 when
+    tiktoken or its vocabulary is not installed."""
+    enc = _encoding()
     return len(enc.encode(text, disallowed_special=())) if enc else len(text) // 4
+
+
+def _head(text, n):
+    """The first n tokens of a text, "..." after them when cut (n <= 0: all of it)."""
+    text = text or ""
+    if n <= 0:
+        return text
+    enc = _encoding()
+    if enc is None:
+        return truncate(text, n * 4)
+    ids = enc.encode(text, disallowed_special=())
+    return text if len(ids) <= n else enc.decode(ids[:n]) + "..."
+
+
+def _head_tail(text, head, tail):
+    """An output cut to its first `head` and last `tail` tokens, the failure lines between them kept."""
+    enc = _encoding()
+    if enc is None:
+        if len(text) <= 4 * (head + tail):
+            return text
+        cut = f"\n... [{len(text) // 4 - head - tail} tokens cut] ...\n"
+        return text[:4 * head] + cut + _failures(text[4 * head:-4 * tail]) + text[-4 * tail:]
+    ids = enc.encode(text, disallowed_special=())
+    if len(ids) <= head + tail:
+        return text
+    first, middle, last = enc.decode(ids[:head]), enc.decode(ids[head:-tail]), enc.decode(ids[-tail:])
+    return first + f"\n... [{len(ids) - head - tail} tokens cut] ...\n" + _failures(middle) + last
 
 
 def _flat(v):

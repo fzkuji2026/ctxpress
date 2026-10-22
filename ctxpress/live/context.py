@@ -32,7 +32,8 @@ class LiveContext(Simulator):
         self.base_prefix = prefix_tokens
         self.window = None if getattr(method, "unbounded", False) else self.window
         self.summarizer = summarizer
-        self.tokens = tokens or (lambda s: len(s) // 4 + 4)
+        count = self.count
+        self.tokens = tokens or ((lambda s: count(s) + 4) if count else (lambda s: len(s) // 4 + 4))
         self.store_dir, self.store_prefix = store_dir, store_prefix or store_dir
         self.store_namespace = store_namespace
         self.retrieve_tool = bool(os.environ.get("CTXPRESS_MCP")) if retrieve_tool is None else retrieve_tool

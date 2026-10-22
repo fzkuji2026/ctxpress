@@ -122,11 +122,11 @@ class CliffCompaction(Method):
 
     def step(self, sim, r):
         self.reset(sim)
-        if sim.request_chars() // 4 <= self.t:
+        if self._request_units(sim) // 4 <= self.t:
             return
         self._compacted = self._chain(sim, self.knobs)
         for rung in (1, 2):
-            if sim.request_chars() // 4 <= self.t:
+            if self._request_units(sim) // 4 <= self.t:
                 break
             kw = {"keep_recent": 1}
             if rung >= 2:
@@ -170,23 +170,41 @@ class CliffCompaction(Method):
         message = sim.host.message(text)
         fixed = len(json.dumps(request, ensure_ascii=False)) - len(json.dumps(message, ensure_ascii=False))
         fixed -= 2 if len(request.get("input", [])) > 1 else 0
-        budget = self.t * 4 - fixed - len(SUMMARY_HEADER) - 64
+        budget = self._summary_room(sim, fixed, summary)
         parts = text[len(SUMMARY_HEADER):].strip().split("\n\n---\n\n")
         kept, used = [], 0
         for part in reversed(parts):
-            if used + len(part) > max(budget, 0):
+            if used + self._units(part) > max(budget, 0):
                 break
             kept.append(part)
-            used += len(part) + 9
+            used += self._units(part) + self._units("\n\n---\n\n") + self._sep
         text_new = SUMMARY_HEADER + "\n\n" + "\n\n---\n\n".join(reversed(kept)) if kept else SUMMARY_HEADER
         if len(text_new) >= len(text):
             return False
-        summary.update(text=text_new, size=sim.tokens(text_new), chars=sim.message_chars(text_new))
+        summary.update(text=text_new, size=sim.summary_size(text_new), chars=sim.message_chars(text_new))
         sim.M["op_summary_trimmed"] += 1
         return True
 
+    # Size units of the trigger: characters of the request as the host sends it, t counting chars / 4. A subclass
+    # that counts tokens returns 4 x tokens from _chars, _request_units, _fixed_chars and _units (and _sep 0), so
+    # every comparison with t * 4 stays in one unit.
+    _sep = 2                                      # the ", " between two items of the serialized input
+
     def _chars(self, sim, x):
         return sim.message_chars(x["text"]) if x.get("virtual") else sim.host_chars(x)
+
+    def _request_units(self, sim):
+        return sim.request_chars()
+
+    def _fixed_chars(self, sim):
+        return sim.fixed_chars if sim.fixed_chars is not None else sim.prefix * 4
+
+    def _units(self, text):
+        return len(text)
+
+    def _summary_room(self, sim, fixed, summary):
+        """Room for the summary's parts: t less the rest of the request (`fixed`, serialized characters)."""
+        return self.t * 4 - fixed - len(SUMMARY_HEADER) - 64
 
     def _compact(self, working, k):
         first = next((i for i, x in enumerate(working) if is_model(x)), None)
@@ -217,7 +235,7 @@ class CliffCompaction(Method):
         (the original's _compact_chain). Changes the context only if every step succeeds, as the original."""
         items = sim.sent()
         n_orig = sim.n_input if getattr(sim, "n_input", None) is not None else len(items)
-        fixed = sim.fixed_chars if sim.fixed_chars is not None else sim.prefix * 4
+        fixed = self._fixed_chars(sim)
         limit = self.t * 4
         at = next((i for i, x in enumerate(items) if x.get("cliff")), None)
         if at is not None:
@@ -225,7 +243,7 @@ class CliffCompaction(Method):
             feed = items[at + 1:]
         else:
             working, head, cut, have, feed = [], 0, 0, False, items
-        size = fixed + sum(self._chars(sim, x) + 2 for x in working)
+        size = fixed + sum(self._chars(sim, x) + self._sep for x in working)
         ops = []
 
         def apply(res):
@@ -239,13 +257,13 @@ class CliffCompaction(Method):
             if not 1 <= new_cut <= n_orig:
                 return False
             working, head, cut, have = res["new"], res["head"], new_cut, True
-            size = fixed + sum(self._chars(sim, x) + 2 for x in working)
+            size = fixed + sum(self._chars(sim, x) + self._sep for x in working)
             ops.append(res["summary"])
             return True
 
         for x in feed:
             working.append(x)
-            size += self._chars(sim, x) + 2
+            size += self._chars(sim, x) + self._sep
             if size > limit:
                 res = self._compact(working, k)
                 if res is None:

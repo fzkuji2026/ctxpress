@@ -21,7 +21,7 @@ from __future__ import annotations
 import copy, hashlib, json, os, time, threading
 from ctxpress.live.context import LiveContext
 from ctxpress.core.params import DEFAULT
-from ctxpress.core.hostsize import billable_chars
+from ctxpress.core.hostsize import billable_chars, item_tokens
 
 OUT_TYPES = ("function_call_output", "custom_tool_call_output")
 CALL_TYPES = ("function_call", "custom_tool_call")
@@ -283,6 +283,8 @@ class Session:
         ctx.n_input = len(inp)
         if body is not None:
             ctx.fixed_chars = billable_chars(dict(body, input=[]))
+            if ctx.count:
+                ctx.fixed_tokens = ctx.count(json.dumps(dict(body, input=[]), ensure_ascii=False))
             # Request metadata is local context, never injected into wire input.
             # A physical model window must come from explicit configuration,
             # not from arbitrary conversation text or a fitted working target.
@@ -293,6 +295,8 @@ class Session:
                 continue
             t = item.get("type") or ("message" if "role" in item else None)
             host = dict(htype=t, chars=billable_chars(item), has_media=has_media(item))
+            if ctx.count:
+                host["tok"] = item_tokens(item, ctx.count)
             if t in CALL_TYPES:
                 text = item.get("input") or item.get("arguments") or ""
                 self.ids[k] = ctx.add_call(item.get("call_id"), text, name=item.get("name") or t,

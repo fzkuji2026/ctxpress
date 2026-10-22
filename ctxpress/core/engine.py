@@ -88,6 +88,8 @@ class Simulator:
         self.segid, self._seg_edits, self._last_user_r = 0, 0, 0
         self.turn, self.uturn, self._prev_model, self._prev_out = 0, 0, False, False
         self.fixed_chars = None               # host: size of the request without its items (set by the host)
+        self.fixed_tokens = None              # host, with count: its tokens
+        self.count = getattr(method, "count_tokens", None)   # tokenizer: sizes are tokens of the serialized item
         self.n_input = None                   # host: number of items in the request as the harness sent it
         self.host = None                      # host adapter (rewrite.ResponsesHost): renders method-written messages
         self.memory = getattr(method, "memory", None)
@@ -120,6 +122,28 @@ class Simulator:
     def message_chars(self, text):
         """Host size of a user message the method adds (a summary)."""
         return self.host.message_chars(text) if self.host else len(text) + 60
+
+    def message_tokens(self, text):
+        """With count: tokens of that message as the host serializes it."""
+        if self.host:
+            import json
+            return self.count(json.dumps(self.host.message(text), ensure_ascii=False))
+        return self.count(text) + 15
+
+    def summary_size(self, text):
+        """Size of a summary message the method writes: tokens with count, else the context's estimate."""
+        return self.message_tokens(text) if self.count else self.tokens(text)
+
+    def request_tokens(self, items=None, fixed=None):
+        """With count: tokens of the next request, `fixed` (default the host's fixed_tokens) plus every item."""
+        items = self.sent() if items is None else items
+        if fixed is None:
+            fixed = self.fixed_tokens if self.fixed_tokens is not None else self.prefix
+        return fixed + sum(self.message_tokens(s["text"]) if s.get("virtual") else self.seg_size(s) for s in items)
+
+    def text_size(self, text):
+        """Size of text an operation keeps: tokens with count, else chars/4 at alpha."""
+        return self.count(text) if self.count else max(1, int(len(text) / 4 * self.alpha))
 
     def sent(self):
         """The items of the next request, in order (the live context adds its fixed head in front)."""
@@ -154,7 +178,10 @@ class Simulator:
 
     def new(self, seg):
         s = dict(seg); s["id"] = self._nid; self._nid += 1
-        s["size"] = max(1, int(s["size"] * self.alpha)) if s["seg"] != "summary" else s["size"]
+        if "tok" in s:                        # counted by the tokenizer over the wire item
+            s["size"] = max(1, s["tok"])
+        else:
+            s["size"] = max(1, int(s["size"] * self.alpha)) if s["seg"] != "summary" else s["size"]
         s.setdefault("form", "full"); s["born"] = self.r; s["last"] = self.r
         return s
 
@@ -269,7 +296,15 @@ class Simulator:
         if not self._text_compressible(s):
             return False
         text = self.current_text(s)
-        if text is not None:
+        if text is not None and self.count:
+            chars = int(budget * 4)               # head and tail within `budget` tokens
+            for _ in range(8):
+                kept = textops.head_tail(text, chars)
+                size = self.count(kept) + 12
+                if size <= budget or chars <= 1:
+                    break
+                chars = max(1, int(chars * budget / size * 0.97))
+        elif text is not None:
             kept = textops.head_tail(text, int(budget / self.alpha * 4))
             size = max(1, int(len(kept) / 4 * self.alpha)) + 12
         else:
@@ -284,7 +319,7 @@ class Simulator:
         text = self.current_text(s)
         if text is not None:
             kept = textops.structured(text, content_type(s), keep_also=keep_also)
-            size = max(1, int(len(kept) / 4 * self.alpha)) + 12
+            size = self.text_size(kept) + 12
         else:
             kept, size = None, int(self.seg_size(s) * ratio_if_no_text) + 12
         return self._commit_compression(s, kept, size, "structured")
@@ -294,7 +329,7 @@ class Simulator:
         content; recovery checks run on it as on any kept text."""
         if s.get("protected"):
             return False
-        s["kept_text"] = text; s["kept"] = max(1, int(len(text) / 4 * self.alpha)) + 12
+        s["kept_text"] = text; s["kept"] = self.text_size(text) + 12
         s["form"] = form; self.M["op_" + form] += 1
         return True
 
@@ -339,7 +374,7 @@ class Simulator:
             return None
         tok = sum(self.seg_size(s) for s in items)
         if text is not None:
-            size = len(text) // 4 + 4
+            size = self.message_tokens(text) if self.count else len(text) // 4 + 4
         size = size or max(self.P.get("segsummary_min"), int(self.P.get("segsummary_ratio") * tok))
         ids = {s["id"] for s in items}
         pos = min(i for i, x in enumerate(self.ctx) if x["id"] in ids)

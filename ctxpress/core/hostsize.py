@@ -162,3 +162,26 @@ def request_chars(fixed, item_chars):
     the ", " between them."""
     n = len(item_chars)
     return fixed + sum(item_chars) + 2 * max(n - 1, 0)
+
+
+def encrypted_tokens(blob: str) -> int:
+    """Codex's estimate of an encrypted reasoning or compaction blob (codex-rs context_manager/history.rs): the
+    base64 decodes to 3/4 of its length, about 650 bytes of it are envelope, 4 bytes per token."""
+    return max(0, len(blob) * 3 // 4 - 650) // 4
+
+
+def item_tokens(item, count) -> int:
+    """Tokens of one wire item with the tokenizer `count` over its serialized form, as billable_chars measures
+    characters: encrypted content at Codex's estimate, images at their dimension price."""
+    rest, n = item, 0
+    if isinstance(item, dict) and isinstance(item.get("encrypted_content"), str):
+        rest = dict(item, encrypted_content="")
+        n += encrypted_tokens(item["encrypted_content"])
+    try:
+        text = json.dumps(rest, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return n
+    for payload in image_payloads(rest):
+        text = text.replace(payload, "", 1)
+        n += tokens_for_payload(payload)
+    return n + count(text)
