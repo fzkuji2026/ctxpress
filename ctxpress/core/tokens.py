@@ -1,5 +1,6 @@
-"""Token counts: every size in ctxpress is counted with the o200k_base tokenizer (tiktoken), the published tokenizer
-of OpenAI's current models. There is no character estimate: without tiktoken and its vocabulary nothing that needs
+"""Token counts: every size in ctxpress is counted with the o200k_base tokenizer, the published tokenizer
+of OpenAI's current models (tiktoken, or the same tokens in pure Python where it is missing: ctxpress.core.bpe).
+There is no character estimate: without the vocabulary nothing that needs
 a size runs. What the tokenizer cannot see (item framing, encrypted reasoning) is fitted from the provider's bill
 (ctxpress.core.sizes)."""
 from __future__ import annotations
@@ -8,8 +9,14 @@ import functools, os
 
 @functools.lru_cache(maxsize=1)
 def encoding():
+    """tiktoken's o200k_base where tiktoken is installed; otherwise the same tokens in pure Python (ctxpress.core.bpe),
+    as in a run's Agent container, whose own Python sees only the ctxpress runtime."""
     os.environ.setdefault("TIKTOKEN_CACHE_DIR", os.path.join(os.path.expanduser("~"), ".cache", "tiktoken"))
-    import tiktoken
+    try:
+        import tiktoken
+    except ImportError:
+        from ctxpress.core import bpe
+        return bpe.Encoding()
     return tiktoken.get_encoding("o200k_base")
 
 

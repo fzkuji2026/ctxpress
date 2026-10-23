@@ -80,6 +80,10 @@ def prepare(plan, directory):
                     raise ValueError('framework code changed; compile a new plan')
             else:
                 eval_plan.verify(plan, code_root=staged / "ctxpress")
+            # The tokenizer's vocabulary travels with the code: an Agent container's own Python sees only this
+            # runtime and counts tokens in pure Python (ctxpress.core.bpe), which reads it next to its module.
+            from ctxpress.core import bpe
+            (staged / "ctxpress" / "core" / bpe.VOCAB).write_bytes(bpe.vocab_bytes())
             try:
                 staged.rename(runtime)
             except OSError:

@@ -14,3 +14,5 @@ dist/
 # never commit credentials
 auth.json
 credentials.json
+# the o200k_base vocabulary a run's runtime gets a copy of (ctxpress.core.bpe)
+ctxpress/core/o200k_base.tiktoken
