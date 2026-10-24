@@ -391,10 +391,11 @@ class InfiniteContextV5(CliffCompaction):
             # 1-4 requests in 24/24 cases. t counts input tokens (ctxpress.core.sizes): the 10-22 run counted
             # chars/4, 38% above the bill (median), so its 42 summaries came with 52-83k billed tokens on the
             # request before (median 72k), every 18-23 requests where the rent gives 28-35; Codex itself compacts
-            # at 115.2k, above t = 102400.
+            # at 115.2k, above t = 102400. writer_need is off: in the 10-23 run the outputs the writer named came
+            # back no more often than the rest (9% vs 11% of their lines read again within 20 calls).
             switches = {"reasoning_header": True, "guard": True, "protect_spec": True, "recall": True, "supersede": True,
                         "protect_user": True, "guard_active": 15, "guard_keep_frac": 0.1, "spec_keep_frac": 0.15,
-                        "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0, "reread_use": True, "writer_need": True,
+                        "cmd_max_chars": 300, "cached_price": 0.05, "output_price": 5.0, "reread_use": True, "writer_need": False,
                         "candidates": ("summary",), "boundary_late": 1.0, "release_at_topic": True, "commit_topic": True,
                         "writers": ("hybrid",), "writer_model": "deepseek-flash", "writer_tokens": 3000,
                         "writer_input_price": 0.15, "writer_output_price": 0.6, "writer_keep_frac": 0.05, **switches}

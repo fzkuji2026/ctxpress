@@ -390,11 +390,11 @@ def test_outputs_the_writer_says_the_current_work_needs_stay_and_the_hybrid_has_
 
     def answer(n):
         return json.dumps(dict(state=f"STATE {n}", keep=[], need=need.setdefault("ids", [])))
-    ctx, bodies = deepseek_run(monkeypatch, answer)
+    ctx, bodies = deepseek_run(monkeypatch, answer, writer_need=True)
     assert ctx.M["v5_writer_needed"] == 0
     first = next(int(l.split("#")[1].split(":")[0].split(" ")[0]) for l in bodies[0]["steps"] if l.startswith("output #"))
     need["ids"] = ["#%d" % first, "junk"]
-    ctx, bodies = deepseek_run(monkeypatch, answer)
+    ctx, bodies = deepseek_run(monkeypatch, answer, writer_need=True)
     assert ctx.M["v5_writer_needed"] >= 1 and any(x.get("id") == first and x["seg"] == "out" for x in ctx.ctx)
     m = ctx.method
     assert m.spec.writer_need and m.last_decision["need_named"] == [first] and first in m.last_decision["need_kept"]
