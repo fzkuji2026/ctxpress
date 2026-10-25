@@ -508,3 +508,38 @@ def test_rereads_after_a_summary_are_counted_and_the_summary_logs_what_it_remove
     assert decisions and all(d["action"] == "summary" and "lost_outputs" in d and d["need_named"] == []
                              for d in decisions)
     assert ctx.method._gone                       # removed outputs, for counting re-reads of them
+
+
+def test_the_agent_names_what_it_needs_once_per_cycle_and_those_reads_survive_the_summary():
+    from ctxpress.methods import build
+    from ctxpress.methods.infinite_v5 import _read_regions
+    assert _read_regions('{"cmd": "sed -n \'10,40p\' src/a.py && cat go.mod b/c.go"}') == [
+        ("src/a.py", 10, 40), ("go.mod", 1, 10 ** 9), ("b/c.go", 1, 10 ** 9)]
+    entry = {"class": "infinite-context", "args": dict(version=5, t=20000, tool_dialect="full", choose="cost",
+             candidates=[], writers=["mechanical"], guard_keep_frac=0.05, spec_keep_frac=0.05, plan=True,
+             context_profile=dict(version=1, max_context_tokens=128000, compression_trigger_tokens=102400))}
+    rw = Rewriter(lambda: build(entry))
+    assert any(t["name"] == "infinite_context_plan" for t in build(entry).agent_tools)
+    items = [dict(type="message", role="user", content=[dict(type="input_text", text="Implement the task")])]
+    asked = []
+    for i in range(40):
+        items += [dict(type="function_call", call_id=f"c{i}", name="shell",
+                       arguments=json.dumps(dict(cmd=f"sed -n '1,200p' src/f{i}.py"))),
+                  dict(type="function_call_output", call_id=f"c{i}", output=f"line of f{i}\n" * 180)]
+        body, _ = rw.rewrite_body({"model": "gpt-6.1-sol", "input": list(items)}, "s")
+        last = body["input"][-1]
+        if last.get("role") == "developer" and "infinite_context_plan" in json.dumps(last):
+            asked.append(i)
+            if len(asked) == 2:
+                break
+            items += [dict(type="function_call", call_id=f"p{i}", name="infinite_context_plan",
+                           arguments=json.dumps(dict(files=[dict(path="src/f3.py", lines=[10, 50])]))),
+                      dict(type="function_call_output", call_id=f"p{i}", output='{"ok": true}')]
+    # once per cycle: the second note comes only after a summary; the note never stays in the history
+    assert len(asked) == 2
+    outs = [x.get("call_id") for x in body["input"] if x.get("type") == "function_call_output"]
+    assert "c3" in outs and f"p{asked[0]}" in outs and "c1" not in outs and "c4" not in outs
+    assert sum("infinite_context_plan" in json.dumps(x) and x.get("role") == "developer" for x in body["input"]) == 1
+    # without the switch no note and no tool
+    entry["args"]["plan"] = False
+    assert not any(t["name"] == "infinite_context_plan" for t in build(entry).agent_tools)

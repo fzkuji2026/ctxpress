@@ -14,7 +14,8 @@ class MethodToolRouteError(ValueError):
 
 # Archive reads change no method state, so they may run inside a Code Mode cell; control tools may not.
 READ_ONLY = {'mcp__ctxpress__' + name for name in ('infinite_context_read', 'infinite_context_search',
-                                                   'infinite_context_memory_read', 'infinite_context_memory_search')}
+                                                   'infinite_context_memory_read', 'infinite_context_memory_search',
+                                                   'infinite_context_plan')}
 
 
 class MethodTools:

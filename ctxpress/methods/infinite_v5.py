@@ -186,6 +186,14 @@ class Spec(Knobs):
                                           # current work reads again; each stays when carrying it costs less than
                                           # reading it back, and the hybrid summary carries no statistical recovery
                                           # risk (the writer's judgment replaces the reuse table)
+    plan: bool = False                    # the Agent says what it will need: once the context passes plan_at of t,
+                                          # the request carries a one-time note (at its end, so the cache holds)
+                                          # asking it to call infinite_context_plan with the files and line ranges
+                                          # it will read or edit next; at the summary the outputs that read those
+                                          # ranges stay, within plan_keep_frac of t. Prediction from the removed
+                                          # outputs failed (10-24: DeepSeek notes covered 19% of later re-reads)
+    plan_at: float = 0.9
+    plan_keep_frac: float = 0.1
                                           # (assumed; to be set by trials)
     cache_rho: tuple = RHO                # cost: provider cache retention after an edit (core/cache_model.py)
     summary_at: str = "boundary"          # cost: when the rent account may summarize (above topic_min_frac of t):
@@ -228,7 +236,7 @@ class Spec(Knobs):
                 and self.reuse_min_lift > 0 and 0 <= self.reuse_keep_frac <= 1
                 and 0 < self.guard_oversize_frac and self.guard_active >= 0 and 0 <= self.guard_keep_frac <= 1
                 and self.hold in HOLDS and self.hold_horizon >= 1 and self.hold_floor >= 0 and self.refetch_work >= 0
-                and 0 <= self.spec_keep_frac <= 1):
+                and 0 <= self.spec_keep_frac <= 1 and 0 < self.plan_at <= 1 and 0 <= self.plan_keep_frac <= 1):
             raise ValueError("layer parameters out of range")
         return self
 
@@ -428,7 +436,7 @@ class InfiniteContextV5(CliffCompaction):
         # recorded through it (LiveContext._prompt_text)
         self.requires_summary = writes or spec.writer == "llm"
         self.reasoning_included_header = spec.reasoning_header
-        self.agent_tools = _tools() if archived else ()
+        self.agent_tools = (_tools() if archived else ()) + ((PLAN_TOOL,) if spec.plan else ())
         self.instructions = RECALL_NOTE if archived else ""
         by = lambda *whens: "；".join(o.describe(t) for o in ops if o.when in whens) or "无"
         self.framework = dict(L1=by("entry"), L2=by("segment_end"), L3=by("topic", "size"),
@@ -446,6 +454,10 @@ class InfiniteContextV5(CliffCompaction):
         self._gone = set()                # reread_use: ids of outputs a summary or placeholder removed
         self._r, self.last_decision = 0, None   # the request being decided; what the last summary expected
         self._need = dict(named=[], kept=[])   # writer_need: what the writer judged at the summary being written
+        self._plan_note = None            # plan: the note on the request just sent (taken out again next request)
+        self._plan_sums = frozenset()     # plan: summaries present when the current cycle began
+        self._plan_asked = False          # plan: the note went out in this cycle
+        self._plan_start = 0              # plan: request the current cycle began at; older plans are spent
         self._harm = 0
         self._harm_seg = None             # segid of the last harm, for decay
         self._seg_done = 0                # L2 has processed every segment below this segid
@@ -769,6 +781,9 @@ class InfiniteContextV5(CliffCompaction):
 
     # ------------------------------------------------------------------ trigger and decider
     def step(self, sim, r):
+        if self._plan_note is not None:   # the note was for one request only
+            sim.ctx[:] = [x for x in sim.ctx if x is not self._plan_note]
+            self._plan_note = None
         self.reset(sim)
         self._r = r
         self._session = getattr(sim, "store_namespace", None)
@@ -786,6 +801,8 @@ class InfiniteContextV5(CliffCompaction):
                 self._since += 1
             self._update_pressure(self._size(sim))
             self._held = self._holding(sim)
+        if s.plan:
+            self._held = self._held | self._planned(sim)
         before = {x["id"]: x for x in sim.ctx if x["seg"] == "out"} if s.adaptive else {}
         try:
             if s.choose == "cost":
@@ -793,6 +810,8 @@ class InfiniteContextV5(CliffCompaction):
             else:
                 self._step(sim, r)
         finally:
+            if s.plan:
+                self._ask_plan(sim)
             if before:                            # outputs a summary just removed
                 now = {x["id"] for x in sim.ctx}
                 for i, x in before.items():
@@ -1434,10 +1453,75 @@ class InfiniteContextV5(CliffCompaction):
         left_out = len(lines) - len(head) - len(tail)
         return head + [f"[... {left_out} steps left out ...]"] + tail[::-1]
 
+    # ------------------------------------------------------------------ plan
+    def _ask_plan(self, sim):
+        """A new cycle begins at each summary; once per cycle, above plan_at of t, the request ends with PLAN_NOTE."""
+        sums = frozenset(x["id"] for x in sim.ctx if x["seg"] == "summary")
+        if sums - self._plan_sums:
+            self._plan_sums, self._plan_asked, self._plan_start = sums, False, sim.r
+        if self._plan_asked or self._size(sim) < self.spec.plan_at * self.t:
+            return
+        self._plan_asked = True
+        sim.M["v5_plan_asked"] += 1
+        note = dict(id=-3000000 - self._r, seg="summary", role="developer", text=PLAN_NOTE, form="full",
+                    plan_note=True, size=sim.message_tokens(PLAN_NOTE), born=self._r, last=self._r, turn=0, uturn=0)
+        sim.ctx.append(note)
+        self._plan_note = note
+
+    def _plan_ranges(self, sim):
+        """(file, first, last) the Agent named in its latest infinite_context_plan call of this cycle, and that
+        call's ids. A plan made before the last summary is spent: what it named survived that summary only."""
+        calls = [x for x in sim.ctx if x["seg"] == "call" and (x.get("name") or "").endswith(PLAN_TOOL["name"])
+                 and x.get("born", 0) >= self._plan_start]
+        if not calls:
+            return [], set()
+        call = calls[-1]
+        try:
+            args = json.loads(call.get("text") or "{}")
+        except ValueError:
+            return [], set()
+        out = []
+        for f in (args.get("files") if isinstance(args, dict) else None) or []:
+            if not isinstance(f, dict) or not isinstance(f.get("path"), str):
+                continue
+            lines = f.get("lines") if isinstance(f.get("lines"), list) else []
+            try:
+                a, b = int(lines[0]), int(lines[1])
+            except (IndexError, TypeError, ValueError):
+                a, b = 1, 10 ** 9
+            out.append((_norm_path(f["path"]), max(1, a), max(a, b)))
+        ids = {x["id"] for x in sim.ctx if x.get("call_id") == call.get("call_id")}
+        return out, ids
+
+    def _planned(self, sim):
+        """Outputs whose call read a range the Agent named (newest first, within plan_keep_frac of t), with
+        their calls and the plan call itself."""
+        ranges, keep = self._plan_ranges(sim)
+        if not ranges:
+            return frozenset()
+        calls = {x.get("call_id"): x for x in sim.ctx if x["seg"] == "call" and x.get("call_id")}
+        used, budget = 0, self.spec.plan_keep_frac * self.t
+        for x in reversed([x for x in sim.ctx if x["seg"] == "out" and x.get("form", "full") == "full"]):
+            call = calls.get(x.get("call_id"))
+            regs = _read_regions(call.get("text") or "") if call else []
+            if not any(f.endswith(p) or p.endswith(f) for (f, a, b) in regs for (p, c, d) in ranges
+                       if min(b, d) >= max(a, c)):
+                continue
+            size = sim.seg_size(x)
+            if used + size > budget:
+                continue
+            used += size
+            keep.add(x["id"])
+            keep.add(call["id"])
+        sim.M["v5_plan_held"] = len(keep)
+        return frozenset(keep)
+
     # ------------------------------------------------------------------ recall
     def call_tool(self, name, args):
         from ctxpress import settings
         from ctxpress.methods.infinite_archive import call
+        if name == PLAN_TOOL["name"]:
+            return json.dumps(dict(ok=True, note="noted; continue the task"), ensure_ascii=False), False
         try:
             return json.dumps(call(name, args, settings.store_dir()), ensure_ascii=False), False
         except (OSError, ValueError, KeyError, TypeError) as error:
@@ -1706,6 +1790,39 @@ def _spec_paths(text):
 
 def _command(text):
     return " ".join((text or "").split())
+
+
+PLAN_TOOL = dict(name="infinite_context_plan",
+                 description="Say which files and line ranges you will read or edit in your next steps, so they stay "
+                             "in context when older steps are removed. Call only when asked.",
+                 inputSchema=dict(type="object", properties=dict(
+                     files=dict(type="array", items=dict(type="object", properties=dict(
+                         path=dict(type="string"), lines=dict(type="array", items=dict(type="integer"),
+                                                              description="[first, last]; omit for the whole file")),
+                         required=["path"])),
+                     next=dict(type="string", description="one line: what you will do next")), required=["files"]))
+PLAN_NOTE = ("Older steps will be removed from your context soon. Before your next step, call "
+             "mcp__ctxpress.infinite_context_plan once with the files and line ranges you will read or edit in your "
+             "next steps (only those), then continue the task.")
+_FILE = r"([\w./@+-]+\.[A-Za-z0-9]+)"
+_SED = re.compile(r"sed\s+-n\s+['\"]?(\d+),(\d+)p['\"]?\s+" + _FILE)
+_NLSED = re.compile(r"nl\s+-ba\s+" + _FILE + r"\s*\|\s*sed\s+-n\s+['\"]?(\d+),(\d+)p")
+_HEAD = re.compile(r"head\s+(?:-n\s*)?-?(\d+)\s+" + _FILE)
+_CAT = re.compile(r"(?<![\w-])cat\s+(" + _FILE[1:-1] + r"(?:\s+" + _FILE[1:-1] + r")*)(?=\s*(?:$|[;|&\n\\\"']))")
+
+
+def _norm_path(p):
+    return p.strip().lstrip("./").removeprefix("testbed/")
+
+
+def _read_regions(cmd):
+    """(file, first, last) of the lines a call printed: sed -n A,Bp F, nl -ba F | sed -n A,Bp, head -N F, cat F."""
+    cmd = cmd.replace("\\n", "\n").replace('\\"', '"').replace("\\'", "'")
+    out = [(_norm_path(f), int(a), int(b)) for a, b, f in _SED.findall(cmd)]
+    out += [(_norm_path(f), int(a), int(b)) for f, a, b in _NLSED.findall(cmd)]
+    out += [(_norm_path(f), 1, int(n)) for n, f in _HEAD.findall(cmd)]
+    out += [(_norm_path(f), 1, 10 ** 9) for files in _CAT.findall(cmd) for f in files.split()]
+    return out
 
 
 def _tools():
