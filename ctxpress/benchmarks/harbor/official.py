@@ -31,6 +31,19 @@ class SWEBenchMultilingual(OfficialHarbor):
     ADAPTER = 'swebench_multilingual'
 
 
+class RoadmapBench(OfficialHarbor):
+    """UnipatAI/RoadmapBench: published directly as Harbor tasks (one real version upgrade per task, 3-12 targets
+    each graded by its own tests); the images are the publisher's znpt/roadmapbench-* builds."""
+    NAME = 'roadmapbench'
+    TITLE = 'RoadmapBench'
+    ADAPTER = 'none: the publisher releases Harbor tasks (huggingface.co/datasets/UnipatAI/RoadmapBench)'
+
+    def describe(self):
+        return dict(super().describe(), suite='Harbor tasks as published by UnipatAI/RoadmapBench',
+                    required_resources=['RoadmapBench task directories', 'dataset_manifest.json',
+                                        'the images the tasks name', 'Codex binary', 'official Harbor runtime'])
+
+
 class AppWorld(OfficialHarbor):
     """Tasks from the official Terminal-Bench AppWorld adapter, moved to Harbor with `harbor tasks migrate`."""
     NAME = 'appworld'

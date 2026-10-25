@@ -52,6 +52,7 @@ Terminal-Bench/Science 现在按冻结源码选择旧 `Trial` 或新版 `SingleS
 |---|---|---|---|
 | `multi-swe-bench` | Harbor 官方适配器 `harbor/adapters/multi-swe-bench`（7 种语言，1,632 题） | 官方 RUN/TEST/FIX 流程 | AgentDiet 用的 Flash 子集（300 题）：适配器 `--dataset-path` 指向 Flash 数据；AgentDiet 的 100 步上限可用 `max_calls` 近似。需要预先拉取 `mswebench/` 镜像，体量大 |
 | `swe-bench-multilingual` | Harbor 官方适配器 `swebench_multilingual` | 官方测试 | |
+| `roadmapbench` | 发布者直接给出 Harbor 任务（`huggingface.co/datasets/UnipatAI/RoadmapBench`，115 题，每题一次真实版本升级，3–12 个子功能），镜像为 `znpt/roadmapbench-*` | 各任务 `tests/test.sh`：按子功能加权的 reward，另报 `phases_passed` / `total_phases`；评分在 Agent 容器内（shared） | 长任务、多目标。Agent 容器内需要 Python ≥3.10（ctxpress 在容器里运行），部分 Python 3.9 镜像（如 pyg-2.0.0）不能用 |
 | `appworld` | Terminal-Bench 官方 AppWorld 适配器生成，再用 `harbor tasks migrate` 迁移 | 官方 AppWorld 评测 | ACON 用 `--split test_normal`（168 题，任务目标完成率）。本地模拟环境，无需网络 |
 | `kernelbench` | `python -m ctxpress.benchmarks.convert kernelbench` | 官方 `eval_kernel_against_ref` | `--protocol official`：交一个 kernel，报 compiled、correct、speedup、fast_1。`--protocol continual` 按 CliffCompaction（附录 D.2）：默认 Level 3（50 题）；Agent 用 `/workspace/evaluate_kernel.py` 评测并存档每个候选，验证器逐个重评，取最好的加速比（上限 10 倍，没有正确候选记 0.1，总分取几何平均）；5 组正确性输入、10 次计时、容差 1e-2（CUDA）/ 5e-2（Triton），CUDA 版用官方静态检查禁止 PyTorch 计算算子。仍有差别：Codex 可以自己结束，论文去掉了这一能力并固定 400 步；预热次数用官方默认。每题 1 块 NVIDIA GPU |
 | `longbench-v2` | `... convert longbench-v2` | 官方 `pred.py` 的 `extract_answer` + 字母比对 | 提示词是官方 `prompts/0shot.txt`，只把正文换成 `/workspace/context.txt` 文件。ARC 就是这样当作 Agent 任务测的（长文要经工具观察进入上下文，压缩才有作用），用 `--difficulty hard`（311 题） |
