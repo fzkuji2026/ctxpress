@@ -333,6 +333,22 @@ def test_only_the_newest_task_queue_listing_stays_resident():
     assert m._resident(sim) == {4, 6} and m._spec_skip == {2}
 
 
+def test_a_command_printing_the_requirements_stays_resident_and_the_newest_replaces_the_rest():
+    m, sim = boundary_model(), FakeSim([])
+    outs = []
+    for i, (cmd, text) in enumerate([("roadmap-next status", "/app now holds ... release 2\n" + "r" * 2000),
+                                     ("roadmap-next submit && roadmap-next status", "Still syncing; try again"),
+                                     ("roadmap-next show | sed -n 1,400p", "=== Current release: 3 ===\n" + "s" * 2000),
+                                     ("cat src/a.ts", "a" * 2000)]):
+        call(m, sim, 2 * i + 1, cmd)
+        x = dict(id=2 * i + 2, seg="out", call_id="c%d" % (2 * i + 1), kind="command", text=text)
+        sim.ctx.append(x)
+        m.on_ingest(sim, x)
+        outs.append(x)
+    assert [x["kind"] for x in outs] == ["spec", "command", "spec", "command"]
+    assert m._resident(sim) == {6} and m._spec_skip == {2}
+
+
 def test_git_commit_and_tag_forms():
     from ctxpress.methods.infinite_v5 import _committed
     assert _committed("git status --short\ngit tag\ngit log --oneline -3") is None

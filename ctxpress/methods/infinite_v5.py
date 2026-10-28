@@ -481,6 +481,9 @@ class InfiniteContextV5(CliffCompaction):
         self._topic_req = None            # cost: index in _sizes of the last topic change
         self._rebases = 0                 # cost: host history rebases seen (Codex native compaction)
         self._spec_calls = set()          # call ids that read a requirements document
+        self._req_cmd_calls = set()       # call ids of commands that print the current requirements (_REQ_CMD)
+        self._req_cmd_old = set()         # their outputs replaced by a newer one (no longer resident)
+        self._req_cmd_last = None         # the newest such output
         self._spec_paths = set()          # requirements documents read so far
         self._new_spec = False            # a requirements document never read before was read (topic)
         self._writer_fails = 0            # consecutive failed writer calls: after 2 the cost model plans mechanical
@@ -535,6 +538,8 @@ class InfiniteContextV5(CliffCompaction):
                 if specs - self._spec_paths and self._spec_paths:
                     self._new_spec = True
                 self._spec_paths |= specs
+            if _REQ_CMD.search(_unescape(item.get("text") or "")):
+                self._req_cmd_calls.add(item.get("call_id"))
             names = _committed(item.get("text"))
             if names is not None:
                 self._commit = True
@@ -568,6 +573,11 @@ class InfiniteContextV5(CliffCompaction):
             return
         if item.get("call_id") in self._spec_calls:    # an SRS read in a mixed command is still the SRS
             item["kind"] = "spec"
+        if item.get("call_id") in self._req_cmd_calls and self._length(item.get("text") or "") >= REQ_CMD_MIN:
+            item["kind"] = "spec"                      # the current requirements, printed by a command; the newest
+            if self._req_cmd_last is not None:         # one replaces the earlier (a short "still syncing" does not)
+                self._req_cmd_old.add(self._req_cmd_last)
+            self._req_cmd_last = item["id"]
         if s.same_output and self._length(item.get("text") or "") >= 200:
             key = hash(item["text"])
             if key in self._texts:
@@ -710,7 +720,7 @@ class InfiniteContextV5(CliffCompaction):
             return frozenset()
         specs = [x for x in sim.ctx if x["seg"] == "out" and x.get("kind") == "spec"
                  and x.get("form", "full") == "full" and not (s.supersede and self._use.superseded(x))]
-        skip = {x["id"] for x in specs if self._finished(x)}
+        skip = {x["id"] for x in specs if self._finished(x) or x["id"] in self._req_cmd_old}
         if s.release_at_topic:                    # task queue listings (commit chains print one too): the newest
             queues = [x for x in specs if x.get("call_id") in self._queue_calls and not self._spec_of.get(x.get("call_id"))]
             skip |= {x["id"] for x in queues[:-1]}
@@ -1746,6 +1756,10 @@ class Usage:
 
 _SPEC_PATH = re.compile(r"(^|/)srs/|SRS\.md$|(^|/)TASK_QUEUE\.md$|(^|/)requirements?\.md$", re.I)
 _QUEUE_PATH = re.compile(r"(^|/)TASK_QUEUE\.md$", re.I)
+# Commands that print the current requirements instead of a file holding them (RoadmapBench chained releases:
+# roadmap-next show / status print the release's roadmap). Outputs shorter than REQ_CMD_MIN characters are status lines.
+_REQ_CMD = re.compile(r"\broadmap-next[ \t]+(?:show|status)\b")
+REQ_CMD_MIN = 400
 _GIT = r"\bgit(?:[ \t]+-[cC][ \t]+\S+)*[ \t]+"   # git, its -C <dir> / -c <key=value> options
 _GIT_TAG = re.compile(_GIT + r"tag[ \t]+((?:-\S+[ \t]+)*)['\"]?([A-Za-z0-9_][^\s'\"&;|)<>]*)")
 _GIT_COMMIT = re.compile(_GIT + r"commit\b")
