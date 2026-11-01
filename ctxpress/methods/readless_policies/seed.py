@@ -4,6 +4,8 @@ read    a long file print (cat / nl -ba / sed -n A,Bp, alone or piped) -> the fi
         line with its line number; footer: how to print exact lines.
 search  a long grep / rg listing -> the first matches of each file and how many more there are.
 test    a long test or build log -> the failure lines and the last lines.
+mixed   a long output of a compound read-only command (head …; cat …; ls …) -> the first lines, the definition
+        lines and the last lines.
 Anything else, or a short output: None (unchanged).
 """
 from __future__ import annotations
@@ -23,6 +25,11 @@ _WHOLE = re.compile(r"^\s*(cat|nl\s+-ba)\s+" + _FILE + r"\s*$")
 _SEARCH = re.compile(r"^\s*(grep|rg|git\s+grep)\b")
 _TEST = re.compile(r"\b(go test|cargo test|pytest|python3? -m pytest|npm (run )?test|yarn test|pnpm test|make test|mvn|gradle|jest|vitest|ctest)\b")
 _NUMBERED = re.compile(r"^\s*(\d+)\t")
+TAIL = 5
+# a compound command that only prints files and listings (head …; cat …; ls …)
+_READS = re.compile(r"(^|[;&|]\s*)(cat|head|tail|sed\s+-n|nl|git\s+(show|diff))\b")   # a listing alone stays whole
+_WRITES = re.compile(r"(>\s*[\w/.]|\bsed\s+-i\b|\btee\b|\bpython3?\b|\bnode\b|\bgo\s+(run|build|test)\b|\bcargo\b|\bnpm\b|\bmake\b|apply_patch)")
+_NOTE = re.compile(r"(No such file|not found|Permission denied|^==> .* <==$)")
 
 
 def read_target(cmd):
@@ -90,4 +97,17 @@ def view(cmd, out, ctx):
         kept = textops.structured(out, "run")
         return kept + f"\n[ctxpress test view: {len(lines)} lines, failure lines and the last lines kept. Run the same " \
                       f"command again for the full log.]"
+    if _READS.search(cmd) and not _WRITES.search(cmd):
+        if len(lines) < READ_LINES:
+            return None
+        shown = []
+        for i, line in enumerate(lines):
+            if i < HEAD or i >= len(lines) - TAIL or textops.SIG.match(line) or _NOTE.search(line):
+                shown.append(line)
+            elif shown and shown[-1] != "   ...":
+                shown.append("   ...")
+        return "\n".join(shown + [
+            f"[ctxpress read view: {len(lines)} lines from several commands, shown as the first {HEAD} lines, the "
+            f"definition lines and the last {TAIL} lines. Print exact lines with: sed -n 'A,Bp' FILE (or grep -n), "
+            f"or run the same command again for the full text.]"])
     return None

@@ -77,3 +77,19 @@ def test_method_can_be_deep_copied():
     from ctxpress.methods import build
     m = build({'class': 'Composed', 'args': {'methods': [{'class': 'ReadLess'}, {'class': 'HostDefault'}]}})
     copy.deepcopy(m)
+
+
+def test_compound_read_command_gets_a_view():
+    rw = Rewriter(ReadLess)
+    cmd = "git status --short; head -80 src/a.py; cat src/m.py"
+    out, _ = rw.rewrite_body(dict(input=head() + shell_pair('a', cmd, SOURCE)), 's')
+    text = sent(out, 'a')
+    assert 'def f20(x):' in text and 'body line 100' not in text and 'several commands' in text
+    out, _ = rw.rewrite_body(dict(input=head() + shell_pair('b', 'cat src/m.py > /tmp/x; cat /tmp/x', SOURCE)), 's')
+    assert sent(out, 'b') == SOURCE                      # a command that writes is left alone
+
+
+def test_javascript_escapes_in_code_mode_commands():
+    from ctxpress.methods.readless import inner_commands
+    call = r"""text(await tools.exec_command({cmd:"rg -g \'*tree*\' x | head","max_output_tokens":3000}))"""
+    assert inner_commands(call) == ["rg -g '*tree*' x | head"]

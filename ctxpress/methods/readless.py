@@ -84,8 +84,19 @@ def inner_commands(call_text):
             out.append(None)
             continue
         e = _EXEC.match(s, m.start())
-        out.append(json.loads('"' + e.group(1) + '"') if e else None)
+        out.append(_js_string(e.group(1)) if e else None)
     return out
+
+
+def _js_string(body):
+    """A double-quoted JavaScript string body; JS allows escapes JSON does not (\\' and the like)."""
+    try:
+        return json.loads('"' + body + '"')
+    except ValueError:
+        try:
+            return json.loads('"' + re.sub(r"\\([^\"\\/bfnrtu])", r"\1", body) + '"')
+        except ValueError:
+            return None
 
 
 def host_commands(call):
