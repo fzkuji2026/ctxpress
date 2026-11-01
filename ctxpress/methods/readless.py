@@ -29,15 +29,22 @@ _INNER = re.compile(r'tools\.(exec_command|apply_patch|write_stdin)\s*\(')
 _HEADER_END = "\nOutput:\n"
 
 
+_POLICIES = {}
+
+
 def load_policy(spec):
-    """A module name (ctxpress.methods.readless_policies.seed) or a path to a .py file."""
+    """A module name (ctxpress.methods.readless_policies.seed) or a path to a .py file; loaded once per process."""
+    if spec in _POLICIES:
+        return _POLICIES[spec]
     if spec.endswith(".py") or os.sep in spec or "/" in spec:
         name = "readless_policy_" + re.sub(r"\W", "_", os.path.abspath(spec))
         loader = importlib.util.spec_from_file_location(name, spec)
         module = importlib.util.module_from_spec(loader)
         loader.loader.exec_module(module)
-        return module
-    return importlib.import_module(spec)
+    else:
+        module = importlib.import_module(spec)
+    _POLICIES[spec] = module
+    return module
 
 
 def norm_cmd(cmd):
@@ -108,7 +115,7 @@ class ReadLess(Method):
 
     def __init__(self, policy=DEFAULT_POLICY, min_tokens=800, **policy_args):
         self.policy_spec = policy
-        self.policy = load_policy(policy)
+        load_policy(policy)                     # fail early on a bad policy; the method itself holds only the name
         self.min_tokens = min_tokens
         self.policy_args = policy_args
         self.seen = set()
@@ -127,7 +134,7 @@ class ReadLess(Method):
         if key in self.seen:
             sim.M["readless_full_again"] += 1
             return None
-        new = self.policy.view(cmd, out, self._ctx(sim))
+        new = load_policy(self.policy_spec).view(cmd, out, self._ctx(sim))
         if not new or tokens.count(new) >= tokens.count(out):
             return None
         self.seen.add(key)

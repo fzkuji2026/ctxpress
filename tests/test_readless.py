@@ -70,3 +70,10 @@ def test_long_search_keeps_first_matches_per_file():
     out, _ = rw.rewrite_body(dict(input=head() + shell_pair('a', 'rg match src', listing)), 's')
     text = sent(out, 'a')
     assert text.count('src/f0.py:') == 4 and '(+97 more matches)' in text
+
+
+def test_method_can_be_deep_copied():
+    import copy
+    from ctxpress.methods import build
+    m = build({'class': 'Composed', 'args': {'methods': [{'class': 'ReadLess'}, {'class': 'HostDefault'}]}})
+    copy.deepcopy(m)
