@@ -37,12 +37,13 @@ from ctxpress.methods.cost_model import CostModel
 from ctxpress.methods.scored import ScoredMethod
 from ctxpress.methods.wrappers import Composed, EntryTruncation, PinRequirements, WithMemory, Trigger
 from ctxpress.methods.auto_cost import AutoCostModel
+from ctxpress.methods.readless import ReadLess
 
 REGISTRY = {c.__name__: c for c in [TACO, CoMem, LongSeeker, ZipRL, HostDefault, NoCompaction, CodexAutoCompact, ClaudeCode, CliffCompaction, ClearThenSummarize, SlidingWindow,
                                     ComplexityTrap, KeepLastTokens, Pichay, PichayApprox, ClawVM, ClawVMApprox, TokenPilot, SWEPruner, ARC,
                                     ComplexityTrapSummary, ComplexityTrapHybrid, AgentDiet, CWL, DTOC, ACM, AgentFold, ACON, ReSum, WorkingView, CostModel, ScoredMethod,
                                     Composed, EntryTruncation, PinRequirements, WithMemory, Trigger, AutoCostModel,
-                                    AgentFoldTools, ACONSource, TokenPilotLifecycle, ReSumSource, ContextFoldingTools, AgentFoldSource, FoldActSource]}
+                                    AgentFoldTools, ACONSource, TokenPilotLifecycle, ReSumSource, ContextFoldingTools, AgentFoldSource, FoldActSource, ReadLess]}
 REGISTRY["infinite-context"] = InfiniteContext
 REGISTRY["infinite-context-rules"] = InfiniteContextRules
 NEEDS_TRAINING = {"CostModel"}
@@ -95,6 +96,7 @@ METHODS = {
     "Composed": ("包装器", False, True, "无"), "EntryTruncation": ("包装器", False, True, "无"),
     "PinRequirements": ("包装器", False, True, "无"), "WithMemory": ("包装器", False, True, "无"),
     "Trigger": ("包装器", False, True, "无"),
+    "ReadLess": ("本文", False, True, "读入时按可替换的视图策略缩小读文件/搜索/测试输出；同一命令再跑返回全文；默认策略为手写种子"),
 }
 WRAPPER_ARGS = {"inner", "methods"}
 

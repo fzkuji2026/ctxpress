@@ -47,6 +47,7 @@ ENTRIES = [
     ("ReSumSource", {}),
     ("TACO", {}),
     ("ZipRL", {}),
+    ("ReadLess", {}),
     ("infinite-context", {}),
     ("infinite-context-rules", {}),
     ("CostModel", {}),
