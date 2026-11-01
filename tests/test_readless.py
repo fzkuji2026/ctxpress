@@ -93,3 +93,28 @@ def test_javascript_escapes_in_code_mode_commands():
     from ctxpress.methods.readless import inner_commands
     call = r"""text(await tools.exec_command({cmd:"rg -g \'*tree*\' x | head","max_output_tokens":3000}))"""
     assert inner_commands(call) == ["rg -g '*tree*' x | head"]
+
+
+def test_agent_numbers_long_outputs_and_drops_what_it_names():
+    rw = Rewriter(lambda: ReadLess(policy=None, agent=True))
+    items = head() + shell_pair('a', 'cat src/m.py', SOURCE)
+    out, _ = rw.rewrite_body(dict(input=items), 's')
+    assert sent(out, 'a') == SOURCE + "\n[output #1]"
+    items += [dict(type='function_call', call_id='d', name='mcp__ctxpress__readless_drop',
+                   arguments=json.dumps(dict(ids=[1], note='f20 is at line 21'))),
+              dict(type='function_call_output', call_id='d', output='{"ok": true}')]
+    out, _ = rw.rewrite_body(dict(input=items), 's')
+    text = sent(out, 'a')
+    assert 'removed by you' in text and 'f20 is at line 21' in text and 'cat src/m.py' in text
+
+
+def test_agent_drop_from_a_code_mode_script():
+    from ctxpress.methods.readless import drop_requests
+    script = 'await tools.mcp__ctxpress__readless_drop({ids:[2, 3], note:"done with \\"x\\""}); text(1)'
+    assert drop_requests(script) == [([2, 3], 'done with "x"')]
+
+
+def test_ranged_reads_are_left_whole_when_asked():
+    rw = Rewriter(lambda: ReadLess(ranged=False))
+    out, _ = rw.rewrite_body(dict(input=head() + shell_pair('a', 'sed -n 1,400p src/m.py', SOURCE)), 's')
+    assert sent(out, 'a') == SOURCE
