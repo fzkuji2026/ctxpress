@@ -65,7 +65,7 @@ def compile_plan(config, base_dir=None):
     config['repeats'] = repeats
     config['workers'] = eval_plan._positive(config.get('workers', 1), 'workers')
     settings = config.get('run') or {}
-    run_fields={'max_calls','timeout','compact_limit','grade','grading_timeout','checkpoints'}
+    run_fields={'max_calls','timeout','compact_limit','grade','grading_timeout','checkpoints','fork'}
     if hasattr(adapter,'run_fields'):run_fields|=adapter.run_fields()
     if not isinstance(settings, dict) or set(settings) - run_fields:
         raise ValueError('invalid task-start run settings')
@@ -86,6 +86,12 @@ def compile_plan(config, base_dir=None):
         if (not isinstance(points, list) or not points or any(type(k) is not int or k <= 0 for k in points)
                 or points != sorted(set(points)) or not str(config['backend']).startswith('codex')):
             raise ValueError('checkpoints must be increasing positive tool-call counts of a Codex run')
+    if 'fork' in settings:                              # task id -> {checkpoint: saved checkpoint dir, message}
+        forks = settings['fork']
+        if (not isinstance(forks, dict) or set(forks) != set(identifiers) or not str(config['backend']).startswith('codex')
+                or any(not isinstance(f, dict) or set(f) != {'checkpoint', 'message'} or not all(isinstance(v, str) and v
+                       for v in f.values()) for f in forks.values())):
+            raise ValueError('fork needs, for every task, a checkpoint directory and the message to resume with')
     if type(settings['grade']) is not bool or config['scope'] == 'benchmark' and not settings['grade']:
         raise ValueError('benchmark scope requires official grading')
     if hasattr(adapter,'normalize_run'):settings=adapter.normalize_run(settings,repeats)

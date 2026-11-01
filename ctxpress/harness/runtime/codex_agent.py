@@ -99,6 +99,17 @@ def catalog_settings(request):
     return dict(model_catalog=CONTAINER_PATH, model_catalog_sha256=request['model_catalog_sha256'])
 
 
+def fork_session(directory):
+    """The session id of the one Codex rollout saved at a checkpoint (rollout-<time>-<uuid>.jsonl)."""
+    files = sorted(Path(directory).rglob('rollout-*.jsonl'))
+    if len(files) != 1:
+        raise ValueError('a fork checkpoint must hold exactly one Codex session')
+    found = re.search(r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$', files[0].name)
+    if not found:
+        raise ValueError('checkpoint session file has no session id')
+    return found.group(1)
+
+
 class CallProgress:
     """Incremental official session reader; incomplete JSONL records stay buffered."""
     def __init__(self, directory):
@@ -133,7 +144,7 @@ class CallProgress:
 def framework(base, exec_input, settings, limit_error=RuntimeError, credential_state=None):
     settings = copy.deepcopy(settings)
     required = {'method', 'model', 'reasoning', 'binary_version', 'compact_limit', 'upstream'}
-    optional = {'auth_file', 'max_calls', 'model_catalog', 'model_catalog_sha256', 'profiles', 'replay', 'checkpoints'}
+    optional = {'auth_file', 'max_calls', 'model_catalog', 'model_catalog_sha256', 'profiles', 'replay', 'checkpoints', 'fork'}
     if not isinstance(settings, dict) or set(settings) - required - optional or required - set(settings):
         raise ValueError('declare method, model, reasoning, binary version, compact limit and upstream')
     if {'model_catalog', 'model_catalog_sha256'}.intersection(settings):
@@ -212,6 +223,8 @@ def framework(base, exec_input, settings, limit_error=RuntimeError, credential_s
                 await self._checked(environment, 'chmod 600 ' + HOME + '/auth.json')
             # Agent session records remain available to official post-run parsing.
             await self._checked(environment, 'mkdir -p ' + LOGS + '/sessions; ln -s ' + LOGS + '/sessions ' + HOME + '/sessions')
+            if settings.get('fork'):
+                await self._restore_fork(environment)
             version = await self._checked(environment, self.get_version_command())
             actual = re.fullmatch(r'codex-cli\s+(\S+)', (version.stdout or '').strip())
             if not actual or actual.group(1) != settings['binary_version']:
@@ -272,11 +285,13 @@ else:
                     '--method', entry['class'], '--args', json.dumps(entry.get('args') or {}, ensure_ascii=False),
                     '--upstream', settings['upstream'], '--via', self._ctxpress_proxy,
                     '--log', LOGS + '/ctxpress-requests.jsonl', '--store-dir', LOGS + '/ctxpress-store', '--',
-                    'exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check',
+                    'exec', *(['resume'] if settings.get('fork') else []),
+                    '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check',
                     '--model', settings['model'], '--json', '--enable', 'unified_exec',
                     '-c', 'model_reasoning_effort=' + settings['reasoning'],
                     *(['-c', 'model_auto_compact_token_limit=' + str(settings['compact_limit'])]
-                      if settings['compact_limit'] is not None else []), '--', instruction]
+                      if settings['compact_limit'] is not None else []), '--',
+                    *([self._fork_session, settings['fork']['message']] if settings.get('fork') else [instruction])]
             # BaseInstalledAgent uses pipefail. Official stdout/context parsing is
             # retained while the ctxpress proxy separately records actual usage.
             owned = ['python3', '-m', 'ctxpress.harness.runtime.agent_process', '--pid-file', PRIVATE + '/agent.json', '--']
@@ -302,6 +317,22 @@ else:
             self.ctxpress_credentials_cleaned = True
             if credential_state:
                 credential_state(False)
+
+        async def _restore_fork(self, environment):
+            """A fork starts from a saved checkpoint: its workspace is unpacked over the fresh task container and its
+            session records are put back, so `codex exec resume` continues the same conversation."""
+            fork = settings['fork']
+            source = Path(fork['checkpoint'])
+            await environment.upload_file(str(source / 'workspace.tgz'), '/tmp/ctxpress-fork.tgz')
+            await self._checked(environment, 'tar -xzf /tmp/ctxpress-fork.tgz -C / && rm -f /tmp/ctxpress-fork.tgz')
+            target = self.logs_dir / 'sessions'
+            for path in sorted((source / 'sessions').rglob('*.jsonl')):
+                data = path.read_bytes()
+                data = data[:data.rfind(b'\n') + 1]           # drop a record still being written at the checkpoint
+                out = target / path.relative_to(source / 'sessions')
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(data)
+            self._fork_session = fork_session(source / 'sessions')
 
         async def _checkpoint(self, environment, point, count):
             """Save the workspace (the Agent's working directory and /tmp, never the private Codex home with its
