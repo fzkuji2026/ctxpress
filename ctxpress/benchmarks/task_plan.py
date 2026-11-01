@@ -65,7 +65,7 @@ def compile_plan(config, base_dir=None):
     config['repeats'] = repeats
     config['workers'] = eval_plan._positive(config.get('workers', 1), 'workers')
     settings = config.get('run') or {}
-    run_fields={'max_calls','timeout','compact_limit','grade','grading_timeout'}
+    run_fields={'max_calls','timeout','compact_limit','grade','grading_timeout','checkpoints'}
     if hasattr(adapter,'run_fields'):run_fields|=adapter.run_fields()
     if not isinstance(settings, dict) or set(settings) - run_fields:
         raise ValueError('invalid task-start run settings')
@@ -81,6 +81,11 @@ def compile_plan(config, base_dir=None):
                 config['benchmark']=='swe-bench-pro' and any(task['initial_state'].get('pro_version')!='v1' for task in selected)):
             raise ValueError('grading_timeout override applies to SWE-bench, PolyBench, Pro V1, BigCodeBench or native SWE-Milestone')
         eval_plan._positive(settings['grading_timeout'], 'grading_timeout', integer=False)
+    if 'checkpoints' in settings:                       # tool-call counts at which a Harbor run saves its workspace
+        points = settings['checkpoints']
+        if (not isinstance(points, list) or not points or any(type(k) is not int or k <= 0 for k in points)
+                or points != sorted(set(points)) or not str(config['backend']).startswith('codex')):
+            raise ValueError('checkpoints must be increasing positive tool-call counts of a Codex run')
     if type(settings['grade']) is not bool or config['scope'] == 'benchmark' and not settings['grade']:
         raise ValueError('benchmark scope requires official grading')
     if hasattr(adapter,'normalize_run'):settings=adapter.normalize_run(settings,repeats)

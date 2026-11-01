@@ -126,6 +126,7 @@ async def run_trial(request, official, channel, journal,agent_factory=None):
         reasoning=request['reasoning'], binary_version=request['binary_version'], compact_limit=request['compact_limit'],
         upstream=request['upstream'], auth_file=os.environ['CTXPRESS_CODEX_AUTH_FILE'],
         max_calls=request['run']['max_calls'], **codex_agent.catalog_settings(request),
+        **({'checkpoints': request['run']['checkpoints']} if request['run'].get('checkpoints') else {}),
         **codex_agent.replay_settings(request))
     CtxpressCodex = agent_factory(Codex,ExecInput,settings,LimitError,credentials) if agent_factory else \
         codex_agent.framework(Codex,ExecInput,settings,limit_error=LimitError,credential_state=credentials)

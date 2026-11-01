@@ -133,7 +133,7 @@ class CallProgress:
 def framework(base, exec_input, settings, limit_error=RuntimeError, credential_state=None):
     settings = copy.deepcopy(settings)
     required = {'method', 'model', 'reasoning', 'binary_version', 'compact_limit', 'upstream'}
-    optional = {'auth_file', 'max_calls', 'model_catalog', 'model_catalog_sha256', 'profiles', 'replay'}
+    optional = {'auth_file', 'max_calls', 'model_catalog', 'model_catalog_sha256', 'profiles', 'replay', 'checkpoints'}
     if not isinstance(settings, dict) or set(settings) - required - optional or required - set(settings):
         raise ValueError('declare method, model, reasoning, binary version, compact limit and upstream')
     if {'model_catalog', 'model_catalog_sha256'}.intersection(settings):
@@ -303,16 +303,35 @@ else:
             if credential_state:
                 credential_state(False)
 
+        async def _checkpoint(self, environment, point, count):
+            """Save the workspace (the Agent's working directory and /tmp, never the private Codex home with its
+            credentials) and the session records at a moment with no unfinished tool call, for later forks
+            (codex exec resume). Best effort: a failure is recorded and the run continues."""
+            target = LOGS + '/checkpoints/' + str(point)
+            command = ('set -e; mkdir -p ' + target + '; W=$(pwd); echo "$W" > ' + target + '/workdir; '
+                       'tar --exclude=./ctxpress-private --exclude=./logs -czf ' + target + '/workspace.tgz -C / '
+                       '"${W#/}" tmp 2>/dev/null || test -s ' + target + '/workspace.tgz; '
+                       'cp -r ' + LOGS + '/sessions ' + target + '/sessions; echo ' + str(count) + ' > ' + target + '/calls')
+            try:
+                result = await environment.exec(command=command, timeout_sec=600)
+                ok = not result.return_code
+            except Exception:
+                ok = False
+            self.ctxpress_checkpoints = getattr(self, 'ctxpress_checkpoints', []) + [dict(point=point, calls=count, saved=ok)]
+
         async def run(self, instruction, environment, context):
             execution = None
             try:
                 if 'max_calls' not in settings:
                     return await super().run(instruction, environment, context)
                 progress = CallProgress(self.logs_dir / 'sessions')
+                points = list(settings.get('checkpoints') or [])
                 execution = asyncio.create_task(super().run(instruction, environment, context))
                 while not execution.done():
                     await asyncio.wait({execution}, timeout=0.2)
                     count, complete = progress.update()
+                    if points and not execution.done() and count >= points[0] and complete:
+                        await self._checkpoint(environment, points.pop(0), count)
                     if not execution.done() and count >= settings['max_calls'] and complete:
                         self.ctxpress_stop = 'max_calls'
                         execution.cancel()
