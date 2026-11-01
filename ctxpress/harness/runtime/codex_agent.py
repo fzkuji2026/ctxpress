@@ -325,13 +325,20 @@ else:
             source = Path(fork['checkpoint'])
             await environment.upload_file(str(source / 'workspace.tgz'), '/tmp/ctxpress-fork.tgz')
             await self._checked(environment, 'tar -xzf /tmp/ctxpress-fork.tgz -C / && rm -f /tmp/ctxpress-fork.tgz')
-            target = self.logs_dir / 'sessions'
-            for path in sorted((source / 'sessions').rglob('*.jsonl')):
-                data = path.read_bytes()
-                data = data[:data.rfind(b'\n') + 1]           # drop a record still being written at the checkpoint
-                out = target / path.relative_to(source / 'sessions')
-                out.parent.mkdir(parents=True, exist_ok=True)
-                out.write_bytes(data)
+            import tempfile
+            # The sessions directory belongs to the container user: write it from inside the container.
+            with tempfile.TemporaryDirectory() as scratch:
+                for path in sorted((source / 'sessions').rglob('*.jsonl')):
+                    data = path.read_bytes()
+                    data = data[:data.rfind(b'\n') + 1]       # drop a record still being written at the checkpoint
+                    rel = path.relative_to(source / 'sessions').as_posix()
+                    local = Path(scratch) / path.name
+                    local.write_bytes(data)
+                    await self._checked(environment, 'mkdir -p ' + shlex.quote(LOGS + '/sessions/' + str(Path(rel).parent)))
+                    await environment.upload_file(str(local), LOGS + '/sessions/' + rel)
+            if getattr(environment, 'default_user', None) is not None:
+                await environment.exec(command='chown -R ' + shlex.quote(str(environment.default_user)) + ' ' + LOGS +
+                                       '/sessions', user='root', timeout_sec=60)
             self._fork_session = fork_session(source / 'sessions')
 
         async def _checkpoint(self, environment, point, count):
