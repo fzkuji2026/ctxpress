@@ -177,7 +177,8 @@ class ReadLess(Method):
         self.ranged = ranged                    # False: never view a command that already asked for line ranges
         self.policy_args = policy_args
         self.agent_tools = (DROP_TOOL,) if agent else ()
-        self.instructions = DROP_GUIDANCE if agent else ""
+        # a policy may describe its tool to the agent (GUIDANCE); the seed policy has none
+        self.instructions = DROP_GUIDANCE if agent else (getattr(load_policy(policy), "GUIDANCE", "") if policy else "")
         self.seen = set()
         self.numbered = {}                      # output number -> context item id
         self.applied = set()                    # ids of drop calls already applied
