@@ -35,6 +35,21 @@ command answer several questions at once; make the cheaper path the more obvious
 contains around the names the agent searched for. Do not hide information the agent needs to finish the task: a score
 drop counts against the candidate.
 
+What earlier rounds showed (real runs, read these before you design):
+- The first evolved candidates (batched progressive reads, definition previews, contextual search) made the agent read
+  MORE, not less: 4-24% more read tokens and a 15-22% higher bill. Previews and search output made it read in more,
+  smaller pieces and add them up.
+- With the definition seed the agent switched to reading by name completely (no `sed -n` at all), yet the saving stayed
+  at 8%: it read more files and asked for several definitions per command. The read syntax is not the lever.
+- The lever is how much content enters the context and stays there. So you may also change what the outputs return by
+  default: smaller defaults, truncation with an explicit pointer to expand (e.g. "N more lines: <command>"), a cap on
+  how many definitions or files one command returns, and view() shortening long whole-file prints.
+- Where the seeds saved: almost nothing in tool calls 11-50; 60-100% of their saving came after the 50th request, where
+  the history is long and every token kept costs again on every request, and runs that read less also finished sooner.
+  So judge a design by what it keeps out of a long history, not by how compact one read looks.
+- glz-7.0.0 is the counter-example: there reading by name cost 49% more on all three runs. A candidate must not only
+  help the tasks where reading is already cheap.
+
 Write the new module to candidate.py (complete, self-contained apart from the allowed imports) and one line to
 NOTE.txt saying what you changed and why. You may run `python3 -c` to test pieces of it against the files in ref/ or
 your own samples. Do not modify any other file. Stop when candidate.py and NOTE.txt are written."""

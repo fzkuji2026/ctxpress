@@ -58,10 +58,13 @@ def _descriptor(cmp):
     return dict(tool_rate=cmp.get("tool_calls", 0) / calls, read_cut=cmp.get("read_cut", 0.0), unused=cmp.get("unused", 0.0))
 
 
+RANK_ORDER = ("screen", "full")
+
+
 def _rank_fitness(e):
-    """Parents are ranked on one footing: the screen result when there is one (every candidate has it once seeds are
-    screened too), else the full one. Full results decide confirmation and G2, not parent choice."""
-    for k in ("screen", "full"):
+    """Parents are ranked on one footing: by default the screen result when there is one (every candidate has it once
+    seeds are screened too), else the full one; a generation run with --eval full ranks by full results first."""
+    for k in RANK_ORDER:
         if e.get(k) and e[k].get("tasks"):
             return evaluate.fitness(e[k]), k
     return None, None
@@ -88,19 +91,19 @@ def seed(args):
               f"score {cmp.get('reward_diff') or 0:+.3f}")
 
 
-def _control(base, ckpts, tasks, repeats, out_root, group):
+def _control(base, ckpts, tasks, repeats, out_root, group, workers=6):
     """The screen control, our method alone forked from the same checkpoints: one run directory per checkpoint set
     and repeat count, launched the first time and re-read afterwards (evaluate.launch reuses it)."""
     key = "control-" + policy.sha(json.dumps([ckpts[t] for t in tasks]) + str(repeats))
-    cfg = evaluate.config(base, key, None, tasks, repeats, workers=min(6, len(tasks) * repeats), checkpoints=ckpts)
+    cfg = evaluate.config(base, key, None, tasks, repeats, workers=min(workers, len(tasks) * repeats), checkpoints=ckpts)
     return evaluate.launch(cfg, group, out_root)
 
 
 def _screen(arch, base, ids, ckpts, tasks, args, group):
     """Screen checked candidates by forks from the checkpoints, paired with the (cached) control; record fitness."""
-    control_dir = _control(base, ckpts, tasks, args.repeats, args.out, group)
+    control_dir = _control(base, ckpts, tasks, args.repeats, args.out, group, args.workers)
     arms = {cid: evaluate.launch(evaluate.config(base, f"screen-{cid}", cid, tasks, args.repeats,
-                                                 workers=min(6, len(tasks) * args.repeats), checkpoints=ckpts), group, args.out)
+                                                 workers=min(args.workers, len(tasks) * args.repeats), checkpoints=ckpts), group, args.out)
             for cid in ids}
     evaluate.wait(list(arms.values()) + [control_dir], time.time() + args.minutes * 60)
     control = evaluate.collect(control_dir, screen=True)
@@ -170,22 +173,21 @@ def generation(args):
                  status="checked" if ok else "rejected", problems=m["problems"])
         log["candidates"].append({k: v for k, v in m.items() if k != "src"})
     ids = [m["id"] for m in made if m["src"] is not None and not m["problems"]]
-    log.update(_screen(arch, base, ids, ckpts, tasks, args, group))
+    if args.eval == "full":
+        log.update(_full(arch, base, ids, tasks, args, group))
+    else:
+        log.update(_screen(arch, base, ids, ckpts, tasks, args, group))
     log["finished"] = time.time()
     with open(os.path.join(arch.directory, f"gen-{args.gen:03d}.json"), "w") as f:
         json.dump(log, f, indent=1)
     print(arch.table())
 
 
-def full(args):
-    arch = archive_mod.Archive(args.archive)
-    with open(args.base) as f:
-        base = json.load(f)
-    ours = _reports(_dirs(args.ours)) if args.ours else _load_reports(arch, "ours")
-    group = f"evolve-{time.strftime('%Y%m%d')}"
-    tasks = args.tasks.split(",")
-    arms = {cid: evaluate.launch(evaluate.config(base, f"full-{cid}", cid, tasks, args.repeats, workers=6), group, args.out)
-            for cid in args.ids.split(",")}
+def _full(arch, base, ids, tasks, args, group, ours=None):
+    """Graded task-start runs of candidates, paired with our method's existing runs (--ours, or the archive's)."""
+    ours = ours if ours is not None else _load_reports(arch, "ours")
+    arms = {cid: evaluate.launch(evaluate.config(base, f"full-{cid}", cid, tasks, args.repeats, workers=args.workers), group, args.out)
+            for cid in ids}
     evaluate.wait(list(arms.values()), time.time() + args.minutes * 60)
     for cid, d in arms.items():
         reps = evaluate.collect(d)
@@ -193,7 +195,18 @@ def full(args):
         cmp = evaluate.compare(reps, ours)
         arch.update(cid, status="full", full=cmp)
         arch.update(cid, fitness=_rank_fitness(arch.get(cid))[0], fitness_from="full")
-        print(f"{cid}: {cmp.get('jobs')} runs, manageable {cmp.get('saving', 0):+.1%}, score {cmp.get('reward_diff') or 0:+.3f}")
+        print(f"{cid}: {cmp.get('jobs')} runs, manageable {cmp.get('saving', 0):+.1%}, score {cmp.get('reward_diff') or 0:+.3f}, "
+              f"read tokens {cmp.get('read_cut', 0):+.1%}, tool calls {cmp.get('tool_calls', 0)}/{cmp.get('calls', 0)}: "
+              f"{arch.get(cid).get('note', '')[:120]}")
+    return dict(arms=arms)
+
+
+def full(args):
+    arch = archive_mod.Archive(args.archive)
+    with open(args.base) as f:
+        base = json.load(f)
+    ours = _reports(_dirs(args.ours)) if args.ours else _load_reports(arch, "ours")
+    _full(arch, base, args.ids.split(","), args.tasks.split(","), args, f"evolve-{time.strftime('%Y%m%d')}", ours)
 
 
 def main(argv=None):
@@ -208,16 +221,22 @@ def main(argv=None):
         p.add_argument("--minutes", type=float, default=90)
         p.add_argument("--repeats", type=int, default=1)
         p.add_argument("--tasks", default="")
+        p.add_argument("--workers", type=int, default=6, help="parallel jobs per arm")
     sub.choices["seed"].add_argument("--seed", nargs="+", required=True, help="ID=DIR[:PREFIX][,DIR...]")
     g = sub.choices["generation"]
     g.add_argument("--gen", type=int, required=True)
     g.add_argument("--candidates", type=int, default=3)
     g.add_argument("--checkpoints", required=True, help="run directory whose jobs saved the fork checkpoints")
     g.add_argument("--parents", default="")
+    g.add_argument("--eval", choices=("screen", "full"), default="screen",
+                   help="screen: forks from the checkpoints; full: graded task-start runs against our method's runs")
     sub.choices["full"].add_argument("--ids", required=True)
     sub.choices["screen"].add_argument("--ids", required=True)
     sub.choices["screen"].add_argument("--checkpoints", required=True)
     args = ap.parse_args(argv)
+    global RANK_ORDER
+    if getattr(args, "eval", None) == "full" or args.cmd == "full":
+        RANK_ORDER = ("full", "screen")
     if args.cmd != "seed" and not os.path.isfile(os.environ.get("CTXPRESS_CODEX_AUTH_FILE", "")):
         raise SystemExit("set CTXPRESS_CODEX_AUTH_FILE: the proposer and every run need it")
     dict(seed=seed, generation=generation, screen=screen, full=full)[args.cmd](args)
