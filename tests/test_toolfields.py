@@ -67,3 +67,18 @@ def test_history_present_at_start_is_never_changed(tmp_path):
 
 def test_instructions_carry_the_guidance():
     assert "[workspace]" in ToolFields().instructions
+
+
+def test_ledger_reports_passing_items_and_files_changed_since(tmp_path):
+    w = repo(tmp_path)
+    m = ToolFields(receipts=False, repeats=False, ledger=True, workdir=str(w))
+    assert [t["name"] for t in m.agent_tools] == ["task_ledger"] and "task_ledger" in m.instructions
+    text, _ = m.call_tool("task_ledger", dict(items=[dict(id="r1", requirement="add X", files=["m.py"]),
+                                                     dict(id="r2", requirement="add Y", files=["m.py"])]))
+    assert "0/2" in text and "not verified yet" in text
+    text, _ = m.call_tool("task_ledger", dict(items=[dict(id="r1", check="pytest -k x", result="pass"),
+                                                     dict(id="r2", check="pytest -k y", result="pass")]))
+    assert text.startswith("ALL 2 items verified")
+    (w / "m.py").write_text("changed\n")
+    text, _ = m.call_tool("task_ledger", {})
+    assert "0/2" in text and "changed since: m.py" in text

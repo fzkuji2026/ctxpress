@@ -62,6 +62,18 @@ def snapshot(workdir):
     return out
 
 
+def file_hashes(workdir, files):
+    """{path: sha1 of its bytes, None if missing} for the ledger's files, relative to the workspace."""
+    out = {}
+    for f in files:
+        try:
+            with open(os.path.join(workdir, f), "rb") as fh:
+                out[f] = hashlib.sha1(fh.read()).hexdigest()
+        except OSError:
+            out[f] = None
+    return out
+
+
 def changes(before, after):
     """[(path, kind, new hunks)] for files whose diff differs between two snapshots (hunks matched by content)."""
     rows = []
@@ -85,13 +97,43 @@ class ToolFields(Method):
                      L2="无", L3="无", cross="无", memory="无", decider="字段策略（可手写或自动搜索）")
     source = "本文"
 
-    def __init__(self, policy=DEFAULT_POLICY, receipts=True, repeats=True, workdir=None):
+    def __init__(self, policy=DEFAULT_POLICY, receipts=True, repeats=True, ledger=False, workdir=None):
         self.policy_spec = policy
-        load_policy(policy)
-        self.receipts, self.repeats = receipts, repeats
+        p = load_policy(policy)
+        self.receipts, self.repeats, self.ledger = receipts, repeats, ledger
         self.workdir = workdir
-        self.instructions = load_policy(policy).GUIDANCE
+        self.instructions = "\n\n".join(x for x in (p.GUIDANCE if receipts or repeats else "",
+                                                    p.LEDGER_GUIDANCE if ledger else "") if x)
+        self.agent_tools = (p.LEDGER_TOOL,) if ledger else ()
+        self.items = {}            # ledger (lives in the tool process): id -> requirement record
         self.reset(None)
+
+    def call_tool(self, name, args):
+        p = load_policy(self.policy_spec)
+        if name != p.LEDGER_TOOL["name"]:
+            raise KeyError(f"unknown tool {name}")
+        wd = self._wd()
+        for row in (args or {}).get("items") or []:
+            if not isinstance(row, dict) or not str(row.get("id") or "").strip():
+                continue
+            rec = self.items.setdefault(str(row["id"]).strip(), dict(requirement="", files=[], result=None))
+            for k in ("requirement", "check", "note"):
+                if row.get(k):
+                    rec[k] = str(row[k])[:400]
+            if isinstance(row.get("files"), list):
+                rec["files"] = [str(f) for f in row["files"]][:30]
+            if row.get("result") in ("pass", "fail"):
+                rec["result"] = row["result"]
+                rec["hashes"] = file_hashes(wd, rec["files"])
+        rows = []
+        for i, rec in self.items.items():
+            changed = []
+            if rec.get("hashes") is not None:
+                now = file_hashes(wd, rec["files"])
+                changed = [f for f in rec["files"] if now.get(f) != rec["hashes"].get(f)]
+            rows.append(dict(id=i, requirement=rec["requirement"], files=rec["files"], check=rec.get("check"),
+                             result=rec["result"], changed_since_check=changed))
+        return p.ledger_report(rows), False
 
     def reset(self, sim):
         self.started = False

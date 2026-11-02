@@ -39,6 +39,45 @@ def receipt(changes, ctx):
     return "[workspace: your step changed these files]\n" + "\n".join(lines)
 
 
+LEDGER_TOOL = dict(
+    name="task_ledger",
+    description="Your ledger of the task's requirements. Add or update items: id, requirement, the files that "
+                "implement it, and after you check it, the check you ran and its result (pass/fail). The tool hashes "
+                "those files and reports, for every item, whether it passed and whether any of its files changed "
+                "since that check. Call with no items to see the current status.",
+    inputSchema=dict(type="object", properties=dict(items=dict(type="array", items=dict(
+        type="object", properties=dict(
+            id=dict(type="string"), requirement=dict(type="string"),
+            files=dict(type="array", items=dict(type="string"), description="paths relative to the repository root"),
+            check=dict(type="string", description="the command or test that verifies it"),
+            result=dict(type="string", enum=["pass", "fail"]), note=dict(type="string")),
+        required=["id"])))))
+
+LEDGER_GUIDANCE = ("Keep the task's requirements in mcp__ctxpress.task_ledger: record each requirement and the files "
+                   "that implement it as you go, and record the check you ran and its result once you verify it. The "
+                   "tool tells you which items passed and whether their files changed since. When every item is "
+                   "verified as passing and unchanged, the task is complete: reading the code or rerunning the checks "
+                   "again cannot change that, so finish.")
+
+
+def ledger_report(rows):
+    if not rows:
+        return "ledger is empty: add the task's requirements as items"
+    done = [r for r in rows if r["result"] == "pass" and not r["changed_since_check"]]
+    lines = []
+    for r in rows:
+        if r["result"] is None:
+            state = "not verified yet"
+        elif r["changed_since_check"]:
+            state = f"{r['result']} at its check, but changed since: {', '.join(r['changed_since_check'])}"
+        else:
+            state = f"{r['result']}, files unchanged since the check"
+        lines.append(f"- {r['id']}: {r['requirement'][:120]} [{state}]")
+    head = (f"ALL {len(rows)} items verified as passing, none changed since: the task is complete."
+            if len(done) == len(rows) else f"{len(done)}/{len(rows)} items verified as passing and unchanged.")
+    return head + "\n" + "\n".join(lines)
+
+
 def repeat(cmd, out, earlier, ctx):
     step, before = earlier
     if out == before and ctx["tokens"](out) >= MIN_REPEAT_TOKENS:
