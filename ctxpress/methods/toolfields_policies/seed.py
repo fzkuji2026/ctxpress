@@ -78,37 +78,50 @@ def ledger_report(rows):
     return head + "\n" + "\n".join(lines)
 
 
-BOUNDARY_LINES = 400
+
 BOUNDARY_HUNK_LINES = 30
 BOUNDARY_GUIDANCE = ("After your context is compacted, the next command output ends with a [your changes so far] "
                      "field: every file you have changed since the task started, with the changed lines, computed from "
                      "the files on disk. Use it instead of printing those files again.")
 
 
+BOUNDARY_TOKENS = 2500        # the whole field; it is carried in every later request
+BOUNDARY_FILES = 15            # files listed by name (largest changes first); the rest are counted
+
+
 def boundary(changes, ctx):
-    """All changes since the task started, shown once after a compaction; new and changed files first by size."""
+    """Changes since the task started, shown once after a compaction, within a token budget: the files with the
+    largest changes by name with their changed lines, the many small ones only counted."""
     if not changes:
         return None
-    lines, cut = [], 0
-    stat = []
-    for path, kind, hunks in changes:
-        plus = sum(1 for h in hunks for x in h if x[:1] == "+")
-        minus = sum(1 for h in hunks for x in h if x[:1] == "-")
-        stat.append(f"{path}: {kind}" + (f" (+{plus} -{minus})" if kind == "modified" else ""))
-    for path, kind, hunks in changes:
+    size = lambda h: sum(1 for x in h if x[:1] in "+-")
+    rows = sorted(changes, key=lambda c: (c[1] == "modified", -sum(size(h) for h in c[2])))
+    rows = [c for c in rows if c[1] != "modified"] + sorted((c for c in rows if c[1] == "modified"),
+                                                            key=lambda c: -sum(size(h) for h in c[2]))
+    named, rest = rows[:BOUNDARY_FILES], rows[BOUNDARY_FILES:]
+    stat = [f"{p}: {k}" + (f" (+{sum(1 for h in hs for x in h if x[:1] == '+')} "
+                           f"-{sum(1 for h in hs for x in h if x[:1] == '-')})" if k == "modified" else "")
+            for p, k, hs in named]
+    if rest:
+        small = sum(sum(size(h) for h in hs) for _, _, hs in rest)
+        stat.append(f"... and {len(rest)} more files with {small} changed lines in all (`git diff --stat` lists them)")
+    out = "[your changes so far, from the files on disk]\n" + "\n".join(stat)
+    cut = 0
+    for path, kind, hunks in named:
         if kind != "modified":
             continue
-        lines.append(f"--- {path}")
+        block = [f"--- {path}"]
         for h in hunks:
-            body = h[:BOUNDARY_HUNK_LINES]
-            if len(lines) + len(body) > BOUNDARY_LINES:
-                cut += sum(1 for x in h if x[:1] in "+-")
+            body = [x[:200] for x in h[:BOUNDARY_HUNK_LINES]]
+            if ctx["tokens"](out + "\n".join(block + body)) > BOUNDARY_TOKENS:
+                cut += size(h)
                 continue
-            lines += body
-            if len(h) > BOUNDARY_HUNK_LINES:
-                lines.append(f"  ... {len(h) - BOUNDARY_HUNK_LINES} more lines in this hunk")
-    tail = [f"(+{cut} more changed lines not shown; `git diff -- <file>` prints them)"] if cut else []
-    return ("[your changes so far, from the files on disk]\n" + "\n".join(stat) + "\n" + "\n".join(lines + tail))
+            block += body
+        if len(block) > 1:
+            out += "\n" + "\n".join(block)
+    if cut:
+        out += f"\n(+{cut} more changed lines not shown; `git diff -- <file>` prints them)"
+    return out
 
 
 def repeat(cmd, out, earlier, ctx):
