@@ -58,21 +58,27 @@ def _usage_rows(path):
                 yield d
 
 
-def bill(requests):
-    """total, fixed, manageable and the tool-output split (entry, later, per-request tool-output size)."""
+def bill(requests, skip=0):
+    """total, fixed, manageable and the tool-output split (entry, later, per-request tool-output size). skip: leave
+    out the first `skip` main requests (and anything billed before the next one), e.g. a fork's cache warm-up."""
     U, C, O = PRICES['uncached'], PRICES['cached'], PRICES['output']
     total = fixed = aux = 0.0
-    rows, base = [], None
+    rows, base, main = [], None, 0
     for d in _usage_rows(requests):
         u = d['usage']
         I, Ca, Out = u.get('input_tokens') or 0, u.get('cached_tokens') or 0, u.get('output_tokens') or 0
-        total += (I - Ca) * U + Ca * C + Out * O
-        if 'request' in d and d.get('composition'):
+        is_main = 'request' in d and d.get('composition')
+        if is_main:
             base = base or d['composition']
-            f = min(sum(base.get(k, 0) for k in ('instructions', 'other', 'user')), I)
-            fixed += f * (C if Ca >= f else U)
+            main += 1
             if d.get('status', 200) == 200:
                 rows.append(d)
+        if main <= skip:
+            continue
+        total += (I - Ca) * U + Ca * C + Out * O
+        if is_main:
+            f = min(sum(base.get(k, 0) for k in ('instructions', 'other', 'user')), I)
+            fixed += f * (C if Ca >= f else U)
         elif 'request' not in d:
             aux += (I - Ca) * U + Ca * C
         fixed += Out * O
@@ -80,7 +86,7 @@ def bill(requests):
     prev, sizes = None, []
     base = base or {}
     bo, bu = base.get('other', 0), base.get('user', 0)
-    for d in rows:
+    for i, d in enumerate(rows):
         u = d['usage']
         I, Ca = u.get('input_tokens') or 0, u.get('cached_tokens') or 0
         Un = I - Ca
@@ -103,8 +109,9 @@ def bill(requests):
             un = {k: new[k] + (rest * (size[k] - new[k]) / hs if k in HIST else 0) for k in KINDS}
         ca = {k: max(0.0, size[k] - un[k]) for k in KINDS}
         cs = sum(ca.values()) or 1
-        entry += min(un['tool_output'], new['tool_output']) * U
-        later += max(0, un['tool_output'] - new['tool_output']) * U + Ca * ca['tool_output'] / cs * C
+        if i >= skip:
+            entry += min(un['tool_output'], new['tool_output']) * U
+            later += max(0, un['tool_output'] - new['tool_output']) * U + Ca * ca['tool_output'] / cs * C
         sizes.append(size['tool_output'])
         prev = size
     return dict(total=total, fixed=fixed, manage=total - fixed, entry=entry, later=later, sizes=sizes,
@@ -153,14 +160,14 @@ def _files(a):
     return files
 
 
-def report(attempt, examples=6):
-    """Score, bill and read waste of one attempt; None if its records are incomplete."""
+def report(attempt, examples=6, skip=0):
+    """Score, bill and read waste of one attempt; None if its records are incomplete. skip: see bill()."""
     rq = sorted(glob.glob(attempt + '/ctxp-hb-*/agent/ctxpress-requests.jsonl'))
     rolls = sorted(glob.glob(attempt + '/ctxp-hb-*/agent/sessions/**/rollout-*.jsonl', recursive=True))
     rew = glob.glob(attempt + '/ctxp-hb-*/verifier/reward.txt')
     if not rq or not rolls:
         return None
-    b = bill(rq[0])
+    b = bill(rq[0], skip)
     sizes, nreq = b['sizes'], max(1, len(b['sizes']))
     acts = actions.load(rolls[0])
     lns = sorted({a['ln'] for a in acts})
@@ -187,6 +194,8 @@ def report(attempt, examples=6):
         kind = classify(a, edited)
         e = enter[a['ln']]
         life = max(0, next((r for r in drops if r > e), nreq) - e)
+        if e < skip:                     # entered during the skipped requests (a fork's restored history)
+            continue
         lines = out.splitlines()
         ltok = [tokens.count(l) + 1 for l in lines]
         unused = 0

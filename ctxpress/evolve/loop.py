@@ -14,7 +14,7 @@
         full graded task runs for the best candidates; the control is our method's existing runs (--ours)
 
 Fitness is the saving of the manageable bill against our method alone (ctxpress.evolve.evaluate.fitness); an entry
-carries the screen and full results separately and ranks by full when it has one. Every generation writes
+carries the screen and full results separately and ranks by the screen result (see _rank_fitness). Every generation writes
 <ARCHIVE>/gen-NNN.json.
 """
 from __future__ import annotations
@@ -59,7 +59,9 @@ def _descriptor(cmp):
 
 
 def _rank_fitness(e):
-    for k in ("full", "screen"):
+    """Parents are ranked on one footing: the screen result when there is one (every candidate has it once seeds are
+    screened too), else the full one. Full results decide confirmation and G2, not parent choice."""
+    for k in ("screen", "full"):
         if e.get(k) and e[k].get("tasks"):
             return evaluate.fitness(e[k]), k
     return None, None
@@ -86,39 +88,34 @@ def seed(args):
               f"score {cmp.get('reward_diff') or 0:+.3f}")
 
 
-def _control(arch, base, ckpts, tasks, repeats, out_root, group):
-    """The screen control (our method alone forked from the same checkpoints): launched once, reused."""
+def _control(base, ckpts, tasks, repeats, out_root, group):
+    """The screen control, our method alone forked from the same checkpoints: one run directory per checkpoint set
+    and repeat count, launched the first time and re-read afterwards (evaluate.launch reuses it)."""
     key = "control-" + policy.sha(json.dumps([ckpts[t] for t in tasks]) + str(repeats))
-    p = os.path.join(arch.directory, key + ".json")
-    if os.path.exists(p):
-        with open(p) as f:
-            return json.load(f), None
     cfg = evaluate.config(base, key, None, tasks, repeats, workers=min(6, len(tasks) * repeats), checkpoints=ckpts)
-    return None, (key, evaluate.launch(cfg, group, out_root))
+    return evaluate.launch(cfg, group, out_root)
 
 
 def _screen(arch, base, ids, ckpts, tasks, args, group):
     """Screen checked candidates by forks from the checkpoints, paired with the (cached) control; record fitness."""
-    control, pending = _control(arch, base, ckpts, tasks, args.repeats, args.out, group)
+    control_dir = _control(base, ckpts, tasks, args.repeats, args.out, group)
     arms = {cid: evaluate.launch(evaluate.config(base, f"screen-{cid}", cid, tasks, args.repeats,
                                                  workers=min(6, len(tasks) * args.repeats), checkpoints=ckpts), group, args.out)
             for cid in ids}
-    evaluate.wait(list(arms.values()) + ([pending[1]] if pending else []), time.time() + args.minutes * 60)
-    if pending:
-        control = evaluate.collect(pending[1])
-        with open(os.path.join(arch.directory, pending[0] + ".json"), "w") as f:
-            json.dump(control, f, indent=1)
+    evaluate.wait(list(arms.values()) + [control_dir], time.time() + args.minutes * 60)
+    control = evaluate.collect(control_dir, screen=True)
+    _save_reports(arch, os.path.basename(control_dir), "screen", control)
     for cid, d in arms.items():
-        reps = evaluate.collect(d)
+        reps = evaluate.collect(d, screen=True)
         _save_reports(arch, cid, "screen", reps)
         cmp = evaluate.compare(reps, control)
-        arch.update(cid, status="screened", screen=cmp, descriptor=_descriptor(cmp) if cmp.get("tasks") else None)
+        arch.update(cid, status="full" if arch.get(cid).get("full") else "screened", screen=cmp, descriptor=_descriptor(cmp) if cmp.get("tasks") else None)
         e = arch.get(cid)
         f, src = _rank_fitness(e)
         arch.update(cid, fitness=f, fitness_from=src)
         print(f"{cid} (parent {e['parent']}): {cmp.get('jobs', 0)} forks, manageable {cmp.get('saving', 0):+.1%} vs control, "
               f"read tokens {cmp.get('read_cut', 0):+.1%}, tool calls {cmp.get('tool_calls', 0)}/{cmp.get('calls', 0)}: {e['note'][:120]}")
-    return dict(arms=arms, control_jobs=len(control))
+    return dict(arms=arms, control=control_dir, control_jobs=len(control))
 
 
 def screen(args):
@@ -130,7 +127,8 @@ def screen(args):
     ckpts = evaluate.checkpoints(args.checkpoints)
     ids = []
     for cid in args.ids.split(","):
-        with open(os.path.join(arch.directory, "proposer", cid, "candidate.py")) as f:
+        written = os.path.join(arch.directory, "proposer", cid, "candidate.py")
+        with open(written if os.path.exists(written) else policy.path_of(cid)) as f:      # seeds have no proposer file
             src = f.read()
         problems, _ = policy.check(cid, src)
         arch.update(cid, problems=problems, status="checked" if not problems else "rejected", sha=policy.sha(src))
@@ -220,6 +218,8 @@ def main(argv=None):
     sub.choices["screen"].add_argument("--ids", required=True)
     sub.choices["screen"].add_argument("--checkpoints", required=True)
     args = ap.parse_args(argv)
+    if args.cmd != "seed" and not os.path.isfile(os.environ.get("CTXPRESS_CODEX_AUTH_FILE", "")):
+        raise SystemExit("set CTXPRESS_CODEX_AUTH_FILE: the proposer and every run need it")
     dict(seed=seed, generation=generation, screen=screen, full=full)[args.cmd](args)
 
 

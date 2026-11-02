@@ -22,6 +22,8 @@ OURS = {"class": "infinite-context", "args": {
 PROFILE = {"version": 1, "max_context_tokens": 128000, "compression_trigger_tokens": 102400}
 CHECKPOINT = 10
 WINDOW = 40
+WARMUP = 2              # a fork's first requests: the control's prefix is still in the provider's cache from the run
+                        # that saved the checkpoint, a candidate's (new instructions) is not; left out of screen bills
 
 
 def method(cid, fork=False):
@@ -75,13 +77,16 @@ def _cli(*args, timeout=3600):
 
 
 def launch(cfg, group, out_root):
-    """Plan and start one arm; returns its run directory."""
+    """Plan and start one arm; returns its run directory. An arm whose run directory already exists is reused, so
+    that a generation can be re-read (or resumed) without running anything again."""
+    run_dir = os.path.join(out_root, cfg["name"])
+    if os.path.exists(os.path.join(run_dir, "plan.json")):
+        return run_dir
     d = os.path.join(PREPARED, group, cfg["name"])
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "config.json"), "w") as f:
         json.dump(cfg, f, indent=1)
     _cli("plan", os.path.join(d, "config.json"), "--output", os.path.join(d, "plan.json"))
-    run_dir = os.path.join(out_root, cfg["name"])
     _cli("run", os.path.join(d, "plan.json"), "--directory", run_dir, "--background", timeout=600)
     return run_dir
 
@@ -98,13 +103,16 @@ def running(run_dir):
     return r.returncode == 0
 
 
-def collect(run_dir):
-    """Reports of the finished jobs of a run directory (a job is finished when its trial wrote result.json)."""
+def collect(run_dir, screen=False):
+    """Reports of the finished jobs of a run directory (a job is finished when its trial wrote result.json). A screen
+    fork's bill leaves out its first WARMUP requests and its grade (of a cut-off run) is dropped."""
     out = []
     for att in waste.attempts(run_dir):
         if not glob.glob(att + "/ctxp-hb-*/result.json"):
             continue
-        r = waste.report(att)
+        r = waste.report(att, skip=WARMUP if screen else 0)
+        if r is not None and screen:
+            r["reward"] = None
         if r is not None and r["requests"] > 0:
             out.append(r)
     return out
