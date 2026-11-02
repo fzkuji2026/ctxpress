@@ -102,3 +102,22 @@ def test_after_a_compaction_the_next_output_carries_all_changes_once(tmp_path):
     items += shell_pair('d', "ls", "m.py")
     out, _ = rw.rewrite_body(dict(input=items), 's')
     assert "[your changes" not in sent(out, 'd')                  # once per compaction
+
+
+def test_composed_with_infinite_context_keeps_the_ledger_and_guidance(tmp_path):
+    from ctxpress.methods import build
+    w = repo(tmp_path)
+    entry = {"class": "Composed", "args": {"methods": [
+        {"class": "ToolFields", "args": dict(receipts=False, repeats=False, ledger=True, boundary=True, workdir=str(w))},
+        {"class": "infinite-context", "args": dict(version=5, t=72000, tool_dialect="full", choose="cost", candidates=[],
+                                                   writers=["mechanical"], guard_keep_frac=0.142, spec_keep_frac=0.142,
+                                                   writer_need=False)}]}}
+    m = build(entry)
+    assert "task_ledger" in [t["name"] for t in m.agent_tools]
+    assert "task_ledger" in m.instructions and "[your changes so far]" in m.instructions
+    text, _ = m.call_tool("task_ledger", dict(items=[dict(id="r1", requirement="x", files=["m.py"])]))
+    assert "0/1" in text
+    rw = Rewriter(lambda: build(entry))
+    items = head() + shell_pair('a', "ls", "m.py")
+    out, _ = rw.rewrite_body(dict(input=items), 's')
+    assert sent(out, 'a') == "m.py"
