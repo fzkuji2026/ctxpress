@@ -82,3 +82,23 @@ def test_ledger_reports_passing_items_and_files_changed_since(tmp_path):
     (w / "m.py").write_text("changed\n")
     text, _ = m.call_tool("task_ledger", {})
     assert "0/2" in text and "changed since: m.py" in text
+
+
+def test_after_a_compaction_the_next_output_carries_all_changes_once(tmp_path):
+    w = repo(tmp_path)
+    rw = Rewriter(lambda: ToolFields(receipts=False, repeats=False, boundary=True, workdir=str(w)))
+    (w / "m.py").write_text("".join(("EDITED 5\n" if i == 5 else f"line {i}\n") for i in range(50)))
+    items = head() + shell_pair('a', "python3 edit.py", "")
+    rw.rewrite_body(dict(input=items), 's')
+    items += shell_pair('b', "ls", "m.py")
+    out, _ = rw.rewrite_body(dict(input=items), 's')
+    assert "[your changes" not in sent(out, 'b')                  # no compaction yet
+    items = [dict(type='message', role='user', content='Summary of earlier work')]   # the host compacted
+    rw.rewrite_body(dict(input=items), 's')
+    items += shell_pair('c', "ls", "m.py")
+    out, _ = rw.rewrite_body(dict(input=items), 's')
+    text = sent(out, 'c')
+    assert "[your changes so far" in text and "m.py: modified (+1 -1)" in text and "+EDITED 5" in text
+    items += shell_pair('d', "ls", "m.py")
+    out, _ = rw.rewrite_body(dict(input=items), 's')
+    assert "[your changes" not in sent(out, 'd')                  # once per compaction

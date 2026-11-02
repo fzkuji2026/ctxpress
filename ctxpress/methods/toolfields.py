@@ -97,13 +97,14 @@ class ToolFields(Method):
                      L2="无", L3="无", cross="无", memory="无", decider="字段策略（可手写或自动搜索）")
     source = "本文"
 
-    def __init__(self, policy=DEFAULT_POLICY, receipts=True, repeats=True, ledger=False, workdir=None):
+    def __init__(self, policy=DEFAULT_POLICY, receipts=True, repeats=True, ledger=False, boundary=False, workdir=None):
         self.policy_spec = policy
         p = load_policy(policy)
-        self.receipts, self.repeats, self.ledger = receipts, repeats, ledger
+        self.receipts, self.repeats, self.ledger, self.boundary = receipts, repeats, ledger, boundary
         self.workdir = workdir
         self.instructions = "\n\n".join(x for x in (p.GUIDANCE if receipts or repeats else "",
-                                                    p.LEDGER_GUIDANCE if ledger else "") if x)
+                                                    p.LEDGER_GUIDANCE if ledger else "",
+                                                    p.BOUNDARY_GUIDANCE if boundary else "") if x)
         self.agent_tools = (p.LEDGER_TOOL,) if ledger else ()
         self.items = {}            # ledger (lives in the tool process): id -> requirement record
         self.reset(None)
@@ -136,6 +137,8 @@ class ToolFields(Method):
         return p.ledger_report(rows), False
 
     def reset(self, sim):
+        # Called again when the host replaces its history (compaction): the agent's own edits left its context.
+        self.boundary_due = self.boundary and getattr(self, "started", False)
         self.started = False
         self.pending = []          # output items ingested since the last request
         self.last = {}             # normalised command -> (step, output)
@@ -152,12 +155,12 @@ class ToolFields(Method):
     def step(self, sim, r):
         items, self.pending = self.pending, []
         policy = load_policy(self.policy_spec)
-        if self.receipts:
+        tree = None
+        if self.receipts or self.boundary_due:
             try:
                 tree = snapshot(self._wd())
             except Exception:
                 sim.M["toolfields_git_failed"] += 1
-                tree = None
         first = not self.started
         self.started = True
         rows = changes(self.tree, tree) if self.receipts and tree is not None and self.tree is not None else []
@@ -169,6 +172,14 @@ class ToolFields(Method):
             new = self._repeats(sim, item, text, policy, register_only=first)
             if first:
                 continue
+            if self.boundary_due and tree is not None and k == len(items) - 1:
+                # first new output after a compaction: everything the agent changed since the task started
+                field = policy.boundary(changes({}, tree), dict(tokens=tokens.count))
+                self.boundary_due = False
+                if field:
+                    new = (new if new is not None else text) + "\n" + field
+                    sim.M["toolfields_boundary"] += 1
+                    sim.M["toolfields_boundary_tokens"] += tokens.count(field)
             if rows and k == len(items) - 1:      # the tree changed during these commands: receipt on the last output
                 field = policy.receipt(rows, dict(tokens=tokens.count))
                 if field:

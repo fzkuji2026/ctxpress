@@ -78,6 +78,39 @@ def ledger_report(rows):
     return head + "\n" + "\n".join(lines)
 
 
+BOUNDARY_LINES = 400
+BOUNDARY_HUNK_LINES = 30
+BOUNDARY_GUIDANCE = ("After your context is compacted, the next command output ends with a [your changes so far] "
+                     "field: every file you have changed since the task started, with the changed lines, computed from "
+                     "the files on disk. Use it instead of printing those files again.")
+
+
+def boundary(changes, ctx):
+    """All changes since the task started, shown once after a compaction; new and changed files first by size."""
+    if not changes:
+        return None
+    lines, cut = [], 0
+    stat = []
+    for path, kind, hunks in changes:
+        plus = sum(1 for h in hunks for x in h if x[:1] == "+")
+        minus = sum(1 for h in hunks for x in h if x[:1] == "-")
+        stat.append(f"{path}: {kind}" + (f" (+{plus} -{minus})" if kind == "modified" else ""))
+    for path, kind, hunks in changes:
+        if kind != "modified":
+            continue
+        lines.append(f"--- {path}")
+        for h in hunks:
+            body = h[:BOUNDARY_HUNK_LINES]
+            if len(lines) + len(body) > BOUNDARY_LINES:
+                cut += sum(1 for x in h if x[:1] in "+-")
+                continue
+            lines += body
+            if len(h) > BOUNDARY_HUNK_LINES:
+                lines.append(f"  ... {len(h) - BOUNDARY_HUNK_LINES} more lines in this hunk")
+    tail = [f"(+{cut} more changed lines not shown; `git diff -- <file>` prints them)"] if cut else []
+    return ("[your changes so far, from the files on disk]\n" + "\n".join(stat) + "\n" + "\n".join(lines + tail))
+
+
 def repeat(cmd, out, earlier, ctx):
     step, before = earlier
     if out == before and ctx["tokens"](out) >= MIN_REPEAT_TOKENS:
