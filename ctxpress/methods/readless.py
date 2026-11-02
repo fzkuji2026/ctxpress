@@ -168,8 +168,10 @@ class ReadLess(Method):
                      L2="无", L3="无", cross="无", memory="无", decider="视图策略（可手写或自动搜索）+ Agent 自己的判断")
     source = "本文"
 
-    def __init__(self, policy=DEFAULT_POLICY, min_tokens=800, agent=False, ranged=True, **policy_args):
+    def __init__(self, policy=DEFAULT_POLICY, min_tokens=800, agent=False, ranged=True, fresh_only=False, **policy_args):
         self.policy_spec = policy
+        self.fresh_only = fresh_only            # True: outputs already in the history at the first request (a resumed
+        self.started = False                    # session, a fork) are left as the agent saw them
         if policy:
             load_policy(policy)                 # fail early on a bad policy; the method itself holds only the name
         self.min_tokens = min_tokens
@@ -211,6 +213,8 @@ class ReadLess(Method):
         return new
 
     def on_ingest(self, sim, item):
+        if self.fresh_only and not self.started:
+            return
         if item.get("seg") != "out" or item.get("protected") or item.get("has_media") or item.get("form", "full") != "full":
             return
         text = item.get("text") or ""
@@ -225,6 +229,7 @@ class ReadLess(Method):
                 sim.M["readless_numbered"] += 1
 
     def step(self, sim, r):
+        self.started = True
         if not self.agent:
             return
         for call in sim.ctx:
