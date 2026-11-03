@@ -26,23 +26,63 @@ WARMUP = 2              # a fork's first requests: the control's prefix is still
                         # that saved the checkpoint, a candidate's (new instructions) is not; left out of screen bills
 
 
-def method(cid, fork=False):
-    """The method entry of an arm: our method alone (cid None) or the candidate's ReadLess in front of it."""
-    if cid is None:
-        m = copy.deepcopy(OURS)
+SPACES = ("tool", "joint", "retention")
+VANILLA = {"class": "HostDefault", "args": {"context_profile": PROFILE}}
+
+
+def _ours(retain_from=None):
+    """Our method's entry; with retain_from, a policy whose RETAIN overrides its retention switches (clamped)."""
+    m = copy.deepcopy(OURS)
+    if retain_from is not None:
+        import importlib
+        m["args"].update(policy.retain_overrides(getattr(importlib.import_module(policy.module_name(retain_from)), "RETAIN", None)))
+    return m
+
+
+def method(cid, fork=False, space="tool", retention=None):
+    """The method entry of an arm.
+
+    space "tool"       our method alone (cid None) or the candidate's ReadLess (its entry views and tools) in front
+    space "joint"      the candidate decides both halves: ReadLess in front, its RETAIN in our method's switches,
+                       its retain() after our method (ctxpress.methods.retain_hook)
+    space "retention"  only the retention half: our method with the candidate's RETAIN and retain(), host tools as they are
+    retention=ID       (space "tool") a separately evolved retention policy combined with the tool policy cid: the
+                       "optimise each half alone, then combine" arm of the joint experiment
+    """
+    if space not in SPACES:
+        raise ValueError(f"space must be one of {SPACES}")
+    if cid is None and retention is None:
+        m = _ours()
         m["args"]["context_profile"] = PROFILE
         return dict(m, label="infinite-context")
-    rl = {"class": "ReadLess", "args": {"policy": policy.module_name(cid), "ranged": False, "fresh_only": bool(fork)}}
-    return {"class": "Composed", "args": {"methods": [rl, copy.deepcopy(OURS)], "context_profile": PROFILE},
-            "label": f"{cid} + infinite-context"}
+    ret = cid if space in ("joint", "retention") else retention
+    parts = []
+    if space != "retention" and cid is not None:
+        parts.append({"class": "ReadLess", "args": {"policy": policy.module_name(cid), "ranged": False, "fresh_only": bool(fork)}})
+    parts.append(_ours(ret))
+    if ret is not None:
+        parts.append({"class": "RetainHook", "args": {"policy": policy.module_name(ret), "fresh_only": bool(fork)}})
+    label = " + ".join(x for x in (cid if space != "retention" else None, f"retain {ret}" if ret else None) if x)
+    return {"class": "Composed", "args": {"methods": parts, "context_profile": PROFILE}, "label": f"{label} + infinite-context"}
 
 
-def config(base, name, cid, tasks, repeats, workers, checkpoints=None):
-    """An eval config from `base` (a G1 config: environment, prices, model), for one arm."""
+def vanilla_method(cid=None):
+    """Codex's native compaction (Vanilla), alone or with a tool policy's ReadLess in front: the M2 = Vanilla cells of
+    the 2x2 coupling experiment."""
+    if cid is None:
+        return dict(copy.deepcopy(VANILLA), label="Vanilla")
+    rl = {"class": "ReadLess", "args": {"policy": policy.module_name(cid), "ranged": False}}
+    return {"class": "Composed", "args": {"methods": [rl, {"class": "HostDefault", "args": {}}], "context_profile": PROFILE},
+            "label": f"{cid} + Vanilla"}
+
+
+def config(base, name, cid, tasks, repeats, workers, checkpoints=None, space="tool", retention=None, entry=None):
+    """An eval config from `base` (a G1 config: environment, prices, model), for one arm (entry: a method entry to
+    use as it is instead of method(...))."""
     c = copy.deepcopy(base)
     c["name"] = name
     c["tasks"] = list(tasks)
-    c["methods"] = [method(cid, fork=bool(checkpoints))]
+    c["methods"] = [entry or method(cid, fork=bool(checkpoints), space=space, retention=retention)]
     c["repeats"], c["workers"] = repeats, workers
     run = dict(c["run"])
     run.pop("checkpoints", None)

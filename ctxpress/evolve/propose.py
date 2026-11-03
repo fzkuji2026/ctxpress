@@ -59,12 +59,50 @@ NOTE.txt saying what you changed and why. You may run `python3 -c` to test piece
 your own samples. Do not modify any other file. Stop when candidate.py and NOTE.txt are written."""
 
 
+HISTORY_START, HISTORY_END = "What earlier rounds showed", "Write the new module to candidate.py"
+
+JOINT_TASK = """
+
+This round you design BOTH halves of an observation's life (the joint search space). Besides the entry form (view,
+TOOLS, GUIDANCE) you may define, as FORMAT.md describes:
+- retain(info, ctx): the shorter text an output already in the context should become now, e.g. once it is old and the
+  agent has edited near it or named what it needed, a one-line pointer with the exact command that prints it again.
+  It runs after our method; a shrink is free where our method has just rewritten the history (its commit) and is
+  otherwise applied only when the saving pays for rebuilding the cached prefix after it, so shrinking old outputs
+  one by one mid-history mostly waits for the next commit.
+- RETAIN: our method's own retention switches (t: the request size that triggers its commit, 40k-100k; keep_recent:
+  turns kept whole; output_keep_chars: outputs this short survive a commit verbatim; guard_keep_frac / spec_keep_frac).
+The two halves interact: a small entry form leaves little to shrink later and makes commits rarer; a large one makes
+retain() and the commit matter more. The evidence gives, per kind, how much of the cost was paid on entry and how
+much was carried (usd_carry), and for the worst reads when they entered and how many requests they stayed (life)."""
+
+RETENTION_TASK = """
+
+This round you design ONLY the retention half: leave view() returning None, TOOLS empty and GUIDANCE empty (the
+agent keeps its own tools), and define retain(info, ctx) and RETAIN as FORMAT.md describes. retain() runs after our
+method; a shrink is free where our method has just rewritten the history and is otherwise applied only when the
+saving pays for rebuilding the cached prefix after it. RETAIN sets our method's switches (t 40k-100k, keep_recent,
+output_keep_chars, guard_keep_frac, spec_keep_frac). The evidence gives how much of each kind's cost was carried."""
+
+
 def _format_doc():
     return policy.__doc__ + "\n\nThe seed policies (parent.py may be one) are complete examples of the format.\n"
 
 
-def _evidence(parent, reports, archive_table):
+def _evidence(parent, reports, archive_table, evidence="attributed"):
+    """attributed: per-kind and per-output cost attribution (entry, carry, unused); minimal: bill and score only (the
+    feedback ablation of the logic checks, P3)."""
     lines = [f"# Parent {parent['id']}", f"note: {parent.get('note', '')}", ""]
+    if evidence == "minimal":
+        for key in ("full", "screen"):
+            if parent.get(key):
+                c = parent[key]
+                lines.append(f"## {key} evaluation against our method alone ({c.get('jobs')} jobs on {c.get('tasks')} tasks)")
+                lines.append(json.dumps({k: c.get(k) for k in ("saving", "reward_diff", "median")}, indent=1))
+                lines.append(f"per-task saving: {json.dumps(c.get('per_task'))}")
+                lines.append("")
+        lines += ["## All candidates so far (id, parent, status, fitness = saving of the manageable bill)", archive_table]
+        return "\n".join(lines)
     for key in ("full", "screen"):
         if parent.get(key):
             c = parent[key]
@@ -78,16 +116,19 @@ def _evidence(parent, reports, archive_table):
         agg = {}
         for r in reports:
             for k, g in r["by_kind"].items():
-                a = agg.setdefault(k, dict(n=0, tokens=0, unused_tokens=0))
+                a = agg.setdefault(k, dict(n=0, tokens=0, unused_tokens=0, usd=0.0, usd_carry=0.0))
                 for x in a:
                     a[x] += g.get(x, 0)
         for k, a in sorted(agg.items(), key=lambda kv: -kv[1]["tokens"]):
-            lines.append(f"- {k}: {a['n']} outputs, {a['tokens']} tokens, {a['unused_tokens']} never used afterwards")
+            lines.append(f"- {k}: {a['n']} outputs, {a['tokens']} tokens, {a['unused_tokens']} never used afterwards"
+                         + (f", ${a['usd']:.3f} of which ${a.get('usd_carry', 0):.3f} carried" if 'usd' in a else ""))
         lines.append("")
         lines.append("## The reads that wasted most (command, tokens, tokens never used afterwards)")
         worst = sorted((w for r in reports for w in r["worst"]), key=lambda w: -w["usd_unused"])[:15]
         for w in worst:
-            lines.append(f"- {w['tokens']} tokens, {w['unused_tokens']} unused: {w['cmd'][:300]}")
+            lines.append(f"- {w['tokens']} tokens, {w['unused_tokens']} unused"
+                         + (f", entered at request {w['enter']}, stayed {w['life']} requests" if 'life' in w else "")
+                         + f": {w['cmd'][:300]}")
         lines.append("")
     lines += ["## All candidates so far (id, parent, status, fitness = saving of the manageable bill)", archive_table]
     return "\n".join(lines)
@@ -118,8 +159,12 @@ def _codex(workdir, prompt, log):
         shutil.rmtree(home, ignore_errors=True)
 
 
-def propose(cid, parent, parent_src, reports, archive_table, workroot):
-    """(source, note, problems, log path) of a new candidate written by Codex from a parent."""
+def propose(cid, parent, parent_src, reports, archive_table, workroot, space="tool", evidence="attributed", history=True):
+    """(source, note, problems, log path) of a new candidate written by Codex from a parent. space: "tool" (entry
+    form only, as G1/G2), "joint" (entry form and retention) or "retention" (retention only); evidence: see
+    _evidence. history=False leaves out what earlier lineages found (an independent rerun must not be told c01)."""
+    base = TASK if history else TASK[:TASK.index(HISTORY_START)] + TASK[TASK.index(HISTORY_END):]
+    task = base + {"tool": "", "joint": JOINT_TASK, "retention": RETENTION_TASK}[space]
     wd = os.path.join(workroot, cid)
     os.makedirs(os.path.join(wd, "ref"), exist_ok=True)
     with open(os.path.join(wd, "parent.py"), "w") as f:
@@ -129,11 +174,11 @@ def propose(cid, parent, parent_src, reports, archive_table, workroot):
     with open(os.path.join(wd, "FORMAT.md"), "w") as f:
         f.write(_format_doc())
     with open(os.path.join(wd, "EVIDENCE.md"), "w") as f:
-        f.write(_evidence(parent, reports, archive_table))
+        f.write(_evidence(parent, reports, archive_table, evidence))
     problems, src, note = [], None, ""
     for attempt in range(2):
-        prompt = TASK if not problems else (
-            TASK + "\n\nYour candidate.py failed these checks; fix them and write candidate.py again (NOTE.txt still "
+        prompt = task if not problems else (
+            task + "\n\nYour candidate.py failed these checks; fix them and write candidate.py again (NOTE.txt still "
             "describes what the candidate changes against parent.py, not the fix):\n- " + "\n- ".join(problems))
         code = _codex(wd, prompt, os.path.join(wd, f"codex-{attempt}.jsonl"))
         path = os.path.join(wd, "candidate.py")

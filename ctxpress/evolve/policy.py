@@ -10,6 +10,13 @@ front of infinite-context:
                                      own shell commands (they run in the task container, cwd = the repository)
     if __name__ == "__main__": raise SystemExit(cli(TOOLS))     (from ctxpress.evolve.runtime import cli)
 
+A joint policy (space "joint" or "retention" of the loop) may also decide how long an output stays whole:
+
+    retain(info, ctx) -> str|None    the shorter text an output already in the context should become now (None:
+                                     keep it); info = dict(cmd, text, tokens, age, later, refetched), served by
+                                     ctxpress.methods.retain_hook.RetainHook after our method
+    RETAIN: {switch: value}          our method's own retention switches (RETAIN_BOUNDS), clamped by retain_overrides
+
 `TOOL = "python3 -m " + __spec__.name` gives the command prefix to write into GUIDANCE and view footers.
 The module may import the standard library parts in ALLOWED and ctxpress.tools.*, ctxpress.evolve.runtime and
 ctxpress.methods.readless_policies.seed; it may read files but not write, delete, spawn processes or open sockets.
@@ -36,9 +43,22 @@ FORBIDDEN_OS = {"system", "popen", "remove", "unlink", "rmdir", "removedirs", "r
 FORBIDDEN_PATH = {"write_text", "write_bytes", "unlink", "rmdir", "mkdir", "touch", "chmod", "symlink_to",
                   "hardlink_to"}      # pathlib is not importable, so rename/replace can only be str methods
 MAX_GUIDANCE = 2000
+RETAIN_BOUNDS = dict(t=(40000, 100000), keep_recent=(1, 12), output_keep_chars=(0, 4000), guard_keep_frac=(0.0, 0.3),
+                     spec_keep_frac=(0.0, 0.3))
 MAX_SOURCE = 40000
 TOOL_SECONDS = 10
 TOOL_CHARS = 60000
+
+
+def retain_overrides(retain):
+    """Our method's switches from a policy's RETAIN, clamped to RETAIN_BOUNDS; unknown keys and bad values dropped."""
+    out = {}
+    for k, v in (retain or {}).items() if isinstance(retain, dict) else ():
+        if k in RETAIN_BOUNDS and isinstance(v, (int, float)) and not isinstance(v, bool):
+            lo, hi = RETAIN_BOUNDS[k]
+            v = min(hi, max(lo, v))
+            out[k] = int(v) if isinstance(lo, int) else float(v)
+    return out
 
 
 def module_name(cid):
@@ -171,6 +191,18 @@ for cmd, out in samples:
     elif isinstance(v, str):
         views += 1
         if tokens.count(v) >= tokens.count(out): bad.append(f"view({cmd!r}) is not shorter than the output")
+if hasattr(m, "retain"):
+    if not callable(m.retain): bad.append("retain is not a function")
+    else:
+        for cmd, out in samples:
+            info = dict(cmd=cmd, text=out, tokens=tokens.count(out), age=12, later="apply_patch Store.add", refetched=False)
+            try:
+                v = m.retain(info, dict(tokens=tokens.count, request=40))
+            except Exception as e:
+                bad.append(f"retain({cmd!r}) raised {type(e).__name__}: {e}"); continue
+            if v is not None and not isinstance(v, str): bad.append(f"retain({cmd!r}) returned {type(v).__name__}")
+            elif isinstance(v, str) and tokens.count(v) >= tokens.count(out): bad.append(f"retain({cmd!r}) is not shorter")
+if hasattr(m, "RETAIN") and not isinstance(m.RETAIN, dict): bad.append("RETAIN is not a dict")
 runs = []
 for name in tools:
     for args in ([py], [go], [py, "Store.add"], [go, "Add"], ["missing.py"]):

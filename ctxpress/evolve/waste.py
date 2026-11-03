@@ -160,8 +160,10 @@ def _files(a):
     return files
 
 
-def report(attempt, examples=6, skip=0):
-    """Score, bill and read waste of one attempt; None if its records are incomplete. skip: see bill()."""
+def report(attempt, examples=6, skip=0, rows=False):
+    """Score, bill and read waste of one attempt; None if its records are incomplete. skip: see bill(). rows=True
+    also returns every output's line (kind, command, tokens, unused and edit-used tokens, entry request, life,
+    entry and carry dollars), for lifetime-cost analyses and the proposer's evidence."""
     rq = sorted(glob.glob(attempt + '/ctxp-hb-*/agent/ctxpress-requests.jsonl'))
     rolls = sorted(glob.glob(attempt + '/ctxp-hb-*/agent/sessions/**/rollout-*.jsonl', recursive=True))
     rew = glob.glob(attempt + '/ctxp-hb-*/verifier/reward.txt')
@@ -186,7 +188,7 @@ def report(attempt, examples=6, skip=0):
     for j in range(len(texts) - 1, -1, -1):
         acc = acc | _idents(texts[j][1]); suffix[j] = acc
     text_lns = [t[0] for t in texts]
-    rows = []
+    out_rows = []
     for k, a in enumerate(acts):
         out = a.get('out') or ''
         if not out:
@@ -211,16 +213,24 @@ def report(attempt, examples=6, skip=0):
                             used[q] = True
             ids = suffix[bisect.bisect_right(text_lns, a['ln'])]
             unused = sum(t for t, u, l in zip(ltok, used, lines) if not u and not (_idents(l) & ids))
-        rows.append(dict(kind=kind, cmd=(a['arg'] or '')[:300], tok=sum(ltok), unused=unused, life=life))
+            edit_used = sum(t for t, u in zip(ltok, used) if u)
+        else:
+            edit_used = 0
+        out_rows.append(dict(kind=kind, cmd=(a['arg'] or '')[:300], tok=sum(ltok), unused=unused, edit_used=edit_used,
+                             life=life, enter=e, k=k, out=out if rows else None))
+    rows_, rows = rows, out_rows
     we = sum(r['tok'] for r in rows) or 1
     wl = sum(r['tok'] * r['life'] for r in rows) or 1
     for r in rows:
-        r['usd'] = b['entry'] * r['tok'] / we + b['later'] * r['tok'] * r['life'] / wl
+        r['usd_entry'] = b['entry'] * r['tok'] / we
+        r['usd_carry'] = b['later'] * r['tok'] * r['life'] / wl
+        r['usd'] = r['usd_entry'] + r['usd_carry']
         r['usd_unused'] = r['usd'] * r['unused'] / r['tok'] if r['tok'] else 0.0
     by = collections.defaultdict(lambda: collections.Counter())
     for r in rows:
         g = by[r['kind']]
         g['n'] += 1; g['tokens'] += r['tok']; g['unused_tokens'] += r['unused']; g['usd'] += r['usd']; g['usd_unused'] += r['usd_unused']
+        g['usd_carry'] += r['usd_carry']
     man = b['manage'] or 1e-9
     task = None
     req = glob.glob(attempt + '/harbor-request.json')
@@ -237,8 +247,10 @@ def report(attempt, examples=6, skip=0):
                 read_share=sum(by[k]['usd'] for k in reads) / man,
                 tool_calls=sum(1 for r in rows if r['kind'] == 'read tool'), calls=len(acts),
                 by_kind={k: {x: round(v, 4) for x, v in g.items()} for k, g in by.items()},
-                worst=[dict(cmd=r['cmd'], tokens=r['tok'], unused_tokens=r['unused'], usd_unused=round(r['usd_unused'], 4))
-                       for r in worst])
+                worst=[dict(cmd=r['cmd'], tokens=r['tok'], unused_tokens=r['unused'], usd_unused=round(r['usd_unused'], 4),
+                            enter=r['enter'], life=r['life'], usd_carry=round(r['usd_carry'], 4))
+                       for r in worst],
+                **(dict(rows=rows, nreq=nreq) if rows_ else {}))
 
 
 def attempts(directory, method_prefix='m000'):

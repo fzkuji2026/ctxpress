@@ -39,12 +39,13 @@ from ctxpress.methods.wrappers import Composed, EntryTruncation, PinRequirements
 from ctxpress.methods.auto_cost import AutoCostModel
 from ctxpress.methods.readless import ReadLess
 from ctxpress.methods.toolfields import ToolFields
+from ctxpress.methods.retain_hook import RetainHook
 
 REGISTRY = {c.__name__: c for c in [TACO, CoMem, LongSeeker, ZipRL, HostDefault, NoCompaction, CodexAutoCompact, ClaudeCode, CliffCompaction, ClearThenSummarize, SlidingWindow,
                                     ComplexityTrap, KeepLastTokens, Pichay, PichayApprox, ClawVM, ClawVMApprox, TokenPilot, SWEPruner, ARC,
                                     ComplexityTrapSummary, ComplexityTrapHybrid, AgentDiet, CWL, DTOC, ACM, AgentFold, ACON, ReSum, WorkingView, CostModel, ScoredMethod,
                                     Composed, EntryTruncation, PinRequirements, WithMemory, Trigger, AutoCostModel,
-                                    AgentFoldTools, ACONSource, TokenPilotLifecycle, ReSumSource, ContextFoldingTools, AgentFoldSource, FoldActSource, ReadLess, ToolFields]}
+                                    AgentFoldTools, ACONSource, TokenPilotLifecycle, ReSumSource, ContextFoldingTools, AgentFoldSource, FoldActSource, ReadLess, ToolFields, RetainHook]}
 REGISTRY["infinite-context"] = InfiniteContext
 REGISTRY["infinite-context-rules"] = InfiniteContextRules
 NEEDS_TRAINING = {"CostModel"}
@@ -98,6 +99,7 @@ METHODS = {
     "PinRequirements": ("包装器", False, True, "无"), "WithMemory": ("包装器", False, True, "无"),
     "Trigger": ("包装器", False, True, "无"),
     "ToolFields": ("本文", False, True, "工具输出附加字段：本步改动的文件与改动行（编辑回执），同一命令输出不变时替换为 unchanged；字段策略可替换，默认为手写种子"),
+    "RetainHook": ("本文", False, True, "联合策略的保留一半：工具输出用完后按策略的 retain() 缩短，在上下文方法已破坏缓存的位置之后免费做，否则只在节省抵过重建时做；策略的 RETAIN 覆盖本文方法的保留开关"),
     "ReadLess": ("本文", False, True, "读入时按可替换的视图策略缩小读文件/搜索/测试输出；同一命令再跑返回全文；默认策略为手写种子"),
 }
 WRAPPER_ARGS = {"inner", "methods"}
