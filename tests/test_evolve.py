@@ -103,3 +103,20 @@ def test_screen_config_forks_with_a_window():
     rl = c["methods"][0]["args"]["methods"][0]
     assert rl["args"] == {"policy": policy.module_name("g001_c00"), "ranged": False, "fresh_only": True}
     assert evaluate.config(base, "ours", None, ["t1"], 1, 1)["methods"][0]["class"] == "infinite-context"
+
+def test_bill_scales_fixed_head_to_provider_tokens_and_handles_partial_cache(tmp_path):
+    import json
+    from ctxpress.evolve import waste
+    rq = tmp_path / 'ctxpress-requests.jsonl'
+    rows = [
+        dict(request=1, status=200, composition=dict(instructions=6000, other=7000, user=6500),
+             usage=dict(input_tokens=18168, cached_tokens=0, output_tokens=100)),
+        dict(request=1, status=200, composition=dict(instructions=6000, other=7000, user=6800, tool_call=1300, tool_output=4900),
+             usage=dict(input_tokens=25067, cached_tokens=18048, output_tokens=100)),
+    ]
+    rq.write_text('\n'.join(json.dumps(r) for r in rows))
+    b = waste.bill(str(rq))
+    assert b['manage'] > 0
+    U, C = waste.PRICES['uncached'], waste.PRICES['cached']
+    expected_manage = (25067 - 18168) * U
+    assert abs(b['manage'] - expected_manage) < 1e-9

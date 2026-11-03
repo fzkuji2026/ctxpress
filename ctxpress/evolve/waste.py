@@ -63,13 +63,16 @@ def bill(requests, skip=0):
     out the first `skip` main requests (and anything billed before the next one), e.g. a fork's cache warm-up."""
     U, C, O = PRICES['uncached'], PRICES['cached'], PRICES['output']
     total = fixed = aux = 0.0
-    rows, base, main = [], None, 0
+    rows, base, base_f, main = [], None, 0.0, 0
     for d in _usage_rows(requests):
         u = d['usage']
         I, Ca, Out = u.get('input_tokens') or 0, u.get('cached_tokens') or 0, u.get('output_tokens') or 0
         is_main = 'request' in d and d.get('composition')
         if is_main:
-            base = base or d['composition']
+            if base is None:
+                base = d['composition']
+                s0 = I / (sum(base.get(k, 0) for k in KINDS) or 1)
+                base_f = sum(base.get(k, 0) for k in ('instructions', 'other', 'user')) * s0
             main += 1
             if d.get('status', 200) == 200:
                 rows.append(d)
@@ -77,8 +80,9 @@ def bill(requests, skip=0):
             continue
         total += (I - Ca) * U + Ca * C + Out * O
         if is_main:
-            f = min(sum(base.get(k, 0) for k in ('instructions', 'other', 'user')), I)
-            fixed += f * (C if Ca >= f else U)
+            f = min(base_f, I)
+            fc = min(Ca, f)
+            fixed += fc * C + (f - fc) * U
         elif 'request' not in d:
             aux += (I - Ca) * U + Ca * C
         fixed += Out * O
@@ -90,9 +94,9 @@ def bill(requests, skip=0):
         u = d['usage']
         I, Ca = u.get('input_tokens') or 0, u.get('cached_tokens') or 0
         Un = I - Ca
-        f = min(I, sum(base.get(k, 0) for k in ('instructions', 'other', 'user')))
+        f = min(I, base_f)
         if Ca < f:
-            Un = max(0, Un - f)
+            Un = max(0, Un - (f - Ca))
         c = dict(d['composition'])
         oo, uu = c.get('other', 0), c.get('user', 0)
         c['other'], c['other_extra'] = min(oo, bo), max(0, oo - bo)

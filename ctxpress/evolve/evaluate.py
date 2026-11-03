@@ -150,8 +150,11 @@ def collect(run_dir, screen=False):
     for att in waste.attempts(run_dir):
         if not glob.glob(att + "/ctxp-hb-*/result.json"):
             continue
-        if glob.glob(att + "/ctxp-hb-*/exception.txt"):      # the host or provider failed (e.g. model at capacity):
-            continue                                          # a cut-off bill and grade, not the method's
+        exc = glob.glob(att + "/ctxp-hb-*/exception.txt")
+        if exc:                                               # the host or provider failed (e.g. model at capacity):
+            with open(exc[0], errors="replace") as f:         # a cut-off bill and grade, not the method's; hitting the
+                if "ctxpress tool call budget exhausted" not in f.read():
+                    continue                                  # call budget (e.g. a 40-call screen window) is normal
         r = waste.report(att, skip=WARMUP if screen else 0)
         if r is not None and screen:
             r["reward"] = None
