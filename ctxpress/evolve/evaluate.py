@@ -8,7 +8,7 @@ An arm is our method (infinite-context v5 as in G1) with or without ReadLess(pol
     full     task-start runs, graded: score and manageable bill of whole tasks.
 
 launch(...) writes runs/prepared/<group>/<name>/config.json, plans it and starts it in the background; collect(...)
-reads whatever jobs have finished (results can be read at a fixed time, before every job is done) and cancel(...)
+reads whatever jobs have finished without a host/provider failure (results can be read at a fixed time, before every job is done) and cancel(...)
 stops the rest.
 """
 from __future__ import annotations
@@ -110,6 +110,8 @@ def collect(run_dir, screen=False):
     for att in waste.attempts(run_dir):
         if not glob.glob(att + "/ctxp-hb-*/result.json"):
             continue
+        if glob.glob(att + "/ctxp-hb-*/exception.txt"):      # the host or provider failed (e.g. model at capacity):
+            continue                                          # a cut-off bill and grade, not the method's
         r = waste.report(att, skip=WARMUP if screen else 0)
         if r is not None and screen:
             r["reward"] = None

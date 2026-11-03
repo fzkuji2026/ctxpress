@@ -49,6 +49,10 @@ What earlier rounds showed (real runs, read these before you design):
   So judge a design by what it keeps out of a long history, not by how compact one read looks.
 - glz-7.0.0 is the counter-example: there reading by name cost 49% more on all three runs. A candidate must not only
   help the tasks where reading is already cheap.
+- The best so far, g002_c01 (one selection per read, at most 100 lines / 7000 characters, an exact command for the
+  rest, long whole-file prints turned into an outline), saved 25% over 30 whole-task runs and won on 9 of 10 tasks.
+  The exception is spc-3.2.0, 16% MORE expensive on all three runs: look at why in the evidence (the agent probably
+  pays for truncation by asking for the rest piece by piece) and keep c01's saving on the other tasks.
 
 Write the new module to candidate.py (complete, self-contained apart from the allowed imports) and one line to
 NOTE.txt saying what you changed and why. You may run `python3 -c` to test pieces of it against the files in ref/ or
